@@ -68,12 +68,7 @@ jobs:
           # Increase HTTP timeouts and retry transient dependency-download failures.
           for attempt in 1 2 3; do
             echo "Gradle release build attempt $attempt of 3"
-            if ./gradlew --no-daemon \\
-              -Dorg.gradle.internal.http.connectionTimeout=60000 \\
-              -Dorg.gradle.internal.http.socketTimeout=120000 \\
-              -Dorg.gradle.internal.repository.max.retries=5 \\
-              -Dorg.gradle.internal.repository.initial.backoff=1000 \\
-              assembleRelease; then
+            if ./gradlew --no-daemon -Dorg.gradle.internal.http.connectionTimeout=60000 -Dorg.gradle.internal.http.socketTimeout=120000 -Dorg.gradle.internal.repository.max.retries=5 -Dorg.gradle.internal.repository.initial.backoff=1000 assembleRelease; then
               exit 0
             fi
             if [ "$attempt" -lt 3 ]; then
