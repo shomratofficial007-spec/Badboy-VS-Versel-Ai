@@ -145,6 +145,30 @@ export const VOICE_LANGUAGES = [
   { code: 'xh-ZA', label: 'isiXhosa' },
 ] as const;
 
+/**
+ * Resolve a requested locale against locales reported by Android's active speech provider.
+ * Providers sometimes advertise only a base locale (for example "bn") instead of "bn-BD".
+ * If the provider's locale list is incomplete, try the base language as a final fallback
+ * rather than failing before recognition is attempted.
+ */
+export function resolveRecognitionLocale(requested: string, supportedLocales: readonly string[]): string {
+  if (!supportedLocales.length) return requested;
+  const normalizedRequested = requested.toLowerCase();
+  const exact = supportedLocales.find((locale) => locale.toLowerCase() === normalizedRequested);
+  if (exact) return exact;
+
+  const languageBase = requested.split('-')[0].toLowerCase();
+  const base = supportedLocales.find((locale) => locale.toLowerCase() === languageBase);
+  if (base) return base;
+
+  const regionalVariant = supportedLocales.find(
+    (locale) => locale.split('-')[0].toLowerCase() === languageBase,
+  );
+  if (regionalVariant) return regionalVariant;
+
+  return languageBase;
+}
+
 export function getVoiceLanguageLabel(code: string): string {
   return VOICE_LANGUAGES.find((language) => language.code === code)?.label ?? code;
 }
@@ -348,25 +372,15 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
           if (typeof nativeModule.getSupportedLocales === 'function') {
             const support = await nativeModule.getSupportedLocales({});
             const locales: string[] = Array.isArray(support?.locales) ? support.locales : [];
-            if (locales.length > 0 && !locales.includes(recognitionLanguage)) {
-              const languageBase = recognitionLanguage.split('-')[0].toLowerCase();
-              const compatibleLocale =
-                locales.find((locale) => locale.toLowerCase() === languageBase) ??
-                locales.find((locale) => locale.split('-')[0].toLowerCase() === languageBase);
-              if (compatibleLocale) {
-                console.warn('[BadboyVoice] Selected locale unavailable; using supported variant', {
+            if (locales.length > 0) {
+              const compatibleLocale = resolveRecognitionLocale(recognitionLanguage, locales);
+              if (compatibleLocale !== recognitionLanguage) {
+                console.warn('[BadboyVoice] Adjusting requested locale to match provider locale metadata', {
                   requested: recognitionLanguage,
                   selected: compatibleLocale,
-                });
-                recognitionLanguage = compatibleLocale;
-              } else {
-                console.error('[BadboyVoice] Selected language is not supported by the active provider', {
-                  requested: recognitionLanguage,
                   supportedLocaleCount: locales.length,
                 });
-                callbacks.onError?.('language-not-supported');
-                finish();
-                return;
+                recognitionLanguage = compatibleLocale;
               }
             }
           }
