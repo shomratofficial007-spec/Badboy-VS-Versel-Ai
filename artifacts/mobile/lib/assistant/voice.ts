@@ -146,10 +146,9 @@ export const VOICE_LANGUAGES = [
 ] as const;
 
 /**
- * Resolve a requested locale against locales reported by Android's active speech provider.
- * Providers sometimes advertise only a base locale (for example "bn") instead of "bn-BD".
- * If the provider's locale list is incomplete, try the base language as a final fallback
- * rather than failing before recognition is attempted.
+ * Resolve the best initial locale using the provider's advertised locale list.
+ * Never substitute an unrelated language. If metadata does not include the
+ * requested language, keep the requested locale and let the recognizer try it.
  */
 export function resolveRecognitionLocale(requested: string, supportedLocales: readonly string[]): string {
   if (!supportedLocales.length) return requested;
@@ -164,9 +163,16 @@ export function resolveRecognitionLocale(requested: string, supportedLocales: re
   const regionalVariant = supportedLocales.find(
     (locale) => locale.split('-')[0].toLowerCase() === languageBase,
   );
-  if (regionalVariant) return regionalVariant;
+  return regionalVariant ?? requested;
+}
 
-  return languageBase;
+/** Ordered, duplicate-free locale candidates for a best-effort native retry. */
+export function getRecognitionLocaleCandidates(requested: string): string[] {
+  const base = requested.split('-')[0].toLowerCase();
+  const candidates = [requested];
+  if (base === 'bn') candidates.push('bn', 'bn-BD', 'bn-IN');
+  else candidates.push(base);
+  return [...new Set(candidates)];
 }
 
 export function getVoiceLanguageLabel(code: string): string {
@@ -362,12 +368,19 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
       subscriptions.length = 0;
     };
 
-    const startNative = async () => {
+    const attemptedLocales = new Set<string>();
+    const startNative = async (forcedLanguage?: string) => {
       try {
         // Ask Android's active speech provider which locales it actually supports.
         // On Android 12 and older this API may be unavailable; in that case keep
         // the selected locale and let the provider return its normal result/error.
-        let recognitionLanguage = callbacks.lang ?? 'bn-BD';
+        let recognitionLanguage = forcedLanguage ?? callbacks.lang ?? 'bn-BD';
+        if (attemptedLocales.has(recognitionLanguage)) {
+          finish();
+          callbacks.onError?.('language-not-supported');
+          return;
+        }
+        attemptedLocales.add(recognitionLanguage);
         try {
           if (typeof nativeModule.getSupportedLocales === 'function') {
             const support = await nativeModule.getSupportedLocales({});
@@ -435,6 +448,27 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
             language: callbacks.lang ?? 'bn-BD',
           });
           cleanup();
+          const errorCode = (event?.error ?? 'speech_error').toLowerCase();
+          const isBengali = (callbacks.lang ?? 'bn-BD').toLowerCase().startsWith('bn');
+          const canRetryLocale = isBengali && (
+            errorCode.includes('language-not-supported') ||
+            errorCode.includes('language_not_supported') ||
+            errorCode.includes('language-not-available') ||
+            errorCode.includes('service-not-allowed')
+          );
+          if (canRetryLocale) {
+            const nextLocale = getRecognitionLocaleCandidates(callbacks.lang ?? 'bn-BD')
+              .find((locale) => !attemptedLocales.has(locale));
+            if (nextLocale) {
+              console.warn('[BadboyVoice] Retrying Bengali recognition with locale fallback', {
+                failedLocale: recognitionLanguage,
+                nextLocale,
+              });
+              try { nativeModule.abort(); } catch { /* Ignore stale session */ }
+              void Promise.resolve().then(() => startNative(nextLocale));
+              return;
+            }
+          }
           finish();
           callbacks.onError?.(event?.error ?? 'speech_error');
         });
