@@ -31,6 +31,8 @@ import {
   checkMicrophonePermission,
   dictateOnce,
   getVoiceErrorMessage,
+  getNextVoiceLanguage,
+  getVoiceLanguageLabel,
   isDictationAvailable,
   isReadAloudAvailable,
   speak,
@@ -60,7 +62,7 @@ export default function ChatScreen() {
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [wakeDetected, setWakeDetected] = useState(false);
-  const [selectedLang, setSelectedLang] = useState<'bn-BD' | 'en-US'>('bn-BD');
+  const [selectedLang, setSelectedLang] = useState<string>('bn-BD');
   const [error, setError] = useState<string | null>(null);
   const [awaitingSongName, setAwaitingSongName] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
@@ -556,13 +558,13 @@ export default function ChatScreen() {
 
         {/* Language Selector Toggle */}
         <Pressable
-          onPress={() => setSelectedLang((prev) => (prev === 'bn-BD' ? 'en-US' : 'bn-BD'))}
+          onPress={() => setSelectedLang((prev) => getNextVoiceLanguage(prev))}
           style={[styles.langToggle, { borderColor: colors.border, backgroundColor: colors.secondary }]}
           accessibilityRole="button"
           accessibilityLabel="ভাষা পরিবর্তন করুন"
         >
           <Text style={[styles.langText, { color: colors.primary }]}>
-            {selectedLang === 'bn-BD' ? 'বাংলা' : 'EN'}
+            {getVoiceLanguageLabel(selectedLang)}
           </Text>
         </Pressable>
 
