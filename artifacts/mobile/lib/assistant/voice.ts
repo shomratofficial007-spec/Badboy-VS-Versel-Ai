@@ -382,7 +382,7 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
         }
         attemptedLocales.add(recognitionLanguage);
         try {
-          if (typeof nativeModule.getSupportedLocales === 'function') {
+          if (!forcedLanguage && typeof nativeModule.getSupportedLocales === 'function') {
             const support = await nativeModule.getSupportedLocales({});
             const locales: string[] = Array.isArray(support?.locales) ? support.locales : [];
             if (locales.length > 0) {
