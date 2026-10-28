@@ -44,7 +44,6 @@
         "expo-speech-recognition",
         {
           "microphonePermission": "Use your microphone when you choose to send a voice message.",
-          "androidRecognitionServicePackage": "com.google.android.googlequicksearchbox"
         }
       ],
       "expo-secure-store"
