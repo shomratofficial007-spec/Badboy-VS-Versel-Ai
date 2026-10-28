@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   containsWakePhrase,
   resolveRecognitionLocale,
+  getRecognitionLocaleCandidates,
   getVoiceErrorMessage,
   getNextVoiceLanguage,
   getVoiceLanguageLabel,
@@ -17,8 +18,14 @@ test('recognition locale resolution handles exact, base, regional and incomplete
   assert.equal(resolveRecognitionLocale('bn-BD', ['bn-IN', 'en-US']), 'bn-IN');
   // Some Android providers return incomplete locale metadata. Try the language base
   // before reporting failure so the recognition service gets a chance to handle it.
-  assert.equal(resolveRecognitionLocale('bn-BD', ['en-US', 'hi-IN']), 'bn');
+  assert.equal(resolveRecognitionLocale('bn-BD', ['en-US', 'hi-IN']), 'bn-BD');
   assert.equal(resolveRecognitionLocale('en-US', []), 'en-US');
+});
+
+test('Bengali recognition fallback candidates are ordered and unique', () => {
+  assert.deepEqual(getRecognitionLocaleCandidates('bn-BD'), ['bn-BD', 'bn', 'bn-IN']);
+  assert.deepEqual(getRecognitionLocaleCandidates('bn-IN'), ['bn-IN', 'bn', 'bn-BD']);
+  assert.deepEqual(getRecognitionLocaleCandidates('en-US'), ['en-US', 'en']);
 });
 
 test('wake phrases: English and Bangla aliases are recognized', () => {
