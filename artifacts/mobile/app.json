@@ -43,7 +43,7 @@
       [
         "expo-speech-recognition",
         {
-          "microphonePermission": "Use your microphone when you choose to send a voice message.",
+          "microphonePermission": "Use your microphone when you choose to send a voice message."
         }
       ],
       "expo-secure-store"
