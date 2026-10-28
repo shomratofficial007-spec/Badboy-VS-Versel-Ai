@@ -51,7 +51,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # sdkmanager closes stdin after licenses are accepted; "yes" can receive
+          # SIGPIPE. Temporarily disable pipefail so that does not abort the job.
+          set +o pipefail
           yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses
+          set -o pipefail
           # Expo SDK 57 configures compileSdk 36 and NDK 27.1.12297006.
           # Install the exact native toolchain explicitly before Expo prebuild.
           rm -rf "$ANDROID_HOME/ndk/27.1.12297006"
