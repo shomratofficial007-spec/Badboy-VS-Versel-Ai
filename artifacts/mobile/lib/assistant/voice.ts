@@ -102,6 +102,47 @@ export const VOICE_LANGUAGES = [
   { code: 'lt-LT', label: 'Lietuvių' },
   { code: 'is-IS', label: 'Íslenska' },
   { code: 'ga-IE', label: 'Gaeilge' },
+  { code: 'bn', label: 'বাংলা (সাধারণ)' },
+  { code: 'en', label: 'English (general)' },
+  { code: 'es-AR', label: 'Español (Argentina)' },
+  { code: 'es-CO', label: 'Español (Colombia)' },
+  { code: 'es-US', label: 'Español (Estados Unidos)' },
+  { code: 'fr-BE', label: 'Français (Belgique)' },
+  { code: 'fr-CH', label: 'Français (Suisse)' },
+  { code: 'de-AT', label: 'Deutsch (Österreich)' },
+  { code: 'de-CH', label: 'Deutsch (Schweiz)' },
+  { code: 'it-CH', label: 'Italiano (Svizzera)' },
+  { code: 'pt-AO', label: 'Português (Angola)' },
+  { code: 'pt-MZ', label: 'Português (Moçambique)' },
+  { code: 'hi', label: 'हिन्दी (सामान्य)' },
+  { code: 'ur-IN', label: 'اردو (بھارت)' },
+  { code: 'ar-EG', label: 'العربية (مصر)' },
+  { code: 'ar-AE', label: 'العربية (الإمارات)' },
+  { code: 'ar-MA', label: 'العربية (المغرب)' },
+  { code: 'zh-HK', label: '中文 (香港)' },
+  { code: 'zh-SG', label: '中文 (新加坡)' },
+  { code: 'ja', label: '日本語 (一般)' },
+  { code: 'ko', label: '한국어 (일반)' },
+  { code: 'ru', label: 'Русский (общий)' },
+  { code: 'tr', label: 'Türkçe (genel)' },
+  { code: 'id', label: 'Bahasa Indonesia (umum)' },
+  { code: 'ms', label: 'Bahasa Melayu (umum)' },
+  { code: 'ta', label: 'தமிழ் (பொது)' },
+  { code: 'te', label: 'తెలుగు (సాధారణ)' },
+  { code: 'mr', label: 'मराठी (सामान्य)' },
+  { code: 'gu', label: 'ગુજરાતી (સામાન્ય)' },
+  { code: 'pa', label: 'ਪੰਜਾਬੀ (ਆਮ)' },
+  { code: 'ne-NP', label: 'नेपाली' },
+  { code: 'si-LK', label: 'සිංහල' },
+  { code: 'km-KH', label: 'ភាសាខ្មែរ' },
+  { code: 'lo-LA', label: 'ລາວ' },
+  { code: 'my-MM', label: 'မြန်မာ' },
+  { code: 'am-ET', label: 'አማርኛ' },
+  { code: 'ha-NG', label: 'Hausa' },
+  { code: 'yo-NG', label: 'Yorùbá' },
+  { code: 'ig-NG', label: 'Igbo' },
+  { code: 'zu-ZA', label: 'isiZulu' },
+  { code: 'xh-ZA', label: 'isiXhosa' },
 ] as const;
 
 export function getVoiceLanguageLabel(code: string): string {
@@ -299,6 +340,43 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
 
     const startNative = async () => {
       try {
+        // Ask Android's active speech provider which locales it actually supports.
+        // On Android 12 and older this API may be unavailable; in that case keep
+        // the selected locale and let the provider return its normal result/error.
+        let recognitionLanguage = callbacks.lang ?? 'bn-BD';
+        try {
+          if (typeof nativeModule.getSupportedLocales === 'function') {
+            const support = await nativeModule.getSupportedLocales({});
+            const locales: string[] = Array.isArray(support?.locales) ? support.locales : [];
+            if (locales.length > 0 && !locales.includes(recognitionLanguage)) {
+              const languageBase = recognitionLanguage.split('-')[0].toLowerCase();
+              const compatibleLocale =
+                locales.find((locale) => locale.toLowerCase() === languageBase) ??
+                locales.find((locale) => locale.split('-')[0].toLowerCase() === languageBase);
+              if (compatibleLocale) {
+                console.warn('[BadboyVoice] Selected locale unavailable; using supported variant', {
+                  requested: recognitionLanguage,
+                  selected: compatibleLocale,
+                });
+                recognitionLanguage = compatibleLocale;
+              } else {
+                console.error('[BadboyVoice] Selected language is not supported by the active provider', {
+                  requested: recognitionLanguage,
+                  supportedLocaleCount: locales.length,
+                });
+                callbacks.onError?.('language-not-supported');
+                finish();
+                return;
+              }
+            }
+          }
+        } catch (localeError) {
+          // Locale discovery is not available on every Android version/provider.
+          console.warn('[BadboyVoice] Could not query supported locales; trying selected locale', {
+            error: localeError instanceof Error ? localeError.message : String(localeError),
+          });
+        }
+
         const perm = await nativeModule.requestPermissionsAsync();
         if (!perm.granted) {
           callbacks.onError?.('permission-denied');
@@ -355,7 +433,7 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
         subscriptions.push(endSub);
 
         nativeModule.start({
-          lang: callbacks.lang ?? 'bn-BD',
+          lang: recognitionLanguage,
           interimResults: true,
           continuous: false,
           maxAlternatives: 1,

@@ -1,17 +1,10 @@
 name: Build Android APK
 
+# EAS Android builds have a monthly free-plan quota. Keep this workflow
+# manually triggerable so exhausted EAS quota does not fail every push/PR.
+# The free GitHub-hosted runner workflow builds the APK automatically instead.
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "artifacts/mobile/**"
-      - "functions/**"
-      - "wrangler.json"
-      - "artifacts/mobile/wrangler.json"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - ".github/workflows/android-apk.yml"
 
 jobs:
   build-apk:
