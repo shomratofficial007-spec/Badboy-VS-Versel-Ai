@@ -3,6 +3,9 @@ import test from 'node:test';
 import {
   containsWakePhrase,
   getVoiceErrorMessage,
+  getNextVoiceLanguage,
+  getVoiceLanguageLabel,
+  VOICE_LANGUAGES,
   isDictationAvailable,
   isReadAloudAvailable,
 } from './voice.ts';
@@ -49,4 +52,14 @@ test('voice errors map permission, recognition, network and service failures to 
 test('availability checks return booleans without throwing in the test runtime', () => {
   assert.equal(typeof isDictationAvailable(), 'boolean');
   assert.equal(typeof isReadAloudAvailable(), 'boolean');
+});
+
+test('voice language catalogue includes Bengali and English plus international locales', () => {
+  assert.ok(VOICE_LANGUAGES.length >= 50);
+  assert.equal(VOICE_LANGUAGES[0].code, 'bn-BD');
+  assert.ok(VOICE_LANGUAGES.some((language) => language.code === 'en-US'));
+  assert.ok(VOICE_LANGUAGES.some((language) => language.code === 'hi-IN'));
+  assert.equal(getVoiceLanguageLabel('bn-BD'), 'বাংলা (বাংলাদেশ)');
+  assert.equal(getNextVoiceLanguage('bn-BD'), 'bn-IN');
+  assert.equal(getNextVoiceLanguage('unknown-locale'), 'bn-BD');
 });
