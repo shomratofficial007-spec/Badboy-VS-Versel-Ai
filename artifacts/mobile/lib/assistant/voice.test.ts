@@ -41,7 +41,7 @@ test('voice errors map permission, recognition, network and service failures to 
     ['audio-capture', /মাইক্রোফোন ডিভাইসটি পাওয়া যায়নি/],
     ['unsupported', /সমর্থিত নয়/],
     ['recognition-service-not-available', /Speech Services by Google/],
-    ['start_failed', /ভয়েস চালু করা যায়নি/],
+    ['start_failed', /Android-এর Speech Recognition চালু হয়নি/],
     ['unknown_error_code', /ভয়েস ইনপুটে সমস্যা হয়েছে/],
   ];
   for (const [error, expected] of cases) {
