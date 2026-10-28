@@ -38,6 +38,81 @@ function getSpeechRecognitionModule() {
   }
 }
 
+/** Common speech-recognition/TTS locales. Actual availability depends on Android's installed speech provider. */
+export const VOICE_LANGUAGES = [
+  { code: 'bn-BD', label: 'বাংলা (বাংলাদেশ)' },
+  { code: 'bn-IN', label: 'বাংলা (ভারত)' },
+  { code: 'en-US', label: 'English (US)' },
+  { code: 'en-GB', label: 'English (UK)' },
+  { code: 'en-IN', label: 'English (India)' },
+  { code: 'en-AU', label: 'English (Australia)' },
+  { code: 'en-CA', label: 'English (Canada)' },
+  { code: 'es-ES', label: 'Español' },
+  { code: 'es-MX', label: 'Español (México)' },
+  { code: 'fr-FR', label: 'Français' },
+  { code: 'fr-CA', label: 'Français (Canada)' },
+  { code: 'de-DE', label: 'Deutsch' },
+  { code: 'it-IT', label: 'Italiano' },
+  { code: 'pt-BR', label: 'Português (Brasil)' },
+  { code: 'pt-PT', label: 'Português (Portugal)' },
+  { code: 'hi-IN', label: 'हिन्दी' },
+  { code: 'ur-PK', label: 'اردو' },
+  { code: 'ar-SA', label: 'العربية' },
+  { code: 'zh-CN', label: '中文 (简体)' },
+  { code: 'zh-TW', label: '中文 (繁體)' },
+  { code: 'yue-Hant-HK', label: '粵語' },
+  { code: 'ja-JP', label: '日本語' },
+  { code: 'ko-KR', label: '한국어' },
+  { code: 'ru-RU', label: 'Русский' },
+  { code: 'uk-UA', label: 'Українська' },
+  { code: 'tr-TR', label: 'Türkçe' },
+  { code: 'nl-NL', label: 'Nederlands' },
+  { code: 'sv-SE', label: 'Svenska' },
+  { code: 'no-NO', label: 'Norsk' },
+  { code: 'da-DK', label: 'Dansk' },
+  { code: 'fi-FI', label: 'Suomi' },
+  { code: 'pl-PL', label: 'Polski' },
+  { code: 'cs-CZ', label: 'Čeština' },
+  { code: 'sk-SK', label: 'Slovenčina' },
+  { code: 'hu-HU', label: 'Magyar' },
+  { code: 'ro-RO', label: 'Română' },
+  { code: 'bg-BG', label: 'Български' },
+  { code: 'el-GR', label: 'Ελληνικά' },
+  { code: 'he-IL', label: 'עברית' },
+  { code: 'fa-IR', label: 'فارسی' },
+  { code: 'id-ID', label: 'Bahasa Indonesia' },
+  { code: 'ms-MY', label: 'Bahasa Melayu' },
+  { code: 'th-TH', label: 'ไทย' },
+  { code: 'vi-VN', label: 'Tiếng Việt' },
+  { code: 'fil-PH', label: 'Filipino' },
+  { code: 'ta-IN', label: 'தமிழ்' },
+  { code: 'te-IN', label: 'తెలుగు' },
+  { code: 'mr-IN', label: 'मराठी' },
+  { code: 'gu-IN', label: 'ગુજરાતી' },
+  { code: 'pa-IN', label: 'ਪੰਜਾਬੀ' },
+  { code: 'sw-KE', label: 'Kiswahili' },
+  { code: 'af-ZA', label: 'Afrikaans' },
+  { code: 'ca-ES', label: 'Català' },
+  { code: 'eu-ES', label: 'Euskara' },
+  { code: 'hr-HR', label: 'Hrvatski' },
+  { code: 'sr-RS', label: 'Српски' },
+  { code: 'sl-SI', label: 'Slovenščina' },
+  { code: 'et-EE', label: 'Eesti' },
+  { code: 'lv-LV', label: 'Latviešu' },
+  { code: 'lt-LT', label: 'Lietuvių' },
+  { code: 'is-IS', label: 'Íslenska' },
+  { code: 'ga-IE', label: 'Gaeilge' },
+] as const;
+
+export function getVoiceLanguageLabel(code: string): string {
+  return VOICE_LANGUAGES.find((language) => language.code === code)?.label ?? code;
+}
+
+export function getNextVoiceLanguage(code: string): string {
+  const index = VOICE_LANGUAGES.findIndex((language) => language.code === code);
+  return VOICE_LANGUAGES[(index + 1) % VOICE_LANGUAGES.length].code;
+}
+
 interface SpeechCallbacks {
   onTranscript: (text: string, isFinal: boolean) => void;
   onError?: (errorType?: string) => void;
@@ -168,7 +243,7 @@ export function getVoiceErrorMessage(errorType?: string): string {
       return 'ভয়েস গ্রহণ ব্যবহারকারী দ্বারা বন্ধ করা হয়েছে।';
     case 'service-not-allowed':
     case 'language-not-supported':
-      return 'নির্বাচিত ভাষায় ভয়েস শনাক্ত করা যাচ্ছে না। Google Speech Services-এ বাংলা/ইংরেজি ভাষা সক্রিয় করে আবার চেষ্টা করুন।';
+      return 'এই ভাষায় Android-এর স্পিচ সার্ভিস সাড়া দেয়নি। Badboy-এর ভাষা বাটন থেকে অন্য ভাষা বেছে নিন; ফোনের Settings → Google → Voice বা Speech Services by Google-এ ভাষা ডাউনলোড/সক্রিয় করুন। সব ভাষা সব ফোনে উপলভ্য নয়।';
     case 'busy':
     case 'recognizer-busy':
       return 'ভয়েস সার্ভিস ব্যস্ত আছে। অন্য কোনো অ্যাপের মাইক্রোফোন ব্যবহার বন্ধ করে আবার চেষ্টা করুন।';
@@ -179,7 +254,7 @@ export function getVoiceErrorMessage(errorType?: string): string {
     case 'speech_error':
     case 'recognition-service-not-available':
     case 'service-not-available':
-      return 'ভয়েস চালু করা যায়নি। Android Settings থেকে Google app ও Speech Services by Google আপডেট/সক্রিয় করুন, Microphone অনুমতি দিন, তারপর অ্যাপটি আবার খুলুন।';
+      return 'Android-এর Speech Recognition চালু হয়নি। Microphone অনুমতি দিন; Google app ও Speech Services by Google সক্রিয়/আপডেট করুন, ইন্টারনেট পরীক্ষা করে ফোন পুনরায় চালু করুন। তারপরও না হলে ফোনের Speech Recognition provider-এ সমস্যা থাকতে পারে।';
     case 'unsupported':
     case 'not_supported':
       return 'এই ডিভাইসে বা ব্রাউজারে ভয়েস রিকগনিশন সমর্থিত নয়। Google Speech Services বা উপযুক্ত সার্ভিস ইনস্টল আছে কিনা যাচাই করুন।';
