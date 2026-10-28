@@ -340,6 +340,43 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
 
     const startNative = async () => {
       try {
+        // Ask Android's active speech provider which locales it actually supports.
+        // On Android 12 and older this API may be unavailable; in that case keep
+        // the selected locale and let the provider return its normal result/error.
+        let recognitionLanguage = callbacks.lang ?? 'bn-BD';
+        try {
+          if (typeof nativeModule.getSupportedLocales === 'function') {
+            const support = await nativeModule.getSupportedLocales({});
+            const locales: string[] = Array.isArray(support?.locales) ? support.locales : [];
+            if (locales.length > 0 && !locales.includes(recognitionLanguage)) {
+              const languageBase = recognitionLanguage.split('-')[0].toLowerCase();
+              const compatibleLocale =
+                locales.find((locale) => locale.toLowerCase() === languageBase) ??
+                locales.find((locale) => locale.split('-')[0].toLowerCase() === languageBase);
+              if (compatibleLocale) {
+                console.warn('[BadboyVoice] Selected locale unavailable; using supported variant', {
+                  requested: recognitionLanguage,
+                  selected: compatibleLocale,
+                });
+                recognitionLanguage = compatibleLocale;
+              } else {
+                console.error('[BadboyVoice] Selected language is not supported by the active provider', {
+                  requested: recognitionLanguage,
+                  supportedLocaleCount: locales.length,
+                });
+                callbacks.onError?.('language-not-supported');
+                finish();
+                return;
+              }
+            }
+          }
+        } catch (localeError) {
+          // Locale discovery is not available on every Android version/provider.
+          console.warn('[BadboyVoice] Could not query supported locales; trying selected locale', {
+            error: localeError instanceof Error ? localeError.message : String(localeError),
+          });
+        }
+
         const perm = await nativeModule.requestPermissionsAsync();
         if (!perm.granted) {
           callbacks.onError?.('permission-denied');
@@ -396,7 +433,7 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
         subscriptions.push(endSub);
 
         nativeModule.start({
-          lang: callbacks.lang ?? 'bn-BD',
+          lang: recognitionLanguage,
           interimResults: true,
           continuous: false,
           maxAlternatives: 1,
