@@ -143,7 +143,6 @@ export const VOICE_LANGUAGES = [
   { code: 'ig-NG', label: 'Igbo' },
   { code: 'zu-ZA', label: 'isiZulu' },
   { code: 'xh-ZA', label: 'isiXhosa' },
-  { code: 'bn-BD-x-local', label: 'বাংলা (স্থানীয় পরীক্ষা)' },
 ] as const;
 
 export function getVoiceLanguageLabel(code: string): string {
