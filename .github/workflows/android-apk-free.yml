@@ -61,7 +61,28 @@ jobs:
 
       - name: Build installable release APK with embedded JavaScript bundle
         working-directory: artifacts/mobile/android
-        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease
+        shell: bash
+        run: |
+          chmod +x gradlew
+          # Maven Central can intermittently time out while downloading large React Native AARs.
+          # Increase HTTP timeouts and retry transient dependency-download failures.
+          for attempt in 1 2 3; do
+            echo "Gradle release build attempt $attempt of 3"
+            if ./gradlew --no-daemon \\
+              -Dorg.gradle.internal.http.connectionTimeout=60000 \\
+              -Dorg.gradle.internal.http.socketTimeout=120000 \\
+              -Dorg.gradle.internal.repository.max.retries=5 \\
+              -Dorg.gradle.internal.repository.initial.backoff=1000 \\
+              assembleRelease; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Gradle build failed; waiting 20 seconds before retrying (dependency downloads may be transient)."
+              sleep 20
+            fi
+          done
+          echo "Gradle release build failed after 3 attempts. See the first dependency-resolution error above."
+          exit 1
 
       - name: Verify release APK exists
         run: test -s artifacts/mobile/android/app/build/outputs/apk/release/app-release.apk
