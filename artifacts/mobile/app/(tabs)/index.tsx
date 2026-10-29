@@ -1,4 +1,6 @@
 import { Feather } from '@expo/vector-icons';
+import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder } from 'expo-audio';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -26,7 +28,7 @@ import {
   isGeneralMusicRequest,
 } from '@/lib/assistant/youtube';
 import { useAssistant } from '@/context/AssistantContext';
-import { streamReply } from '@/lib/assistant/api';
+import { streamReply, transcribeVoiceAudio } from '@/lib/assistant/api';
 import {
   checkMicrophonePermission,
   dictateOnce,
@@ -67,6 +69,7 @@ export default function ChatScreen() {
   const [awaitingSongName, setAwaitingSongName] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const stopDictationRef = useRef<(() => void) | null>(null);
+  const onlineVoiceRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
   // Audio Visualizer Bar & Core Pulse Animations
   const barAnim1 = useRef(new Animated.Value(12)).current;
@@ -239,12 +242,57 @@ export default function ChatScreen() {
   }, [improving, messages, settings, updateSettings]);
 
   const toggleVoice = useCallback(async () => {
-    if (!isDictationAvailable()) {
-      setError('এই ডিভাইসে বা ব্রাউজারে ভয়েস রিকগনিশন সমর্থিত নয়।');
-      return;
-    }
     if (!settings.voiceProcessingConsent) {
       setError('ভয়েস ব্যবহারের জন্য Settings-এ Voice Consent সক্ষম করুন।');
+      return;
+    }
+
+    // Android Bengali uses online transcription because the installed native
+    // speech provider may not include Bengali. Audio is sent only after consent.
+    const useOnlineBengali = Platform.OS === 'android' && selectedLang.toLowerCase().startsWith('bn');
+    if (useOnlineBengali) {
+      if (listening) {
+        try {
+          await onlineVoiceRecorder.stop();
+          setListening(false);
+          const uri = onlineVoiceRecorder.uri;
+          if (!uri) throw new Error('রেকর্ডিং ফাইল পাওয়া যায়নি। আবার চেষ্টা করুন।');
+          setBusy(true);
+          const audioBase64 = await FileSystem.readAsStringAsync(uri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          const transcript = await transcribeVoiceAudio(audioBase64, 'audio/m4a', 'bn');
+          const combined = draft ? `${draft} ${transcript}`.trim() : transcript;
+          setDraft(combined.slice(0, 4000));
+          setError(null);
+        } catch (cause) {
+          setError(cause instanceof Error ? cause.message : 'অনলাইন বাংলা ভয়েস কাজ করেনি।');
+        } finally {
+          setBusy(false);
+          try { await setAudioModeAsync({ allowsRecording: false }); } catch { /* best effort */ }
+        }
+        return;
+      }
+
+      try {
+        const permission = await AudioModule.requestRecordingPermissionsAsync();
+        if (!permission.granted) {
+          setError(getVoiceErrorMessage('not-allowed'));
+          return;
+        }
+        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+        await onlineVoiceRecorder.prepareToRecordAsync();
+        onlineVoiceRecorder.record();
+        setError('রেকর্ডিং চলছে। কথা বলা শেষ হলে মাইক্রোফোনে আবার চাপ দিন—তখন অডিও সার্ভারে পাঠানো হবে।');
+        setListening(true);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : 'রেকর্ডিং শুরু করা যায়নি।');
+      }
+      return;
+    }
+
+    if (!isDictationAvailable()) {
+      setError('এই ডিভাইসে বা ব্রাউজারে ভয়েস রিকগনিশন সমর্থিত নয়।');
       return;
     }
     if (listening) {
@@ -270,18 +318,14 @@ export default function ChatScreen() {
         const combined = base ? `${base} ${text}`.trim() : text.trim();
         setDraft(combined.slice(0, 4000));
       },
-      onWakeWordDetected: () => {
-        setWakeDetected(true);
-      },
-      onError: (errType) => {
-        setError(getVoiceErrorMessage(errType));
-      },
+      onWakeWordDetected: () => setWakeDetected(true),
+      onError: (errType) => setError(getVoiceErrorMessage(errType)),
       onDone: () => {
         setListening(false);
         stopDictationRef.current = null;
       },
     });
-  }, [draft, listening, selectedLang, settings.voiceProcessingConsent]);
+  }, [draft, listening, onlineVoiceRecorder, selectedLang, settings.voiceProcessingConsent]);
 
   const toggleReadAloud = useCallback(() => {
     if (speaking) {
