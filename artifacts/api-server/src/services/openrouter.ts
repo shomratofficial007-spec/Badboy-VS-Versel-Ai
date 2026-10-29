@@ -22,10 +22,24 @@ export function isOpenRouterConfigured() {
   return Boolean(process.env.OPENROUTER_API_KEY?.trim());
 }
 
+function statusFromError(error: unknown): number {
+  if (!error || typeof error !== "object") return 502;
+  const value = error as {
+    statusCode?: unknown;
+    status?: unknown;
+    response?: { status?: unknown };
+  };
+  const candidate =
+    value.statusCode ?? value.status ?? value.response?.status;
+  return typeof candidate === "number" && candidate >= 400 && candidate <= 599
+    ? candidate
+    : 502;
+}
+
 /**
- * Streams model output through the Vercel AI SDK instead of maintaining a
- * project-specific OpenRouter SSE parser. The existing route contract remains
- * an AsyncIterable<string>, so clients do not need to change.
+ * Uses the Vercel AI SDK to stream OpenRouter output while preserving the
+ * existing AsyncIterable<string> route contract. Errors may occur while the
+ * stream is consumed, so translate them inside the generator as well.
  */
 export async function streamOpenRouterReply(
   messages: OpenRouterMessage[],
@@ -33,6 +47,7 @@ export async function streamOpenRouterReply(
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
   if (!apiKey) throw new OpenRouterApiError(503);
 
+  let textStream: AsyncIterable<string>;
   try {
     const openrouter = createOpenRouter({ apiKey });
     const result = streamText({
@@ -40,9 +55,19 @@ export async function streamOpenRouterReply(
       messages,
       maxOutputTokens: 8192,
     });
-
-    return result.textStream;
-  } catch {
-    throw new OpenRouterApiError(502);
+    textStream = result.textStream;
+  } catch (error) {
+    throw new OpenRouterApiError(statusFromError(error));
   }
+
+  async function* translateStreamErrors(): AsyncGenerator<string> {
+    try {
+      for await (const chunk of textStream) yield chunk;
+    } catch (error) {
+      if (error instanceof OpenRouterApiError) throw error;
+      throw new OpenRouterApiError(statusFromError(error));
+    }
+  }
+
+  return translateStreamErrors();
 }
