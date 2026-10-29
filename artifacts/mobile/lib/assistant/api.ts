@@ -1,8 +1,10 @@
 import { fetch as expoFetch } from 'expo/fetch';
 import type { AssistantSettings } from '@/lib/assistant/types';
 
+// This repository deploys its own Worker; do not send native APK traffic to the
+// unrelated legacy Voice-Memory-Assistant Worker.
 const DEFAULT_NATIVE_API_DOMAIN =
-  'https://voice-memory-assistant-net.shomratofficial007.workers.dev';
+  'https://badboy-vs-versel-ai.shomratofficial007.workers.dev';
 
 function apiUrl(path: string) {
   // Web deployments use their own same-origin API routes.
@@ -15,7 +17,7 @@ function apiUrl(path: string) {
   }
 
   // Native APKs have no window origin. Prefer an explicitly configured domain,
-  // otherwise use the confirmed Cloudflare Worker production URL.
+  // otherwise use this repository's Worker (wrangler.json name: badboy-vs-versel-ai).
   const domain =
     process.env.EXPO_PUBLIC_DOMAIN?.trim() || DEFAULT_NATIVE_API_DOMAIN;
   const baseUrl = domain.startsWith('http') ? domain : `https://${domain}`;
