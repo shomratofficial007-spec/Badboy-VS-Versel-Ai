@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getTranscriptionLanguageCode } from './transcriptionLanguage.ts';
+import { getTranscriptionLanguageCode } from './transcriptionLanguage';
 
 test('transcription language uses the selected locale base language', () => {
   assert.equal(getTranscriptionLanguageCode('bn-BD'), 'bn');
