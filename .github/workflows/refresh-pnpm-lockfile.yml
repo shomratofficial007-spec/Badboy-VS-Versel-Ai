@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Check out selected branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
@@ -20,16 +22,18 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 10.8.1
-      - name: Regenerate lockfile from workspace manifests
-        run: pnpm install --lockfile-only --no-frozen-lockfile
+      - name: Regenerate lockfile from all workspace manifests
+        run: pnpm install --lockfile-only --no-frozen-lockfile --force
+      - name: Verify lockfile matches package manifests
+        run: pnpm install --lockfile-only --frozen-lockfile
       - name: Commit refreshed lockfile
         run: |
           if git diff --quiet -- pnpm-lock.yaml; then
-            echo "pnpm-lock.yaml is already up to date."
-            exit 0
+            echo "pnpm-lock.yaml has no changes after regeneration."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add pnpm-lock.yaml
+            git commit -m "fix: refresh pnpm lockfile for AI SDK dependencies"
+            git push
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add pnpm-lock.yaml
-          git commit -m "fix: refresh pnpm lockfile for AI SDK dependencies"
-          git push
