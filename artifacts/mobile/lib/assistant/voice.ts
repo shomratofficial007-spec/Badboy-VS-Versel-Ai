@@ -536,8 +536,13 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
   };
 
   recognition.onerror = (evt) => {
+    const errorType = evt?.error ?? 'speech_error';
+    // Chrome may emit "aborted" when recognition is stopped as part of normal
+    // cleanup/watchdog handling. Do not report that as a user-cancelled action.
+    if (finished) return;
     finish();
-    callbacks.onError?.(evt?.error ?? 'speech_error');
+    if (errorType === 'aborted') return;
+    callbacks.onError?.(errorType);
   };
 
   recognition.onend = () => finish();
