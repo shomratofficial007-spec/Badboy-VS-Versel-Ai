@@ -179,7 +179,11 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     return jsonResponse({ error: "Endpoint not found." }, 404);
   }
 
-  if (request.method === "POST" && pathname === "/api/assistant/transcribe") {\n    return handleTranscriptionRequest(request, env);\n  }\n\n  if (request.method !== "POST" || pathname !== "/api/assistant/chat") {
+  if (request.method === "POST" && pathname === "/api/assistant/transcribe") {
+    return handleTranscriptionRequest(request, env);
+  }
+
+  if (request.method !== "POST" || pathname !== "/api/assistant/chat") {
     return jsonResponse({ error: "Endpoint not found." }, 404);
   }
 
