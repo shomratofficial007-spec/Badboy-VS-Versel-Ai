@@ -569,10 +569,23 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
   };
 }
 
+export interface SpeechLifecycleCallbacks {
+  onStart?: () => void;
+  onDone?: () => void;
+  onError?: (error: unknown) => void;
+}
+
 /** Speak text through the device's native TTS engine or browser local voices. */
-export function speak(text: string, lang = 'bn-BD'): void {
+export function speak(
+  text: string,
+  lang = 'bn-BD',
+  callbacks: SpeechLifecycleCallbacks = {},
+): boolean {
   const clean = text.trim().slice(0, 4000);
-  if (!clean) return;
+  if (!clean) {
+    callbacks.onError?.(new Error('পড়ে শোনানোর মতো কোনো লেখা নেই।'));
+    return false;
+  }
 
   stopSpeaking();
 
@@ -584,10 +597,18 @@ export function speak(text: string, lang = 'bn-BD'): void {
         language: lang,
         pitch: 1.0,
         rate: 1.0,
+        onStart: () => callbacks.onStart?.(),
+        onDone: () => callbacks.onDone?.(),
+        onStopped: () => callbacks.onDone?.(),
+        onError: (error: unknown) => callbacks.onError?.(error),
       });
-      return;
-    } catch {
-      // Fallback
+      return true;
+    } catch (error) {
+      // If native TTS cannot start, try the browser fallback only when available.
+      if (!(typeof window !== 'undefined' && 'speechSynthesis' in window)) {
+        callbacks.onError?.(error);
+        return false;
+      }
     }
   }
 
@@ -595,11 +616,21 @@ export function speak(text: string, lang = 'bn-BD'): void {
     try {
       const utterance = new SpeechSynthesisUtterance(clean);
       utterance.lang = lang;
+      utterance.onstart = () => callbacks.onStart?.();
+      utterance.onend = () => callbacks.onDone?.();
+      utterance.onerror = (event) => callbacks.onError?.(
+        new Error(`ব্রাউজারের TTS ব্যর্থ হয়েছে: ${event.error || 'unknown error'}`),
+      );
       window.speechSynthesis.speak(utterance);
-    } catch {
-      // Ignore
+      return true;
+    } catch (error) {
+      callbacks.onError?.(error);
+      return false;
     }
   }
+
+  callbacks.onError?.(new Error('এই ডিভাইসে TTS ইঞ্জিন উপলব্ধ নেই।'));
+  return false;
 }
 
 export function stopSpeaking(): void {
