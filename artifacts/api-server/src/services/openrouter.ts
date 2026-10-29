@@ -1,7 +1,7 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { streamText } from "ai";
 
-export const OPENROUTER_MODEL_ID = "nvidia/nemotron-3.5-lightning:free";
+export const OPENROUTER_MODEL_ID = "cohere/north-mini-code:free";
 
 export type OpenRouterMessage = {
   role: "system" | "user" | "assistant";
