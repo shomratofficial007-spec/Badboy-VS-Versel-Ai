@@ -203,14 +203,18 @@ export default function ChatScreen() {
       );
     } finally {
       if (voiceMode && answer.content.trim()) {
-        setSpeaking(true);
-        speak(answer.content, selectedLang);
-        const estimatedDuration = Math.max(2500, Math.min(30000, answer.content.length * 65));
-        setTimeout(() => setSpeaking(false), estimatedDuration);
+        speak(answer.content, selectedLang, {
+          onStart: () => setSpeaking(true),
+          onDone: () => setSpeaking(false),
+          onError: () => {
+            setSpeaking(false);
+            setError('উত্তরটি শোনানো যায়নি। ফোনের Text-to-Speech সেটিংস পরীক্ষা করে আবার চেষ্টা করুন।');
+          },
+        });
       }
       setBusy(false);
     }
-  }, [awaitingSongName, busy, messages, selectedLang, setMessages, settings, voiceMode]);
+  }, [awaitingSongName, busy, messages, selectedLang, setError, setMessages, settings, voiceMode]);
 
   const requestImprovement = useCallback(async () => {
     const lastUserMessage = [...messages].reverse().find((item) => item.role === 'user');
@@ -396,10 +400,15 @@ export default function ChatScreen() {
       return;
     }
     setError(null);
-    setSpeaking(true);
-    speak(lastAssistant.content, selectedLang);
-    setTimeout(() => setSpeaking(false), 2000);
-  }, [messages, speaking]);
+    speak(lastAssistant.content, selectedLang, {
+      onStart: () => setSpeaking(true),
+      onDone: () => setSpeaking(false),
+      onError: () => {
+        setSpeaking(false);
+        setError('বার্তাটি শোনানো যায়নি। ফোনের Text-to-Speech সেটিংস পরীক্ষা করে আবার চেষ্টা করুন।');
+      },
+    });
+  }, [messages, selectedLang, setError, speaking]);
 
   const startNewChat = () => {
     if (!messages.length) {
