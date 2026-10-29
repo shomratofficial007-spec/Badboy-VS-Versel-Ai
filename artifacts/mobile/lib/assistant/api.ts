@@ -78,6 +78,14 @@ export async function streamReply(
 }
 
 
+/** Convert a selected locale (for example, bn-BD or hi-IN) to the ISO-639-1
+ * language code expected by the transcription API. Unknown locales fall back to English.
+ */
+export function getTranscriptionLanguageCode(language: string): string {
+  const languageCode = language.trim().toLowerCase().split(/[-_]/, 1)[0] ?? '';
+  return /^[a-z]{2}$/.test(languageCode) ? languageCode : 'en';
+}
+
 export async function transcribeAudio(
   audioBase64: string,
   format: string,
@@ -90,7 +98,7 @@ export async function transcribeAudio(
       audioBase64,
       format,
       // OpenRouter expects ISO-639-1 language codes when provided.
-      language: language.toLowerCase().startsWith('bn') ? 'bn' : 'en',
+      language: getTranscriptionLanguageCode(language),
     }),
   });
 
