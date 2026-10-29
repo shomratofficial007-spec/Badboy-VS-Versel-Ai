@@ -26,7 +26,7 @@ import {
   isGeneralMusicRequest,
 } from '@/lib/assistant/youtube';
 import { useAssistant } from '@/context/AssistantContext';
-import { streamReply } from '@/lib/assistant/api';
+import { streamReply, transcribeAudio } from '@/lib/assistant/api';
 import {
   checkMicrophonePermission,
   dictateOnce,
@@ -246,8 +246,13 @@ export default function ChatScreen() {
   }, [improving, messages, settings, updateSettings]);
 
   const toggleVoice = useCallback(async () => {
-    if (!isDictationAvailable()) {
-      setError('এই ডিভাইসে বা ব্রাউজারে ভয়েস রিকগনিশন সমর্থিত নয়।');
+    const browserRecordingAvailable =
+      Platform.OS === 'web' &&
+      typeof navigator !== 'undefined' &&
+      Boolean(navigator.mediaDevices?.getUserMedia) &&
+      typeof MediaRecorder !== 'undefined';
+    if (!isDictationAvailable() && !browserRecordingAvailable) {
+      setError('এই ডিভাইসে বা ব্রাউজারে ভয়েস ইনপুট সমর্থিত নয়।');
       return;
     }
     if (!settings.voiceProcessingConsent) {
@@ -271,6 +276,84 @@ export default function ChatScreen() {
     setListening(true);
     setWakeDetected(false);
     const base = draft;
+
+    // Chrome/web uses recorded audio + server transcription instead of the
+    // unreliable Web Speech API. Native Android continues using its existing recognizer.
+    if (Platform.OS === 'web' && browserRecordingAvailable) {
+      let recorder: MediaRecorder | null = null;
+      let stream: MediaStream | null = null;
+      let stoppedByUser = false;
+      const chunks: BlobPart[] = [];
+      const stopTracks = () => stream?.getTracks().forEach((track) => track.stop());
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const preferredMime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg']
+          .find((mime) => MediaRecorder.isTypeSupported(mime));
+        recorder = preferredMime
+          ? new MediaRecorder(stream, { mimeType: preferredMime })
+          : new MediaRecorder(stream);
+        recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) chunks.push(event.data);
+        };
+        recorder.onerror = () => {
+          stopTracks();
+          setError('মাইক্রোফোন থেকে অডিও নেওয়া যায়নি। আবার চেষ্টা করুন।');
+          setListening(false);
+          stopDictationRef.current = null;
+        };
+        recorder.onstop = async () => {
+          stopTracks();
+          if (!stoppedByUser) {
+            setListening(false);
+            stopDictationRef.current = null;
+            return;
+          }
+          try {
+            const blob = new Blob(chunks, { type: recorder?.mimeType || 'audio/webm' });
+            if (!blob.size) throw new Error('কোনো অডিও রেকর্ড হয়নি। আবার চেষ্টা করুন।');
+            if (blob.size > 4_000_000) throw new Error('রেকর্ডিং বেশি বড়। ৩০ সেকেন্ডের মধ্যে কথা বলে আবার চেষ্টা করুন।');
+            const mime = (blob.type || 'audio/webm').toLowerCase();
+            const format = mime.includes('ogg') ? 'ogg' : mime.includes('mp4') ? 'm4a' : 'webm';
+            const base64 = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onerror = () => reject(new Error('অডিও পড়া যায়নি। আবার চেষ্টা করুন।'));
+              reader.onloadend = () => {
+                const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+                const comma = dataUrl.indexOf(',');
+                if (comma < 0) reject(new Error('অডিও ডেটা প্রস্তুত করা যায়নি।'));
+                else resolve(dataUrl.slice(comma + 1));
+              };
+              reader.readAsDataURL(blob);
+            });
+            const transcript = await transcribeAudio(base64, format, selectedLang);
+            const combined = base ? `${base} ${transcript}`.trim() : transcript;
+            setDraft(combined.slice(0, 4000));
+            if (voiceMode && transcript.trim()) {
+              setTimeout(() => { void sendMessage(transcript.trim().slice(0, 4000)); }, 0);
+            }
+          } catch (cause) {
+            setError(cause instanceof Error ? cause.message : 'ভয়েস লেখা তৈরি করা যায়নি। আবার চেষ্টা করুন।');
+          } finally {
+            setListening(false);
+            stopDictationRef.current = null;
+          }
+        };
+        recorder.start();
+        stopDictationRef.current = () => {
+          if (!recorder || recorder.state === 'inactive') return;
+          stoppedByUser = true;
+          recorder.stop();
+        };
+        return;
+      } catch (cause) {
+        stopTracks();
+        setListening(false);
+        stopDictationRef.current = null;
+        setError(cause instanceof Error ? cause.message : getVoiceErrorMessage('audio-capture'));
+        return;
+      }
+    }
+
     stopDictationRef.current = dictateOnce({
       lang: selectedLang,
       onTranscript: (text, isFinal) => {
