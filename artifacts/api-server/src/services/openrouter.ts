@@ -37,6 +37,25 @@ function statusFromError(error: unknown): number {
 }
 
 /**
+ * Reasoning is opt-in because not every OpenRouter model supports it.
+ * Set OPENROUTER_REASONING_EFFORT to low, medium, or high only when using a
+ * model that supports OpenRouter reasoning. The default free Cohere model
+ * remains unchanged and receives no reasoning option by default.
+ */
+function getReasoningProviderOptions() {
+  const effort = process.env.OPENROUTER_REASONING_EFFORT?.trim().toLowerCase();
+  if (effort !== "low" && effort !== "medium" && effort !== "high") {
+    return undefined;
+  }
+
+  return {
+    openrouter: {
+      reasoning: { effort },
+    },
+  };
+}
+
+/**
  * Uses the Vercel AI SDK to stream OpenRouter output while preserving the
  * existing AsyncIterable<string> route contract. Errors may occur while the
  * stream is consumed, so translate them inside the generator as well.
@@ -54,6 +73,7 @@ export async function streamOpenRouterReply(
       model: openrouter(OPENROUTER_MODEL_ID),
       messages,
       maxOutputTokens: 8192,
+      providerOptions: getReasoningProviderOptions(),
     });
     textStream = result.textStream;
   } catch (error) {
