@@ -1,6 +1,14 @@
 name: Refresh pnpm lockfile
 
 on:
+  push:
+    branches: [feat/vercel-ai-sdk-core]
+    paths:
+      - "artifacts/**/package.json"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/refresh-pnpm-lockfile.yml"
   workflow_dispatch:
 
 permissions:
@@ -22,7 +30,7 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 10.8.1
-      - name: Regenerate lockfile from all workspace manifests
+      - name: Regenerate lockfile from workspace manifests
         run: pnpm install --lockfile-only --no-frozen-lockfile --force
       - name: Verify lockfile matches package manifests
         run: pnpm install --lockfile-only --frozen-lockfile
