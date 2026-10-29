@@ -589,6 +589,42 @@ export function speak(
 
   stopSpeaking();
 
+  let settled = false;
+  let lifecycleTimer: ReturnType<typeof setTimeout> | null = null;
+  const clearLifecycleTimer = () => {
+    if (lifecycleTimer) clearTimeout(lifecycleTimer);
+    lifecycleTimer = null;
+  };
+  const fail = (error: unknown) => {
+    if (settled) return;
+    settled = true;
+    clearLifecycleTimer();
+    callbacks.onError?.(error);
+  };
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    clearLifecycleTimer();
+    callbacks.onDone?.();
+  };
+  const started = () => {
+    if (settled) return;
+    clearLifecycleTimer();
+    callbacks.onStart?.();
+    // Guard against a provider that starts speaking but never emits completion.
+    lifecycleTimer = setTimeout(
+      () => fail(new Error('কথা বলা শেষ হওয়ার সংকেত পাওয়া যায়নি। আবার চেষ্টা করুন।')),
+      120_000,
+    );
+  };
+
+  // Some Android speech providers fail to emit onStart; surface that instead of
+  // silently leaving the read-aloud action in an indeterminate state.
+  lifecycleTimer = setTimeout(
+    () => fail(new Error('Text-to-Speech চালু হয়নি। ফোনের TTS সেটিংস পরীক্ষা করুন।')),
+    10_000,
+  );
+
   const os = getPlatformOS();
   const speechModule = getSpeechModule();
   if (os !== 'web' && os !== 'node' && speechModule) {
@@ -597,16 +633,16 @@ export function speak(
         language: lang,
         pitch: 1.0,
         rate: 1.0,
-        onStart: () => callbacks.onStart?.(),
-        onDone: () => callbacks.onDone?.(),
-        onStopped: () => callbacks.onDone?.(),
-        onError: (error: unknown) => callbacks.onError?.(error),
+        onStart: started,
+        onDone: finish,
+        onStopped: finish,
+        onError: (error: unknown) => fail(error),
       });
       return true;
     } catch (error) {
       // If native TTS cannot start, try the browser fallback only when available.
       if (!(typeof window !== 'undefined' && 'speechSynthesis' in window)) {
-        callbacks.onError?.(error);
+        fail(error);
         return false;
       }
     }
@@ -616,20 +652,20 @@ export function speak(
     try {
       const utterance = new SpeechSynthesisUtterance(clean);
       utterance.lang = lang;
-      utterance.onstart = () => callbacks.onStart?.();
-      utterance.onend = () => callbacks.onDone?.();
-      utterance.onerror = (event) => callbacks.onError?.(
+      utterance.onstart = started;
+      utterance.onend = finish;
+      utterance.onerror = (event) => fail(
         new Error(`ব্রাউজারের TTS ব্যর্থ হয়েছে: ${event.error || 'unknown error'}`),
       );
       window.speechSynthesis.speak(utterance);
       return true;
     } catch (error) {
-      callbacks.onError?.(error);
+      fail(error);
       return false;
     }
   }
 
-  callbacks.onError?.(new Error('এই ডিভাইসে TTS ইঞ্জিন উপলব্ধ নেই।'));
+  fail(new Error('এই ডিভাইসে TTS ইঞ্জিন উপলব্ধ নেই।'));
   return false;
 }
 
