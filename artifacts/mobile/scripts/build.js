@@ -64,7 +64,7 @@ if (!isReplitEnvironment) {
           fs.copyFileSync(compiledJS, targetWorker);
           // Keep the Pages Functions bundle available for Pages builds, but prevent
           // Workers Assets from publishing it as a public static file.
-          fs.writeFileSync(path.join(projectRoot, 'dist', '.assetsignore'), '_worker.js\\n');
+          fs.writeFileSync(path.join(projectRoot, 'dist', '.assetsignore'), '_worker.js\n');
           fs.rmSync(tempDir, { recursive: true, force: true });
           console.log('Successfully bundled Cloudflare Pages worker at dist/_worker.js');
           process.exitCode = 0;
