@@ -200,10 +200,10 @@ export function isDictationAvailable(): boolean {
   if (os !== 'web' && os !== 'node') {
     return nativeModule?.isRecognitionAvailable?.() ?? false;
   }
-  return (
-    (nativeModule?.isRecognitionAvailable?.() ?? false) ||
-    recognitionConstructor() !== null
-  );
+  // Web builds must use the browser's Web Speech API. An Expo native module
+  // may be bundled in the web app but cannot provide a working browser recognizer.
+  if (os === 'web') return recognitionConstructor() !== null;
+  return (nativeModule?.isRecognitionAvailable?.() ?? false) || recognitionConstructor() !== null;
 }
 
 export function isReadAloudAvailable(): boolean {
@@ -332,7 +332,9 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
     }, 15000);
   };
   const nativeModule = getSpeechRecognitionModule();
-  const useNative = (os !== 'web' && os !== 'node' && nativeModule) || Boolean(nativeModule?.isRecognitionAvailable?.());
+  // Never route browser sessions through the Expo native module, even if it
+  // reports availability in a web bundle. Chrome must use Web Speech API.
+  const useNative = os !== 'web' && os !== 'node' && Boolean(nativeModule);
 
   if (useNative && nativeModule) {
     let finished = false;
