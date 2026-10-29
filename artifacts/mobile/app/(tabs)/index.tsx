@@ -253,12 +253,20 @@ export default function ChatScreen() {
     const useOnlineTranscription = Platform.OS === 'android' && (onlineLanguage === 'bn' || onlineLanguage === 'en');
     if (useOnlineTranscription) {
       if (listening) {
+        // Clear the recording indicator immediately so a slow native stop() call
+        // cannot leave the microphone button spinning forever.
+        setListening(false);
+        setBusy(true);
+        setError(null);
         try {
-          await onlineVoiceRecorder.stop();
-          setListening(false);
+          await Promise.race([
+            onlineVoiceRecorder.stop(),
+            new Promise<never>((_, reject) => {
+              setTimeout(() => reject(new Error('রেকর্ডিং বন্ধ হতে দেরি হচ্ছে। আবার মাইক্রোফোন চাপুন।')), 12000);
+            }),
+          ]);
           const uri = onlineVoiceRecorder.uri;
           if (!uri) throw new Error('রেকর্ডিং ফাইল পাওয়া যায়নি। আবার চেষ্টা করুন।');
-          setBusy(true);
           const audioBase64 = await FileSystem.readAsStringAsync(uri, {
             encoding: FileSystem.EncodingType.Base64,
           });
