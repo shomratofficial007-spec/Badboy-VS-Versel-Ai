@@ -1,6 +1,6 @@
 import { fetch as expoFetch } from 'expo/fetch';
 import type { AssistantSettings } from '@/lib/assistant/types';
-import { getTranscriptionLanguageCode } from './transcriptionLanguage.ts';
+import { getTranscriptionLanguageCode } from './transcriptionLanguage';
 
 // This repository deploys its own Worker; do not send native APK traffic to the
 // unrelated legacy Voice-Memory-Assistant Worker.
