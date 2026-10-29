@@ -59,6 +59,100 @@ function extractDeltas(event: string): { texts: string[]; done: boolean } {
   return { texts, done };
 }
 
+
+async function handleTranscriptionRequest(request: Request, env: Env): Promise<Response> {
+  const apiKey = env.OPENROUTER_API_KEY?.trim() || "";
+  if (!apiKey) {
+    return jsonResponse({
+      code: "AI_NOT_CONFIGURED",
+      error: "OpenRouter speech transcription is not configured on the server.",
+    }, 503);
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: "Invalid transcription request body." }, 400);
+  }
+
+  const payload = (body ?? {}) as {
+    audioBase64?: unknown;
+    format?: unknown;
+    language?: unknown;
+  };
+  const allowedFormats = new Set(["wav", "mp3", "flac", "m4a", "ogg", "webm", "aac"]);
+  if (
+    typeof payload.audioBase64 !== "string" ||
+    payload.audioBase64.length === 0 ||
+    payload.audioBase64.length > 6_000_000 ||
+    typeof payload.format !== "string" ||
+    !allowedFormats.has(payload.format.toLowerCase()) ||
+    (payload.language !== undefined && typeof payload.language !== "string")
+  ) {
+    return jsonResponse({
+      error: "Invalid audio payload. Send audioBase64, a supported format, and optional language.",
+    }, 400);
+  }
+
+  // Accept raw base64 only; data: URLs are deliberately rejected to avoid format ambiguity.
+  const audioBase64 = payload.audioBase64.trim();
+  if (audioBase64.startsWith("data:") || !/^[A-Za-z0-9+/]+={0,2}$/.test(audioBase64)) {
+    return jsonResponse({ error: "Audio must be raw base64 data, without a data-URL prefix." }, 400);
+  }
+
+  try {
+    const upstream = await fetch(`${OPENROUTER_BASE_URL}/audio/transcriptions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "X-Title": "Badboy Voice Memory Assistant",
+      },
+      body: JSON.stringify({
+        model: "openai/whisper-1",
+        input_audio: {
+          data: audioBase64,
+          format: payload.format.toLowerCase(),
+        },
+        ...(typeof payload.language === "string" && payload.language.trim()
+          ? { language: payload.language.trim().slice(0, 12) }
+          : {}),
+      }),
+    });
+
+    if (upstream.status === 429) {
+      return jsonResponse({
+        code: "OPENROUTER_RATE_LIMIT",
+        error: "Speech transcription rate limit reached. Please wait and try again.",
+      }, 429);
+    }
+
+    if (!upstream.ok) {
+      console.error(`[CF Function Error] OpenRouter transcription returned status ${upstream.status}.`);
+      return jsonResponse({
+        code: "TRANSCRIPTION_UPSTREAM_FAILED",
+        error: `Speech transcription failed (HTTP ${upstream.status}). Try again later.`,
+      }, 502);
+    }
+
+    const result = await upstream.json() as { text?: unknown; usage?: unknown };
+    if (typeof result.text !== "string") {
+      return jsonResponse({ code: "TRANSCRIPTION_EMPTY", error: "No transcript was returned." }, 502);
+    }
+    return jsonResponse({
+      text: result.text,
+      ...(result.usage !== undefined ? { usage: result.usage } : {}),
+    });
+  } catch (err) {
+    console.error("[CF Function Error] Transcription request failed:", err instanceof Error ? err.message : String(err));
+    return jsonResponse({
+      code: "TRANSCRIPTION_REQUEST_FAILED",
+      error: "Could not reach the speech transcription service. Check the internet and try again.",
+    }, 502);
+  }
+}
+
 export async function handleApiRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const rawPathname = url.pathname.replace(/\/+$/, "");
@@ -85,7 +179,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     return jsonResponse({ error: "Endpoint not found." }, 404);
   }
 
-  if (request.method !== "POST" || pathname !== "/api/assistant/chat") {
+  if (request.method === "POST" && pathname === "/api/assistant/transcribe") {\n    return handleTranscriptionRequest(request, env);\n  }\n\n  if (request.method !== "POST" || pathname !== "/api/assistant/chat") {
     return jsonResponse({ error: "Endpoint not found." }, 404);
   }
 
