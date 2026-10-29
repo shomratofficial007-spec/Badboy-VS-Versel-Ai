@@ -315,6 +315,22 @@ export function getVoiceErrorMessage(errorType?: string): string {
 /** Start one dictation turn with wake-phrase detection and error handling. Returns a cancel function. */
 export function dictateOnce(callbacks: SpeechCallbacks): () => void {
   const os = getPlatformOS();
+  // Watchdog for speech providers that never emit `end`, which otherwise leaves
+  // the microphone spinner active indefinitely. Reset while transcript activity arrives.
+  let watchdog: ReturnType<typeof setTimeout> | null = null;
+  const clearWatchdog = () => {
+    if (watchdog) clearTimeout(watchdog);
+    watchdog = null;
+  };
+  const resetWatchdog = (stop: () => void, cleanup?: () => void, finish?: () => void) => {
+    clearWatchdog();
+    watchdog = setTimeout(() => {
+      try { stop(); } catch { /* recognizer may already be stopped */ }
+      cleanup?.();
+      callbacks.onError?.('no-speech');
+      finish?.();
+    }, 15000);
+  };
   const nativeModule = getSpeechRecognitionModule();
   const useNative = (os !== 'web' && os !== 'node' && nativeModule) || Boolean(nativeModule?.isRecognitionAvailable?.());
 
@@ -323,6 +339,7 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
     const finish = () => {
       if (finished) return;
       finished = true;
+      clearWatchdog();
       callbacks.onDone?.();
     };
 
@@ -391,6 +408,7 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
             if (!results.length) return;
             const transcript = results[0]?.transcript ?? '';
             const isFinal = event.isFinal ?? false;
+            if (transcript) resetWatchdog(() => nativeModule.abort(), cleanup, finish);
 
             if (transcript) {
               if (containsWakePhrase(transcript)) {
@@ -432,6 +450,7 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
         });
         subscriptions.push(endSub);
 
+        resetWatchdog(() => nativeModule.abort(), cleanup, finish);
         nativeModule.start({
           lang: recognitionLanguage,
           interimResults: true,
@@ -480,6 +499,7 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
   const finish = () => {
     if (finished) return;
     finished = true;
+    clearWatchdog();
     callbacks.onDone?.();
   };
 
@@ -494,6 +514,7 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
       else interimText += transcript;
     }
     const combined = `${finalText}${interimText}`.trim();
+    if (combined) resetWatchdog(() => recognition.abort(), undefined, finish);
 
     if (combined) {
       if (containsWakePhrase(combined)) {
@@ -520,6 +541,7 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
   recognition.onend = () => finish();
 
   try {
+    resetWatchdog(() => recognition.abort(), undefined, finish);
     recognition.start();
   } catch (cause) {
     console.error('[BadboyVoice] Web speech-recognition start failed', {
