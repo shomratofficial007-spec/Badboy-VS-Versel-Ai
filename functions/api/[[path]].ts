@@ -6,6 +6,7 @@ const OPENROUTER_MODEL_ID = "nvidia/nemotron-3.5-lightning:free";
 
 interface Env {
   OPENROUTER_API_KEY?: string;
+  OPENAI_API_KEY?: string;
 }
 
 const CORS_HEADERS = {
@@ -83,6 +84,60 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
       );
     }
     return jsonResponse({ error: "Endpoint not found." }, 404);
+  }
+
+  if (request.method === "POST" && pathname === "/api/assistant/voice") {
+    const apiKey = env.OPENAI_API_KEY?.trim();
+    if (!apiKey) {
+      return jsonResponse({
+        code: "VOICE_API_NOT_CONFIGURED",
+        error: "Online Bengali voice is not configured yet. Add OPENAI_API_KEY as a server-side secret.",
+      }, 503);
+    }
+
+    let voiceBody: unknown;
+    try {
+      voiceBody = await request.json();
+    } catch {
+      return jsonResponse({ error: "Invalid voice request body." }, 400);
+    }
+    const { audioBase64, mimeType = "audio/m4a", language = "bn" } = (voiceBody ?? {}) as {
+      audioBase64?: unknown; mimeType?: unknown; language?: unknown;
+    };
+    if (typeof audioBase64 !== "string" || !audioBase64.length || audioBase64.length > 14_000_000 ||
+        typeof mimeType !== "string" || !/^audio\/[a-z0-9.+-]+$/i.test(mimeType) ||
+        typeof language !== "string" || !/^(bn|en)(-[A-Za-z]{2,8})?$/i.test(language)) {
+      return jsonResponse({ error: "Invalid audio payload. Record a short voice message and try again." }, 400);
+    }
+
+    try {
+      const bytes = Uint8Array.from(atob(audioBase64), (char) => char.charCodeAt(0));
+      const extension = mimeType.includes("webm") ? "webm" : mimeType.includes("wav") ? "wav" : mimeType.includes("mpeg") ? "mp3" : "m4a";
+      const form = new FormData();
+      form.append("file", new Blob([bytes], { type: mimeType }), `voice.${extension}`);
+      form.append("model", "gpt-4o-mini-transcribe");
+      form.append("language", language.toLowerCase().startsWith("bn") ? "bn" : "en");
+      const upstream = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: form,
+      });
+      if (!upstream.ok) {
+        console.error("[CF Voice] Transcription provider returned status", upstream.status);
+        return jsonResponse({
+          code: upstream.status === 429 ? "VOICE_RATE_LIMIT" : "VOICE_TRANSCRIPTION_FAILED",
+          error: upstream.status === 429 ? "Voice service limit reached. Try again later." : "The online voice service could not transcribe this audio.",
+        }, upstream.status === 429 ? 429 : 502);
+      }
+      const result = await upstream.json() as { text?: unknown };
+      if (typeof result.text !== "string" || !result.text.trim()) {
+        return jsonResponse({ code: "VOICE_NO_TRANSCRIPT", error: "কথা পরিষ্কার বোঝা যায়নি। আবার বলুন।" }, 422);
+      }
+      return jsonResponse({ text: result.text.trim(), language: language.toLowerCase().startsWith("bn") ? "bn" : "en" });
+    } catch (error) {
+      console.error("[CF Voice] Request failed:", error instanceof Error ? error.message : "unknown error");
+      return jsonResponse({ code: "VOICE_TRANSCRIPTION_FAILED", error: "Voice service connection failed. Check internet and try again." }, 502);
+    }
   }
 
   if (request.method !== "POST" || pathname !== "/api/assistant/chat") {
