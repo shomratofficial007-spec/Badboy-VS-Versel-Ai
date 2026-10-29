@@ -10,9 +10,13 @@ test("onRequestGet - health check endpoint returns status ok", async () => {
   } as any;
 
   const response = await onRequestGet(context);
-  assert.strictEqual(response.status, 200);
+  assert.strictEqual(response.status, 503);
   const json = (await response.json()) as any;
-  assert.deepStrictEqual(json, { status: "ok" });
+  assert.deepStrictEqual(json, {
+    status: "degraded",
+    aiConfigured: false,
+    model: "nvidia/nemotron-3.5-lightning:free",
+  });
 });
 
 test("onRequestGet - health check endpoint without leading /api prefix returns status ok", async () => {
@@ -22,9 +26,13 @@ test("onRequestGet - health check endpoint without leading /api prefix returns s
   } as any;
 
   const response = await onRequestGet(context);
-  assert.strictEqual(response.status, 200);
+  assert.strictEqual(response.status, 503);
   const json = (await response.json()) as any;
-  assert.deepStrictEqual(json, { status: "ok" });
+  assert.deepStrictEqual(json, {
+    status: "degraded",
+    aiConfigured: false,
+    model: "nvidia/nemotron-3.5-lightning:free",
+  });
 });
 
 test("onRequestPost - handles assistant/chat without leading /api prefix", async () => {
@@ -50,9 +58,13 @@ test("onRequestGet - health check endpoint with trailing slash returns status ok
   } as any;
 
   const response = await onRequestGet(context);
-  assert.strictEqual(response.status, 200);
+  assert.strictEqual(response.status, 503);
   const json = (await response.json()) as any;
-  assert.deepStrictEqual(json, { status: "ok" });
+  assert.deepStrictEqual(json, {
+    status: "degraded",
+    aiConfigured: false,
+    model: "nvidia/nemotron-3.5-lightning:free",
+  });
 });
 
 test("onRequestGet - non-existent path returns 404", async () => {
