@@ -76,3 +76,31 @@ export async function streamReply(
     }
   }
 }
+
+
+export async function transcribeAudio(
+  audioBase64: string,
+  format: string,
+  language: string,
+): Promise<string> {
+  const response = await expoFetch(apiUrl('/assistant/transcribe'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      audioBase64,
+      format,
+      // OpenRouter expects ISO-639-1 language codes when provided.
+      language: language.toLowerCase().startsWith('bn') ? 'bn' : 'en',
+    }),
+  });
+
+  const result = (await response.json().catch(() => ({}))) as {
+    text?: string;
+    error?: string;
+  };
+  if (!response.ok) {
+    throw new Error(result.error ?? `Speech transcription failed (HTTP ${response.status}).`);
+  }
+  if (!result.text?.trim()) throw new Error('কোনো কথা শনাক্ত করা যায়নি। আবার চেষ্টা করুন।');
+  return result.text.trim();
+}
