@@ -61,6 +61,7 @@ export default function ChatScreen() {
   const [improving, setImproving] = useState(false);
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
   const [wakeDetected, setWakeDetected] = useState(false);
   const [selectedLang, setSelectedLang] = useState<string>('bn-BD');
   const [error, setError] = useState<string | null>(null);
@@ -201,9 +202,15 @@ export default function ChatScreen() {
           : 'AI সংযোগে সমস্যা হয়েছে। কিছুক্ষণ পর চেষ্টা করুন।',
       );
     } finally {
+      if (voiceMode && answer.content.trim()) {
+        setSpeaking(true);
+        speak(answer.content, selectedLang);
+        const estimatedDuration = Math.max(2500, Math.min(30000, answer.content.length * 65));
+        setTimeout(() => setSpeaking(false), estimatedDuration);
+      }
       setBusy(false);
     }
-  }, [awaitingSongName, busy, messages, selectedLang, setMessages, settings]);
+  }, [awaitingSongName, busy, messages, selectedLang, setMessages, settings, voiceMode]);
 
   const requestImprovement = useCallback(async () => {
     const lastUserMessage = [...messages].reverse().find((item) => item.role === 'user');
@@ -266,9 +273,14 @@ export default function ChatScreen() {
     const base = draft;
     stopDictationRef.current = dictateOnce({
       lang: selectedLang,
-      onTranscript: (text) => {
+      onTranscript: (text, isFinal) => {
         const combined = base ? `${base} ${text}`.trim() : text.trim();
         setDraft(combined.slice(0, 4000));
+        if (voiceMode && isFinal && text.trim()) {
+          const finalText = text.trim().slice(0, 4000);
+          setDraft(finalText);
+          setTimeout(() => { void sendMessage(finalText); }, 0);
+        }
       },
       onWakeWordDetected: () => {
         setWakeDetected(true);
@@ -281,7 +293,7 @@ export default function ChatScreen() {
         stopDictationRef.current = null;
       },
     });
-  }, [draft, listening, selectedLang, settings.voiceProcessingConsent]);
+  }, [draft, listening, selectedLang, settings.voiceProcessingConsent, sendMessage, voiceMode]);
 
   const toggleReadAloud = useCallback(() => {
     if (speaking) {
@@ -429,7 +441,7 @@ export default function ChatScreen() {
   };
 
   const getStatusText = () => {
-    if (listening) return wakeDetected ? 'Oi Badboy সনাক্ত হয়েছে!' : 'শুনছি… ("Oi Badboy" বলুন)';
+    if (listening) return wakeDetected ? 'Oi Badboy সনাক্ত হয়েছে!' : (voiceMode ? 'ভয়েস চ্যাটে শুনছি…' : 'শুনছি… ("Oi Badboy" বলুন)');
     if (busy) return 'Badboy ভাবছে…';
     if (speaking) return 'কথা বলছি…';
     if (!settings.onlineAI) return 'অফলাইন মোড';
@@ -707,6 +719,14 @@ export default function ChatScreen() {
           {listening
             ? <ActivityIndicator size="small" color={colors.primaryForeground} />
             : <Feather name="mic" size={18} color={listening ? colors.primaryForeground : colors.foreground} />}
+        </Pressable>
+        <Pressable
+          onPress={() => setVoiceMode((enabled) => !enabled)}
+          accessibilityRole="button"
+          accessibilityLabel={voiceMode ? 'ভয়েস চ্যাট মোড বন্ধ করুন' : 'ভয়েস চ্যাট মোড চালু করুন'}
+          style={[styles.roundButton, { backgroundColor: voiceMode ? colors.primary : colors.secondary }]}
+        >
+          <Feather name="headphones" size={18} color={voiceMode ? colors.primaryForeground : colors.foreground} />
         </Pressable>
         <Pressable
           onPress={() => toggleReadAloud()}
