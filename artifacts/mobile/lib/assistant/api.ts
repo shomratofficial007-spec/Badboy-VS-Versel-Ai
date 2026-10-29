@@ -76,3 +76,28 @@ export async function streamReply(
     }
   }
 }
+
+
+/**
+ * Send a user-consented, short audio recording to the server-side transcription
+ * endpoint. The provider API key is never shipped in the mobile app.
+ */
+export async function transcribeVoiceAudio(
+  audioBase64: string,
+  mimeType = 'audio/m4a',
+  language = 'bn',
+): Promise<string> {
+  const response = await expoFetch(apiUrl('/assistant/voice'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ audioBase64, mimeType, language }),
+  });
+  const body = (await response.json().catch(() => ({}))) as {
+    text?: string;
+    error?: string;
+  };
+  if (!response.ok || !body.text) {
+    throw new Error(body.error ?? `Voice transcription failed (HTTP ${response.status}).`);
+  }
+  return body.text.trim();
+}
