@@ -247,10 +247,11 @@ export default function ChatScreen() {
       return;
     }
 
-    // Android Bengali uses online transcription because the installed native
-    // speech provider may not include Bengali. Audio is sent only after consent.
-    const useOnlineBengali = Platform.OS === 'android' && selectedLang.toLowerCase().startsWith('bn');
-    if (useOnlineBengali) {
+    // Android voice uses online transcription for Bengali and English so it does not depend on the installed speech provider.
+    // Audio is sent only after consent and after the user stops recording.
+    const onlineLanguage = selectedLang.toLowerCase().startsWith('en') ? 'en' : 'bn';
+    const useOnlineTranscription = Platform.OS === 'android' && (onlineLanguage === 'bn' || onlineLanguage === 'en');
+    if (useOnlineTranscription) {
       if (listening) {
         try {
           await onlineVoiceRecorder.stop();
@@ -261,12 +262,12 @@ export default function ChatScreen() {
           const audioBase64 = await FileSystem.readAsStringAsync(uri, {
             encoding: FileSystem.EncodingType.Base64,
           });
-          const transcript = await transcribeVoiceAudio(audioBase64, 'audio/m4a', 'bn');
+          const transcript = await transcribeVoiceAudio(audioBase64, 'audio/m4a', onlineLanguage);
           const combined = draft ? `${draft} ${transcript}`.trim() : transcript;
           setDraft(combined.slice(0, 4000));
           setError(null);
         } catch (cause) {
-          setError(cause instanceof Error ? cause.message : 'অনলাইন বাংলা ভয়েস কাজ করেনি।');
+          setError(cause instanceof Error ? cause.message : 'অনলাইন ভয়েস কাজ করেনি।');
         } finally {
           setBusy(false);
           try { await setAudioModeAsync({ allowsRecording: false }); } catch { /* best effort */ }
@@ -283,7 +284,7 @@ export default function ChatScreen() {
         await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
         await onlineVoiceRecorder.prepareToRecordAsync();
         onlineVoiceRecorder.record();
-        setError('রেকর্ডিং চলছে। কথা বলা শেষ হলে মাইক্রোফোনে আবার চাপ দিন—তখন অডিও সার্ভারে পাঠানো হবে।');
+        setError('Recording started. Finish speaking and tap the microphone again; the audio will then be sent to the server for transcription.');
         setListening(true);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : 'রেকর্ডিং শুরু করা যায়নি।');
