@@ -1,5 +1,6 @@
 import { fetch as expoFetch } from 'expo/fetch';
 import type { AssistantSettings } from '@/lib/assistant/types';
+import { getTranscriptionLanguageCode } from './transcriptionLanguage';
 
 // This repository deploys its own Worker; do not send native APK traffic to the
 // unrelated legacy Voice-Memory-Assistant Worker.
@@ -79,7 +80,6 @@ export async function streamReply(
   }
 }
 
-
 export async function transcribeAudio(
   audioBase64: string,
   format: string,
@@ -92,7 +92,7 @@ export async function transcribeAudio(
       audioBase64,
       format,
       // OpenRouter expects ISO-639-1 language codes when provided.
-      language: language.toLowerCase().startsWith('bn') ? 'bn' : 'en',
+      language: getTranscriptionLanguageCode(language),
     }),
   });
 
