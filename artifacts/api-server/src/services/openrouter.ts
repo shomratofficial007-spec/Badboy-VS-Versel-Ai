@@ -1,7 +1,23 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { streamText } from "ai";
 
-export const OPENROUTER_MODEL_ID = "cohere/north-mini-code:free";
+/**
+ * Start with OpenRouter's dynamic free router. It chooses an available free
+ * model that supports the request's required capabilities.
+ */
+export const OPENROUTER_MODEL_ID = "openrouter/free";
+
+/**
+ * Emergency text-chat fallbacks. Keep this list strictly to :free variants;
+ * never add a paid model here. The dynamic router remains the primary path
+ * and automatically tracks the changing OpenRouter free-model pool.
+ */
+export const OPENROUTER_FREE_FALLBACK_MODEL_IDS = [
+  "cohere/north-mini-code:free",
+  "nvidia/nemotron-3.5-lightning:free",
+  "thinkingmachines/inkling:free",
+  "recursive/flint-v1.0:free",
+] as const;
 
 export type OpenRouterMessage = {
   role: "system" | "user" | "assistant";
@@ -28,19 +44,27 @@ function statusFromError(error: unknown): number {
     statusCode?: unknown;
     status?: unknown;
     response?: { status?: unknown };
+    cause?: { statusCode?: unknown; status?: unknown };
   };
   const candidate =
-    value.statusCode ?? value.status ?? value.response?.status;
+    value.statusCode ??
+    value.status ??
+    value.response?.status ??
+    value.cause?.statusCode ??
+    value.cause?.status;
   return typeof candidate === "number" && candidate >= 400 && candidate <= 599
     ? candidate
     : 502;
 }
 
+function shouldTryNextFreeModel(statusCode: number) {
+  return [404, 408, 429, 500, 502, 503, 504].includes(statusCode);
+}
+
 /**
- * Reasoning is opt-in because not every OpenRouter model supports it.
- * Set OPENROUTER_REASONING_EFFORT to low, medium, or high only when using a
- * model that supports OpenRouter reasoning. The default free Cohere model
- * remains unchanged and receives no reasoning option by default.
+ * Reasoning is opt-in because not every free model supports it. The same
+ * setting is passed to the selected model; unsupported options are omitted
+ * by default.
  */
 function getReasoningProviderOptions() {
   const effort = process.env.OPENROUTER_REASONING_EFFORT?.trim().toLowerCase();
@@ -56,9 +80,13 @@ function getReasoningProviderOptions() {
 }
 
 /**
- * Uses the Vercel AI SDK to stream OpenRouter output while preserving the
- * existing AsyncIterable<string> route contract. Errors may occur while the
- * stream is consumed, so translate them inside the generator as well.
+ * Uses the Vercel AI SDK and preserves the existing AsyncIterable<string>
+ * route contract. Fallback is attempted only before the first text chunk:
+ * restarting after partial output would duplicate or corrupt the answer.
+ *
+ * The primary openrouter/free router dynamically filters the current free
+ * pool by capabilities (for example image understanding and tool calling).
+ * The explicit fallbacks are additional text-chat-only free variants.
  */
 export async function streamOpenRouterReply(
   messages: OpenRouterMessage[],
@@ -66,28 +94,53 @@ export async function streamOpenRouterReply(
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
   if (!apiKey) throw new OpenRouterApiError(503);
 
-  let textStream: AsyncIterable<string>;
-  try {
-    const openrouter = createOpenRouter({ apiKey });
-    const result = streamText({
-      model: openrouter(OPENROUTER_MODEL_ID),
-      messages,
-      maxOutputTokens: 8192,
-      providerOptions: getReasoningProviderOptions(),
-    });
-    textStream = result.textStream;
-  } catch (error) {
-    throw new OpenRouterApiError(statusFromError(error));
-  }
+  const openrouter = createOpenRouter({ apiKey });
+  const modelIds = [
+    OPENROUTER_MODEL_ID,
+    ...OPENROUTER_FREE_FALLBACK_MODEL_IDS,
+  ];
 
-  async function* translateStreamErrors(): AsyncGenerator<string> {
-    try {
-      for await (const chunk of textStream) yield chunk;
-    } catch (error) {
-      if (error instanceof OpenRouterApiError) throw error;
-      throw new OpenRouterApiError(statusFromError(error));
+  async function* streamWithFreeFallbacks(): AsyncGenerator<string> {
+    let lastError: OpenRouterApiError | undefined;
+
+    for (const modelId of modelIds) {
+      // Defensive guard: the dynamic router or a :free variant is the only
+      // permitted model target. This prevents accidental paid-model routing.
+      if (modelId !== "openrouter/free" && !modelId.endsWith(":free")) {
+        continue;
+      }
+
+      let emittedText = false;
+      try {
+        const result = streamText({
+          model: openrouter(modelId),
+          messages,
+          maxOutputTokens: 8192,
+          providerOptions: getReasoningProviderOptions(),
+        });
+
+        for await (const chunk of result.textStream) {
+          if (chunk.length > 0) emittedText = true;
+          yield chunk;
+        }
+        return;
+      } catch (error) {
+        const failure =
+          error instanceof OpenRouterApiError
+            ? error
+            : new OpenRouterApiError(statusFromError(error));
+        lastError = failure;
+
+        // Once any content is sent, do not restart another model and risk
+        // returning a mixed or duplicated answer to the client.
+        if (emittedText || !shouldTryNextFreeModel(failure.statusCode)) {
+          throw failure;
+        }
+      }
     }
+
+    throw lastError ?? new OpenRouterApiError(503);
   }
 
-  return translateStreamErrors();
+  return streamWithFreeFallbacks();
 }
