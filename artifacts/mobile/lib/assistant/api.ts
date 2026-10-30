@@ -106,3 +106,20 @@ export async function transcribeAudio(
   if (!result.text?.trim()) throw new Error('কোনো কথা শনাক্ত করা যায়নি। আবার চেষ্টা করুন।');
   return result.text.trim();
 }
+
+
+/** Request free Fish Audio speech from the server; the API key stays server-side. */
+export async function requestSpeech(text: string, language: string): Promise<Uint8Array> {
+  const response = await expoFetch(apiUrl('/assistant/speech'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
+    body: JSON.stringify({ text, language }),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Speech generation failed (HTTP ${response.status}).`);
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (!bytes.length) throw new Error('Speech service returned an empty audio file.');
+  return bytes;
+}
