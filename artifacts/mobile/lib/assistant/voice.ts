@@ -322,12 +322,17 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
     if (watchdog) clearTimeout(watchdog);
     watchdog = null;
   };
-  const resetWatchdog = (stop: () => void, cleanup?: () => void, finish?: () => void) => {
+  const resetWatchdog = (
+    stop: () => void,
+    cleanup?: () => void,
+    finish?: () => void,
+    errorType: string = 'no-speech',
+  ) => {
     clearWatchdog();
     watchdog = setTimeout(() => {
       try { stop(); } catch { /* recognizer may already be stopped */ }
       cleanup?.();
-      callbacks.onError?.('no-speech');
+      callbacks.onError?.(errorType);
       finish?.();
     }, 15000);
   };
@@ -358,6 +363,10 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
     };
 
     const startNative = async () => {
+      // Start the watchdog before locale discovery or permission requests. Both
+      // native calls can stall on some Android speech providers; without this,
+      // the UI can remain in its listening state forever before recognition starts.
+      resetWatchdog(() => nativeModule.abort(), cleanup, finish, 'start_failed');
       try {
         // Ask Android's active speech provider which locales it actually supports.
         // On Android 12 and older this API may be unavailable; in that case keep
@@ -366,6 +375,7 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
         try {
           if (typeof nativeModule.getSupportedLocales === 'function') {
             const support = await nativeModule.getSupportedLocales({});
+            if (finished) return;
             const locales: string[] = Array.isArray(support?.locales) ? support.locales : [];
             if (locales.length > 0 && !locales.includes(recognitionLanguage)) {
               const languageBase = recognitionLanguage.split('-')[0].toLowerCase();
@@ -397,6 +407,7 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
         }
 
         const perm = await nativeModule.requestPermissionsAsync();
+        if (finished) return;
         if (!perm.granted) {
           callbacks.onError?.('permission-denied');
           finish();
@@ -453,7 +464,9 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
         subscriptions.push(endSub);
 
         resetWatchdog(() => nativeModule.abort(), cleanup, finish);
-        nativeModule.start({
+        // Some native module versions return a promise from start(). Await it so
+        // rejected startup errors are caught by this function's error handler.
+        await nativeModule.start({
           lang: recognitionLanguage,
           interimResults: true,
           continuous: false,
