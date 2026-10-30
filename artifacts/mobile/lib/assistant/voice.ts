@@ -1,3 +1,7 @@
+import { createAudioPlayer } from 'expo-audio';
+import { File, Paths } from 'expo-file-system';
+import { requestSpeech } from './api';
+
 // Voice helpers with dual support for Native Mobile (Android / iOS) via
 // Expo Speech Recognition & Expo Speech, and Web Speech API fallback for browsers.
 //
@@ -589,6 +593,11 @@ export interface SpeechLifecycleCallbacks {
 }
 
 /** Speak text through the device's native TTS engine or browser local voices. */
+let activeCloudPlayer: ReturnType<typeof createAudioPlayer> | null = null;
+let activeCloudFile: File | null = null;
+let activeWebAudio: HTMLAudioElement | null = null;
+
+/** Prefer free cloud TTS; fall back to the existing device/browser TTS on failure. */
 export function speak(
   text: string,
   lang = 'bn-BD',
@@ -599,90 +608,101 @@ export function speak(
     callbacks.onError?.(new Error('পড়ে শোনানোর মতো কোনো লেখা নেই।'));
     return false;
   }
-
   stopSpeaking();
-
   let settled = false;
-  let lifecycleTimer: ReturnType<typeof setTimeout> | null = null;
-  const clearLifecycleTimer = () => {
-    if (lifecycleTimer) clearTimeout(lifecycleTimer);
-    lifecycleTimer = null;
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    callbacks.onDone?.();
   };
   const fail = (error: unknown) => {
     if (settled) return;
     settled = true;
-    clearLifecycleTimer();
     callbacks.onError?.(error);
   };
-  const finish = () => {
-    if (settled) return;
-    settled = true;
-    clearLifecycleTimer();
-    callbacks.onDone?.();
-  };
-  const started = () => {
-    if (settled) return;
-    clearLifecycleTimer();
-    callbacks.onStart?.();
-    // Guard against a provider that starts speaking but never emits completion.
-    lifecycleTimer = setTimeout(
-      () => fail(new Error('কথা বলা শেষ হওয়ার সংকেত পাওয়া যায়নি। আবার চেষ্টা করুন।')),
-      120_000,
-    );
+
+  const speakLocally = () => {
+    const os = getPlatformOS();
+    const speechModule = getSpeechModule();
+    if (os !== 'web' && os !== 'node' && speechModule) {
+      try {
+        speechModule.speak(clean, {
+          language: lang, pitch: 1, rate: 1,
+          onStart: () => callbacks.onStart?.(),
+          onDone: finish, onStopped: finish,
+          onError: (error: unknown) => fail(error),
+        });
+        return;
+      } catch { /* Try browser fallback below. */ }
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        const utterance = new SpeechSynthesisUtterance(clean);
+        utterance.lang = lang;
+        utterance.onstart = () => callbacks.onStart?.();
+        utterance.onend = finish;
+        utterance.onerror = (event) => fail(new Error(event.error || 'Browser TTS failed.'));
+        window.speechSynthesis.speak(utterance);
+        return;
+      } catch (error) { fail(error); return; }
+    }
+    fail(new Error('Cloud TTS and local TTS are unavailable.'));
   };
 
-  // Some Android speech providers fail to emit onStart; surface that instead of
-  // silently leaving the read-aloud action in an indeterminate state.
-  lifecycleTimer = setTimeout(
-    () => fail(new Error('Text-to-Speech চালু হয়নি। ফোনের TTS সেটিংস পরীক্ষা করুন।')),
-    10_000,
-  );
-
-  const os = getPlatformOS();
-  const speechModule = getSpeechModule();
-  if (os !== 'web' && os !== 'node' && speechModule) {
+  void (async () => {
     try {
-      speechModule.speak(clean, {
-        language: lang,
-        pitch: 1.0,
-        rate: 1.0,
-        onStart: started,
-        onDone: finish,
-        onStopped: finish,
-        onError: (error: unknown) => fail(error),
-      });
-      return true;
-    } catch (error) {
-      // If native TTS cannot start, try the browser fallback only when available.
-      if (!(typeof window !== 'undefined' && 'speechSynthesis' in window)) {
-        fail(error);
-        return false;
+      const bytes = await requestSpeech(clean, lang);
+      if (typeof window !== 'undefined' && getPlatformOS() === 'web') {
+        const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
+        const audio = new Audio(url);
+        activeWebAudio = audio;
+        audio.onended = () => { URL.revokeObjectURL(url); activeWebAudio = null; finish(); };
+        audio.onerror = () => { URL.revokeObjectURL(url); activeWebAudio = null; speakLocally(); };
+        await audio.play();
+        callbacks.onStart?.();
+        return;
       }
+      const file = new File(Paths.cache, `badboy-tts-${Date.now()}.mp3`);
+      file.create();
+      await file.write(bytes);
+      activeCloudFile = file;
+      const player = createAudioPlayer({ uri: file.uri });
+      activeCloudPlayer = player;
+      player.addListener('playbackStatusUpdate', (status: { didJustFinish?: boolean; error?: string }) => {
+        if (status.didJustFinish) {
+          player.release();
+          activeCloudPlayer = null;
+          try { file.delete(); } catch { /* Cache cleanup is best-effort. */ }
+          activeCloudFile = null;
+          finish();
+        } else if (status.error) {
+          player.release();
+          activeCloudPlayer = null;
+          speakLocally();
+        }
+      });
+      player.play();
+      callbacks.onStart?.();
+    } catch {
+      speakLocally();
     }
-  }
-
-  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-    try {
-      const utterance = new SpeechSynthesisUtterance(clean);
-      utterance.lang = lang;
-      utterance.onstart = started;
-      utterance.onend = finish;
-      utterance.onerror = (event) => fail(
-        new Error(`ব্রাউজারের TTS ব্যর্থ হয়েছে: ${event.error || 'unknown error'}`),
-      );
-      window.speechSynthesis.speak(utterance);
-      return true;
-    } catch (error) {
-      fail(error);
-      return false;
-    }
-  }
-
-  fail(new Error('এই ডিভাইসে TTS ইঞ্জিন উপলব্ধ নেই।'));
-  return false;
+  })();
+  return true;
 }
 
 export function stopSpeaking(): void {
+  if (activeCloudPlayer) {
+    try { activeCloudPlayer.pause(); activeCloudPlayer.release(); } catch { /* Ignore cleanup errors. */ }
+    activeCloudPlayer = null;
+  }
+  if (activeCloudFile) {
+    try { activeCloudFile.delete(); } catch { /* Ignore cache cleanup errors. */ }
+    activeCloudFile = null;
+  }
+  if (activeWebAudio) {
+    try { activeWebAudio.pause(); activeWebAudio.src = ''; } catch { /* Ignore. */ }
+    activeWebAudio = null;
+  }
   const os = getPlatformOS();
   const speechModule = getSpeechModule();
   if (os !== 'web' && os !== 'node' && speechModule) {
