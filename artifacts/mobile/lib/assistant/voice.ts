@@ -1,7 +1,3 @@
-import { createAudioPlayer } from 'expo-audio';
-import { File, Paths } from 'expo-file-system';
-import { requestSpeech } from './api';
-
 // Voice helpers with dual support for Native Mobile (Android / iOS) via
 // Expo Speech Recognition & Expo Speech, and Web Speech API fallback for browsers.
 //
@@ -593,8 +589,8 @@ export interface SpeechLifecycleCallbacks {
 }
 
 /** Speak text through the device's native TTS engine or browser local voices. */
-let activeCloudPlayer: ReturnType<typeof createAudioPlayer> | null = null;
-let activeCloudFile: File | null = null;
+let activeCloudPlayer: { pause: () => void; release: () => void } | null = null;
+let activeCloudFile: { delete: () => void; uri: string } | null = null;
 let activeWebAudio: HTMLAudioElement | null = null;
 
 /** Prefer free cloud TTS; fall back to the existing device/browser TTS on failure. */
@@ -651,9 +647,15 @@ export function speak(
 
   void (async () => {
     try {
+      // Lazy-load Expo-only modules so Node-based voice unit tests can import this file.
+      const { requestSpeech } = require('./api') as typeof import('./api');
       const bytes = await requestSpeech(clean, lang);
       if (typeof window !== 'undefined' && getPlatformOS() === 'web') {
-        const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
+        const audioBuffer = bytes.buffer.slice(
+          bytes.byteOffset,
+          bytes.byteOffset + bytes.byteLength,
+        ) as ArrayBuffer;
+        const url = URL.createObjectURL(new Blob([audioBuffer], { type: 'audio/mpeg' }));
         const audio = new Audio(url);
         activeWebAudio = audio;
         audio.onended = () => { URL.revokeObjectURL(url); activeWebAudio = null; finish(); };
@@ -662,13 +664,15 @@ export function speak(
         callbacks.onStart?.();
         return;
       }
+      const { createAudioPlayer } = require('expo-audio') as typeof import('expo-audio');
+      const { File, Paths } = require('expo-file-system') as typeof import('expo-file-system');
       const file = new File(Paths.cache, `badboy-tts-${Date.now()}.mp3`);
       file.create();
       await file.write(bytes);
       activeCloudFile = file;
       const player = createAudioPlayer({ uri: file.uri });
       activeCloudPlayer = player;
-      player.addListener('playbackStatusUpdate', (status: { didJustFinish?: boolean; error?: string }) => {
+      player.addListener('playbackStatusUpdate', (status) => {
         if (status.didJustFinish) {
           player.release();
           activeCloudPlayer = null;
