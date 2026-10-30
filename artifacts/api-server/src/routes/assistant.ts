@@ -84,6 +84,60 @@ router.post("/assistant/chat", async (req, res) => {
   }
 });
 
+router.post("/assistant/speech", async (req, res) => {
+  const { text, language = "bn-BD" } = req.body ?? {};
+  if (
+    typeof text !== "string" ||
+    !text.trim() ||
+    text.length > 4000 ||
+    typeof language !== "string" ||
+    language.length > 20
+  ) {
+    res.status(400).json({ code: "INVALID_SPEECH_REQUEST", error: "Invalid speech text or language." });
+    return;
+  }
+  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
+  if (!apiKey) {
+    missingKeyResponse(res);
+    return;
+  }
+  try {
+    const upstream = await fetch("https://openrouter.ai/api/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        Accept: "audio/mpeg",
+      },
+      body: JSON.stringify({
+        model: "fish-audio/s2.1-pro-free:free",
+        input: text.trim(),
+        response_format: "mp3",
+      }),
+    });
+    if (!upstream.ok) {
+      req.log.error({ statusCode: upstream.status }, "Free TTS provider request failed");
+      res.status(upstream.status === 429 ? 429 : 502).json({
+        code: upstream.status === 429 ? "FREE_TTS_RATE_LIMIT" : "FREE_TTS_UNAVAILABLE",
+        error: "Free speech generation is temporarily unavailable.",
+      });
+      return;
+    }
+    const audio = await upstream.arrayBuffer();
+    if (!audio.byteLength) {
+      res.status(502).json({ code: "EMPTY_TTS_RESPONSE", error: "Speech provider returned empty audio." });
+      return;
+    }
+    res.setHeader("Content-Type", upstream.headers.get("content-type") ?? "audio/mpeg");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Length", String(audio.byteLength));
+    res.status(200).send(Buffer.from(audio));
+  } catch (error) {
+    req.log.error({ error: errorMessage(error) }, "Free TTS request failed");
+    res.status(502).json({ code: "FREE_TTS_UNAVAILABLE", error: "Free speech generation is temporarily unavailable." });
+  }
+});
+
 router.post("/assistant/voice", (_req, res) => {
   res.status(501).json({
     code: "MODEL_AUDIO_UNSUPPORTED",
