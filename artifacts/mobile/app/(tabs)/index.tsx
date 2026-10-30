@@ -26,7 +26,7 @@ import {
   isGeneralMusicRequest,
 } from '@/lib/assistant/youtube';
 import { useAssistant } from '@/context/AssistantContext';
-import { streamReply, transcribeAudio } from '@/lib/assistant/api';
+import { streamReply } from '@/lib/assistant/api';
 import {
   checkMicrophonePermission,
   dictateOnce,
@@ -40,6 +40,24 @@ import {
 } from '@/lib/assistant/voice';
 import type { ChatMessage } from '@/lib/assistant/types';
 import { useColors } from '@/hooks/useColors';
+
+type BrowserSpeechRecognitionResultEvent = {
+  resultIndex: number;
+  results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }>;
+};
+
+type BrowserSpeechRecognition = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  maxAlternatives: number;
+  onresult: ((event: BrowserSpeechRecognitionResultEvent) => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+
 
 function newMessage(role: ChatMessage['role'], content = ''): ChatMessage {
   return {
@@ -250,13 +268,19 @@ export default function ChatScreen() {
   }, [improving, messages, settings, updateSettings]);
 
   const toggleVoice = useCallback(async () => {
-    const browserRecordingAvailable =
-      Platform.OS === 'web' &&
-      typeof navigator !== 'undefined' &&
-      Boolean(navigator.mediaDevices?.getUserMedia) &&
-      typeof MediaRecorder !== 'undefined';
-    if (!isDictationAvailable() && !browserRecordingAvailable) {
-      setError('এই ডিভাইসে বা ব্রাউজারে ভয়েস ইনপুট সমর্থিত নয়।');
+    const browserWindow = typeof window !== 'undefined'
+      ? window as Window & {
+          SpeechRecognition?: new () => BrowserSpeechRecognition;
+          webkitSpeechRecognition?: new () => BrowserSpeechRecognition;
+        }
+      : undefined;
+    const BrowserRecognition = Platform.OS === 'web'
+      ? browserWindow?.SpeechRecognition ?? browserWindow?.webkitSpeechRecognition
+      : undefined;
+    const browserSpeechAvailable = Boolean(BrowserRecognition);
+
+    if (Platform.OS === 'web' ? !browserSpeechAvailable : !isDictationAvailable()) {
+      setError('এই ব্রাউজারে ভয়েস-টু-টেক্সট সমর্থিত নয়। Chrome-এর সর্বশেষ সংস্করণ ব্যবহার করে দেখুন।');
       return;
     }
     if (!settings.voiceProcessingConsent) {
@@ -270,10 +294,12 @@ export default function ChatScreen() {
       return;
     }
 
-    const permState = await checkMicrophonePermission();
-    if (permState === 'denied') {
-      setError(getVoiceErrorMessage('not-allowed'));
-      return;
+    if (Platform.OS !== 'web') {
+      const permState = await checkMicrophonePermission();
+      if (permState === 'denied') {
+        setError(getVoiceErrorMessage('not-allowed'));
+        return;
+      }
     }
 
     setError(null);
@@ -281,81 +307,63 @@ export default function ChatScreen() {
     setWakeDetected(false);
     const base = draft;
 
-    // Chrome/web uses recorded audio + server transcription instead of the
-    // unreliable Web Speech API. Native Android continues using its existing recognizer.
-    if (Platform.OS === 'web' && browserRecordingAvailable) {
-      let recorder: MediaRecorder | null = null;
-      let stream: MediaStream | null = null;
-      let stoppedByUser = false;
-      const chunks: BlobPart[] = [];
-      const stopTracks = () => stream?.getTracks().forEach((track) => track.stop());
+    // Browser speech recognition avoids the paid Whisper transcription endpoint.
+    // Native Android keeps the existing SpeechRecognizer implementation unchanged.
+    if (Platform.OS === 'web' && BrowserRecognition) {
+      let recognition: BrowserSpeechRecognition;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const preferredMime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg']
-          .find((mime) => MediaRecorder.isTypeSupported(mime));
-        recorder = preferredMime
-          ? new MediaRecorder(stream, { mimeType: preferredMime })
-          : new MediaRecorder(stream);
-        recorder.ondataavailable = (event) => {
-          if (event.data.size > 0) chunks.push(event.data);
+        recognition = new BrowserRecognition();
+        recognition.lang = selectedLang;
+        recognition.interimResults = true;
+        recognition.continuous = false;
+        recognition.maxAlternatives = 1;
+
+        recognition.onresult = (event) => {
+          let finalText = '';
+          let interimText = '';
+          for (let index = event.resultIndex; index < event.results.length; index += 1) {
+            const result = event.results[index];
+            const transcript = result?.[0]?.transcript ?? '';
+            if (result?.isFinal) finalText += transcript;
+            else interimText += transcript;
+          }
+          const combined = [base, finalText, interimText].filter(Boolean).join(' ').trim();
+          if (combined) setDraft(combined.slice(0, 4000));
+          if (voiceMode && finalText.trim()) {
+            const submittedText = finalText.trim().slice(0, 4000);
+            setDraft(submittedText);
+            setTimeout(() => { void sendMessage(submittedText); }, 0);
+          }
         };
-        recorder.onerror = () => {
-          stopTracks();
-          setError('মাইক্রোফোন থেকে অডিও নেওয়া যায়নি। আবার চেষ্টা করুন।');
+        recognition.onerror = (event) => {
+          const message = event.error === 'not-allowed'
+            ? getVoiceErrorMessage('not-allowed')
+            : event.error === 'no-speech'
+              ? 'কোনো কথা শোনা যায়নি। আবার মাইক্রোফোন চাপুন।'
+              : event.error === 'language-not-supported'
+                ? 'নির্বাচিত ভাষা এই ব্রাউজারে সমর্থিত নয়।'
+                : 'ব্রাউজারের Speech Recognition কাজ করেনি। আবার চেষ্টা করুন।';
+          setError(message);
           setListening(false);
           stopDictationRef.current = null;
         };
-        recorder.onstop = async () => {
-          stopTracks();
-          if (!stoppedByUser) {
-            setListening(false);
-            stopDictationRef.current = null;
-            return;
-          }
-          try {
-            const blob = new Blob(chunks, { type: recorder?.mimeType || 'audio/webm' });
-            if (!blob.size) throw new Error('কোনো অডিও রেকর্ড হয়নি। আবার চেষ্টা করুন।');
-            if (blob.size > 4_000_000) throw new Error('রেকর্ডিং বেশি বড়। ৩০ সেকেন্ডের মধ্যে কথা বলে আবার চেষ্টা করুন।');
-            const mime = (blob.type || 'audio/webm').toLowerCase();
-            const format = mime.includes('ogg') ? 'ogg' : mime.includes('mp4') ? 'm4a' : 'webm';
-            const base64 = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onerror = () => reject(new Error('অডিও পড়া যায়নি। আবার চেষ্টা করুন।'));
-              reader.onloadend = () => {
-                const dataUrl = typeof reader.result === 'string' ? reader.result : '';
-                const comma = dataUrl.indexOf(',');
-                if (comma < 0) reject(new Error('অডিও ডেটা প্রস্তুত করা যায়নি।'));
-                else resolve(dataUrl.slice(comma + 1));
-              };
-              reader.readAsDataURL(blob);
-            });
-            const transcript = await transcribeAudio(base64, format, selectedLang);
-            const combined = base ? `${base} ${transcript}`.trim() : transcript;
-            setDraft(combined.slice(0, 4000));
-            if (voiceMode && transcript.trim()) {
-              setTimeout(() => { void sendMessage(transcript.trim().slice(0, 4000)); }, 0);
-            }
-          } catch (cause) {
-            setError(cause instanceof Error ? cause.message : 'ভয়েস লেখা তৈরি করা যায়নি। আবার চেষ্টা করুন।');
-          } finally {
-            setListening(false);
-            stopDictationRef.current = null;
-          }
+        recognition.onend = () => {
+          setListening(false);
+          stopDictationRef.current = null;
         };
-        recorder.start();
         stopDictationRef.current = () => {
-          if (!recorder || recorder.state === 'inactive') return;
-          stoppedByUser = true;
-          recorder.stop();
+          try { recognition.stop(); } catch {
+            setListening(false);
+            stopDictationRef.current = null;
+          }
         };
-        return;
+        recognition.start();
       } catch (cause) {
-        stopTracks();
         setListening(false);
         stopDictationRef.current = null;
-        setError(cause instanceof Error ? cause.message : getVoiceErrorMessage('audio-capture'));
-        return;
+        setError(cause instanceof Error ? cause.message : 'ব্রাউজারে মাইক্রোফোন চালু করা যায়নি।');
       }
+      return;
     }
 
     stopDictationRef.current = dictateOnce({
