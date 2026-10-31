@@ -167,8 +167,322 @@ type RecognitionInstance = {
   interimResults: boolean;
   maxAlternatives: number;
   onresult: ((event: RecognitionEventLike) => void) | null;
-  onerror: ((event: { error?: string }) => void) | null;
+  onerror: ((event: { error?: string; message?: string }) => void) | null;
   onend: (() => void) | null;
+  onstart?: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+};
+
+type RecognitionResultLike = {
+  isFinal: boolean;
+  0?: { transcript?: unknown };
+  length: number;
+};
+
+type RecognitionEventLike = {
+  resultIndex: number;
+  results: ArrayLike<RecognitionResultLike>;
+};
+
+function recognitionConstructor(): (new () => RecognitionInstance) | null {
+  if (typeof window === 'undefined') return null;
+  const scoped = window as unknown as Record<string, unknown>;
+  const ctor = scoped.SpeechRecognition ?? scoped.webkitSpeechRecognition;
+  return typeof ctor === 'function'
+    ? (ctor as new () => RecognitionInstance)
+    : null;
+}
+
+export function isDictationAvailable(): boolean {
+  const os = getPlatformOS();
+  const nativeModule = getSpeechRecognitionModule();
+  if (os !== 'web' && os !== 'node') {
+    return nativeModule?.isRecognitionAvailable?.() ?? false;
+  }
+  // Web builds must use the browser's Web Speech API. An Expo native module
+  // may be bundled in the web app but cannot provide a working browser recognizer.
+  if (os === 'web') return recognitionConstructor() !== null;
+  return (nativeModule?.isRecognitionAvailable?.() ?? false) || recognitionConstructor() !== null;
+}
+
+export function isReadAloudAvailable(): boolean {
+  const os = getPlatformOS();
+  const speechModule = getSpeechModule();
+  if (os !== 'web' && os !== 'node') {
+    return typeof speechModule?.speak === 'function';
+  }
+  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    return typeof window.speechSynthesis?.speak === 'function';
+  }
+  return false;
+}
+
+/**
+ * Check microphone permission state on Native Android/iOS or Browser Web.
+ */
+export async function checkMicrophonePermission(): Promise<'granted' | 'denied' | 'prompt' | 'unsupported'> {
+  const os = getPlatformOS();
+  const nativeModule = getSpeechRecognitionModule();
+  if (os !== 'web' && os !== 'node' && nativeModule) {
+    try {
+      const res = await nativeModule.getPermissionsAsync();
+      if (res.status === 'granted') return 'granted';
+      if (res.status === 'denied') return 'denied';
+      return 'prompt';
+    } catch {
+      return 'unsupported';
+    }
+  }
+
+  if (typeof window === 'undefined') return 'unsupported';
+  if (navigator?.permissions?.query) {
+    try {
+      const result = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+      return result.state;
+    } catch {
+      // Fallback to prompt
+    }
+  }
+  return 'prompt';
+}
+
+/** Detect "Oi" / "ওহে" / "Badboy" / "JARVIS" wake phrase in transcript string */
+export function containsWakePhrase(text: string): boolean {
+  const normalized = text.toLowerCase().trim();
+  const patterns = [
+    /(?:^|[^\p{L}\p{N}])oi(?:[^\p{L}\p{N}]|$)/iu,
+    /(?:^|[^\p{L}\p{N}])ওহে(?:[^\p{L}\p{N}]|$)/iu,
+    /(?:^|[^\p{L}\p{N}])badboy(?:[^\p{L}\p{N}]|$)/iu,
+    /(?:^|[^\p{L}\p{N}])ব্যাডবয়(?:[^\p{L}\p{N}]|$)/iu,
+    /(?:^|[^\p{L}\p{N}])jarvis(?:[^\p{L}\p{N}]|$)/iu,
+    /(?:^|[^\p{L}\p{N}])জারভিস(?:[^\p{L}\p{N}]|$)/iu,
+  ];
+  return patterns.some((pattern) => pattern.test(normalized));
+}
+
+/** User-friendly localized Bangla error messages for voice recognition issues */
+export function getVoiceErrorMessage(errorType?: string): string {
+  let message: string;
+  switch (errorType) {
+    case 'not-allowed':
+    case 'permission-denied':
+    case 'denied':
+    case 'permission_denied':
+      message = 'মাইক্রোফোন ব্যবহারের অনুমতি পাওয়া যায়নি। ব্রাউজার বা ডিভাইসের Settings থেকে Microphone অনুমতি সক্রিয় করুন.';
+      break;
+    case 'no-speech':
+    case 'no_match':
+    case 'speech_timeout':
+      message = 'কোনো কথা শোনা যায়নি। আবার চেষ্টা করুন।';
+      break;
+    case 'network':
+    case 'network_failure':
+    case 'server':
+      message = 'ভয়েস রিকগনিশন সার্ভারে সংযোগ হচ্ছে না। ইন্টারনেট সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।';
+      break;
+    case 'audio-capture':
+    case 'audio_extra':
+      message = 'মাইক্রোফোন ডিভাইসটি পাওয়া যায়নি বা অন্য অ্যাপ ব্যবহার করছে।';
+      break;
+    case 'aborted':
+      message = 'ভয়েস গ্রহণ বন্ধ করা হয়েছে।';
+      break;
+    case 'service-not-allowed':
+    case 'language-not-supported':
+      message = 'এই ভাষায় Speech Recognition সার্ভিস সাড়া দেয়নি। অন্য ভাষা বেছে নিন।';
+      break;
+    case 'busy':
+    case 'recognizer-busy':
+      message = 'ভয়েস সার্ভিস ব্যস্ত আছে। আবার চেষ্টা করুন।';
+      break;
+    case 'unsupported':
+    case 'not_supported':
+      message = 'এই ব্রাউজারে ভয়েস রিকগনিশন সমর্থিত নয়।';
+      break;
+    case 'start_failed':
+    case 'speech_error':
+      message = 'Chrome-এর Speech Recognition চালু করা যায়নি।';
+      break;
+    default:
+      message = 'ভয়েস ইনপুটে সমস্যা হয়েছে।';
+  }
+  // Show the provider's exact error code in the UI so support can diagnose
+  // Chrome-specific failures instead of collapsing them into "no speech".
+  return errorType ? `${message} (Error code: ${errorType})` : message;
+}/ Voice helpers with dual support for Native Mobile (Android / iOS) via
+// Expo Speech Recognition & Expo Speech, and Web Speech API fallback for browsers.
+//
+// Speech-to-text (dictation) streams audio to device / vendor speech recognition,
+// so callers must gate it behind the user's voice-processing consent.
+// Text-to-speech runs through native TTS engine on mobile or browser local voices on web.
+
+function getPlatformOS(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const rn = require('react-native');
+    if (rn?.Platform?.OS) {
+      return rn.Platform.OS;
+    }
+  } catch {
+    // Pure web or Node test runner
+  }
+  if (typeof window !== 'undefined') return 'web';
+  return 'node';
+}
+
+function getSpeechModule() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('expo-speech');
+  } catch {
+    return null;
+  }
+}
+
+function getSpeechRecognitionModule() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require('expo-speech-recognition');
+    return mod?.ExpoSpeechRecognitionModule ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Common speech-recognition/TTS locales. Actual availability depends on Android's installed speech provider. */
+export const VOICE_LANGUAGES = [
+  { code: 'bn-BD', label: 'বাংলা (বাংলাদেশ)' },
+  { code: 'bn-IN', label: 'বাংলা (ভারত)' },
+  { code: 'en-US', label: 'English (US)' },
+  { code: 'en-GB', label: 'English (UK)' },
+  { code: 'en-IN', label: 'English (India)' },
+  { code: 'en-AU', label: 'English (Australia)' },
+  { code: 'en-CA', label: 'English (Canada)' },
+  { code: 'es-ES', label: 'Español' },
+  { code: 'es-MX', label: 'Español (México)' },
+  { code: 'fr-FR', label: 'Français' },
+  { code: 'fr-CA', label: 'Français (Canada)' },
+  { code: 'de-DE', label: 'Deutsch' },
+  { code: 'it-IT', label: 'Italiano' },
+  { code: 'pt-BR', label: 'Português (Brasil)' },
+  { code: 'pt-PT', label: 'Português (Portugal)' },
+  { code: 'hi-IN', label: 'हिन्दी' },
+  { code: 'ur-PK', label: 'اردو' },
+  { code: 'ar-SA', label: 'العربية' },
+  { code: 'zh-CN', label: '中文 (简体)' },
+  { code: 'zh-TW', label: '中文 (繁體)' },
+  { code: 'yue-Hant-HK', label: '粵語' },
+  { code: 'ja-JP', label: '日本語' },
+  { code: 'ko-KR', label: '한국어' },
+  { code: 'ru-RU', label: 'Русский' },
+  { code: 'uk-UA', label: 'Українська' },
+  { code: 'tr-TR', label: 'Türkçe' },
+  { code: 'nl-NL', label: 'Nederlands' },
+  { code: 'sv-SE', label: 'Svenska' },
+  { code: 'no-NO', label: 'Norsk' },
+  { code: 'da-DK', label: 'Dansk' },
+  { code: 'fi-FI', label: 'Suomi' },
+  { code: 'pl-PL', label: 'Polski' },
+  { code: 'cs-CZ', label: 'Čeština' },
+  { code: 'sk-SK', label: 'Slovenčina' },
+  { code: 'hu-HU', label: 'Magyar' },
+  { code: 'ro-RO', label: 'Română' },
+  { code: 'bg-BG', label: 'Български' },
+  { code: 'el-GR', label: 'Ελληνικά' },
+  { code: 'he-IL', label: 'עברית' },
+  { code: 'fa-IR', label: 'فارسی' },
+  { code: 'id-ID', label: 'Bahasa Indonesia' },
+  { code: 'ms-MY', label: 'Bahasa Melayu' },
+  { code: 'th-TH', label: 'ไทย' },
+  { code: 'vi-VN', label: 'Tiếng Việt' },
+  { code: 'fil-PH', label: 'Filipino' },
+  { code: 'ta-IN', label: 'தமிழ்' },
+  { code: 'te-IN', label: 'తెలుగు' },
+  { code: 'mr-IN', label: 'मराठी' },
+  { code: 'gu-IN', label: 'ગુજરાતી' },
+  { code: 'pa-IN', label: 'ਪੰਜਾਬੀ' },
+  { code: 'sw-KE', label: 'Kiswahili' },
+  { code: 'af-ZA', label: 'Afrikaans' },
+  { code: 'ca-ES', label: 'Català' },
+  { code: 'eu-ES', label: 'Euskara' },
+  { code: 'hr-HR', label: 'Hrvatski' },
+  { code: 'sr-RS', label: 'Српски' },
+  { code: 'sl-SI', label: 'Slovenščina' },
+  { code: 'et-EE', label: 'Eesti' },
+  { code: 'lv-LV', label: 'Latviešu' },
+  { code: 'lt-LT', label: 'Lietuvių' },
+  { code: 'is-IS', label: 'Íslenska' },
+  { code: 'ga-IE', label: 'Gaeilge' },
+  { code: 'bn', label: 'বাংলা (সাধারণ)' },
+  { code: 'en', label: 'English (general)' },
+  { code: 'es-AR', label: 'Español (Argentina)' },
+  { code: 'es-CO', label: 'Español (Colombia)' },
+  { code: 'es-US', label: 'Español (Estados Unidos)' },
+  { code: 'fr-BE', label: 'Français (Belgique)' },
+  { code: 'fr-CH', label: 'Français (Suisse)' },
+  { code: 'de-AT', label: 'Deutsch (Österreich)' },
+  { code: 'de-CH', label: 'Deutsch (Schweiz)' },
+  { code: 'it-CH', label: 'Italiano (Svizzera)' },
+  { code: 'pt-AO', label: 'Português (Angola)' },
+  { code: 'pt-MZ', label: 'Português (Moçambique)' },
+  { code: 'hi', label: 'हिन्दी (सामान्य)' },
+  { code: 'ur-IN', label: 'اردو (بھارت)' },
+  { code: 'ar-EG', label: 'العربية (مصر)' },
+  { code: 'ar-AE', label: 'العربية (الإمارات)' },
+  { code: 'ar-MA', label: 'العربية (المغرب)' },
+  { code: 'zh-HK', label: '中文 (香港)' },
+  { code: 'zh-SG', label: '中文 (新加坡)' },
+  { code: 'ja', label: '日本語 (一般)' },
+  { code: 'ko', label: '한국어 (일반)' },
+  { code: 'ru', label: 'Русский (общий)' },
+  { code: 'tr', label: 'Türkçe (genel)' },
+  { code: 'id', label: 'Bahasa Indonesia (umum)' },
+  { code: 'ms', label: 'Bahasa Melayu (umum)' },
+  { code: 'ta', label: 'தமிழ் (பொது)' },
+  { code: 'te', label: 'తెలుగు (సాధారణ)' },
+  { code: 'mr', label: 'मराठी (सामान्य)' },
+  { code: 'gu', label: 'ગુજરાતી (સામાન્ય)' },
+  { code: 'pa', label: 'ਪੰਜਾਬੀ (ਆਮ)' },
+  { code: 'ne-NP', label: 'नेपाली' },
+  { code: 'si-LK', label: 'සිංහල' },
+  { code: 'km-KH', label: 'ភាសាខ្មែរ' },
+  { code: 'lo-LA', label: 'ລາວ' },
+  { code: 'my-MM', label: 'မြန်မာ' },
+  { code: 'am-ET', label: 'አማርኛ' },
+  { code: 'ha-NG', label: 'Hausa' },
+  { code: 'yo-NG', label: 'Yorùbá' },
+  { code: 'ig-NG', label: 'Igbo' },
+  { code: 'zu-ZA', label: 'isiZulu' },
+  { code: 'xh-ZA', label: 'isiXhosa' },
+] as const;
+
+export function getVoiceLanguageLabel(code: string): string {
+  return VOICE_LANGUAGES.find((language) => language.code === code)?.label ?? code;
+}
+
+export function getNextVoiceLanguage(code: string): string {
+  const index = VOICE_LANGUAGES.findIndex((language) => language.code === code);
+  return VOICE_LANGUAGES[(index + 1) % VOICE_LANGUAGES.length].code;
+}
+
+interface SpeechCallbacks {
+  onTranscript: (text: string, isFinal: boolean) => void;
+  onError?: (errorType?: string) => void;
+  onDone?: () => void;
+  onWakeWordDetected?: () => void;
+  lang?: string;
+}
+
+type RecognitionInstance = {
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onresult: ((event: RecognitionEventLike) => void) | null;
+  onerror: ((event: { error?: string; message?: string }) => void) | null;
+  onend: (() => void) | null;
+  onstart?: (() => void) | null;
   start: () => void;
   stop: () => void;
   abort: () => void;
@@ -558,7 +872,7 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
     callbacks.onError?.(errorType);
   };
 
-  recognition.onend = () => finish();
+  recognition.onend = () => {\n    console.info('[BadboyVoice] Web Speech API ended', { language: recognition.lang });\n    finish();\n  };
 
   try {
     resetWatchdog(() => recognition.abort(), undefined, finish);
