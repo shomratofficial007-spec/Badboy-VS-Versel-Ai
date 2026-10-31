@@ -15,7 +15,8 @@ test("onRequestGet - health check endpoint returns status ok", async () => {
   assert.deepStrictEqual(json, {
     status: "degraded",
     aiConfigured: false,
-    model: "nvidia/nemotron-3.5-lightning:free",
+    model: "openrouter/free",
+    fallbackCount: 4,
   });
 });
 
@@ -31,7 +32,8 @@ test("onRequestGet - health check endpoint without leading /api prefix returns s
   assert.deepStrictEqual(json, {
     status: "degraded",
     aiConfigured: false,
-    model: "nvidia/nemotron-3.5-lightning:free",
+    model: "openrouter/free",
+    fallbackCount: 4,
   });
 });
 
@@ -63,7 +65,8 @@ test("onRequestGet - health check endpoint with trailing slash returns status ok
   assert.deepStrictEqual(json, {
     status: "degraded",
     aiConfigured: false,
-    model: "nvidia/nemotron-3.5-lightning:free",
+    model: "openrouter/free",
+    fallbackCount: 4,
   });
 });
 
