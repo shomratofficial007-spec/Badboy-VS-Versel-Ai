@@ -592,6 +592,7 @@ export interface SpeechLifecycleCallbacks {
 let activeCloudPlayer: { pause: () => void; release: () => void } | null = null;
 let activeCloudFile: { delete: () => void; uri: string } | null = null;
 let activeWebAudio: HTMLAudioElement | null = null;
+let speechRunId = 0;
 
 /** Prefer free cloud TTS; fall back to the existing device/browser TTS on failure. */
 export function speak(
@@ -605,26 +606,40 @@ export function speak(
     return false;
   }
   stopSpeaking();
+  const runId = speechRunId;
   let settled = false;
+  let localWatchdog: ReturnType<typeof setTimeout> | null = null;
+  const isCurrent = () => runId === speechRunId;
+  const clearLocalWatchdog = () => {
+    if (localWatchdog) clearTimeout(localWatchdog);
+    localWatchdog = null;
+  };
   const finish = () => {
-    if (settled) return;
+    if (settled || !isCurrent()) return;
     settled = true;
+    clearLocalWatchdog();
     callbacks.onDone?.();
   };
   const fail = (error: unknown) => {
-    if (settled) return;
+    if (settled || !isCurrent()) return;
     settled = true;
+    clearLocalWatchdog();
     callbacks.onError?.(error);
   };
 
   const speakLocally = () => {
+    if (!isCurrent() || settled) return;
+    clearLocalWatchdog();
+    localWatchdog = setTimeout(() => {
+      fail(new Error('Local speech playback timed out.'));
+    }, 30000);
     const os = getPlatformOS();
     const speechModule = getSpeechModule();
     if (os !== 'web' && os !== 'node' && speechModule) {
       try {
         speechModule.speak(clean, {
           language: lang, pitch: 1, rate: 1,
-          onStart: () => callbacks.onStart?.(),
+          onStart: () => { if (isCurrent()) callbacks.onStart?.(); },
           onDone: finish, onStopped: finish,
           onError: (error: unknown) => fail(error),
         });
@@ -635,7 +650,7 @@ export function speak(
       try {
         const utterance = new SpeechSynthesisUtterance(clean);
         utterance.lang = lang;
-        utterance.onstart = () => callbacks.onStart?.();
+        utterance.onstart = () => { if (isCurrent()) callbacks.onStart?.(); };
         utterance.onend = finish;
         utterance.onerror = (event) => fail(new Error(event.error || 'Browser TTS failed.'));
         window.speechSynthesis.speak(utterance);
@@ -649,7 +664,18 @@ export function speak(
     try {
       // Lazy-load Expo-only modules so Node-based voice unit tests can import this file.
       const { requestSpeech } = require('./api') as typeof import('./api');
-      const bytes = await requestSpeech(clean, lang);
+      // A stalled free TTS provider must not leave the UI in a permanent speaking state.
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      const timeout = new Promise<never>((_resolve, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Cloud speech request timed out.')), 12000);
+      });
+      let bytes: Uint8Array;
+      try {
+        bytes = await Promise.race([requestSpeech(clean, lang), timeout]);
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+      }
+      if (!isCurrent() || settled) return;
       if (typeof window !== 'undefined' && getPlatformOS() === 'web') {
         const audioBuffer = bytes.buffer.slice(
           bytes.byteOffset,
@@ -658,8 +684,8 @@ export function speak(
         const url = URL.createObjectURL(new Blob([audioBuffer], { type: 'audio/mpeg' }));
         const audio = new Audio(url);
         activeWebAudio = audio;
-        audio.onended = () => { URL.revokeObjectURL(url); activeWebAudio = null; finish(); };
-        audio.onerror = () => { URL.revokeObjectURL(url); activeWebAudio = null; speakLocally(); };
+        audio.onended = () => { URL.revokeObjectURL(url); if (activeWebAudio === audio) activeWebAudio = null; finish(); };
+        audio.onerror = () => { URL.revokeObjectURL(url); if (activeWebAudio === audio) activeWebAudio = null; speakLocally(); };
         await audio.play();
         callbacks.onStart?.();
         return;
@@ -673,6 +699,7 @@ export function speak(
       const player = createAudioPlayer({ uri: file.uri });
       activeCloudPlayer = player;
       player.addListener('playbackStatusUpdate', (status) => {
+        if (!isCurrent() || settled) return;
         if (status.didJustFinish) {
           player.release();
           activeCloudPlayer = null;
@@ -686,7 +713,7 @@ export function speak(
         }
       });
       player.play();
-      callbacks.onStart?.();
+      if (isCurrent()) callbacks.onStart?.();
     } catch {
       speakLocally();
     }
@@ -695,6 +722,8 @@ export function speak(
 }
 
 export function stopSpeaking(): void {
+  // Invalidate pending network requests and delayed playback callbacks.
+  speechRunId += 1;
   if (activeCloudPlayer) {
     try { activeCloudPlayer.pause(); activeCloudPlayer.release(); } catch { /* Ignore cleanup errors. */ }
     activeCloudPlayer = null;
