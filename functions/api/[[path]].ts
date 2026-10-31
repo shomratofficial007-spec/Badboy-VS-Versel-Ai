@@ -2,7 +2,14 @@
 // Directs /api/assistant/chat requests to OpenRouter with streaming SSE.
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
-const OPENROUTER_MODEL_ID = "nvidia/nemotron-3.5-lightning:free";
+const OPENROUTER_MODEL_ID = "openrouter/free";
+const OPENROUTER_FREE_FALLBACKS = [
+  "cohere/north-mini-code:free",
+  "nvidia/nemotron-3.5-lightning:free",
+  "thinkingmachines/inkling:free",
+  "recursive/flint-v1.0:free",
+] as const;
+const RETRYABLE_UPSTREAM_STATUSES = new Set([404, 408, 429, 500, 502, 503, 504]);
 
 interface Env {
   OPENROUTER_API_KEY?: string;
@@ -13,6 +20,63 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
 };
+
+function logModelDiagnostic(event: string, model: string, statusCode?: number) {
+  // Never log prompts, user content, provider bodies, or credentials.
+  console.info(JSON.stringify({
+    component: "badboy-cloudflare-model-routing",
+    event,
+    model,
+    ...(statusCode !== undefined ? { statusCode } : {}),
+  }));
+}
+
+async function fetchChatWithFreeFallbacks(
+  apiKey: string,
+  messages: Array<{ role: "system" | "user"; content: string }>,
+): Promise<{ response: Response; model: string }> {
+  const models = [OPENROUTER_MODEL_ID, ...OPENROUTER_FREE_FALLBACKS];
+  let lastError: unknown;
+
+  for (let index = 0; index < models.length; index += 1) {
+    const model = models[index];
+    logModelDiagnostic("attempt", model);
+    try {
+      const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "X-Title": "Badboy Voice Memory Assistant",
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 8192,
+          messages,
+          stream: true,
+        }),
+      });
+
+      if (response.ok && response.body) {
+        logModelDiagnostic("selected", model, response.status);
+        return { response, model };
+      }
+
+      logModelDiagnostic("unavailable", model, response.status);
+      if (!RETRYABLE_UPSTREAM_STATUSES.has(response.status) || index === models.length - 1) {
+        return { response, model };
+      }
+      // Retry only before returning any stream data to the client.
+      await response.body?.cancel().catch(() => undefined);
+    } catch (error) {
+      lastError = error;
+      logModelDiagnostic("network_error", model);
+      if (index === models.length - 1) throw error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("All free models are unavailable.");
+}
 
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -172,6 +236,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
           status: aiConfigured ? "ok" : "degraded",
           aiConfigured,
           model: OPENROUTER_MODEL_ID,
+          fallbackCount: OPENROUTER_FREE_FALLBACKS.length,
         },
         aiConfigured ? 200 : 503,
       );
@@ -225,26 +290,14 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
 
   let upstream: Response;
   try {
-    upstream = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "X-Title": "Badboy Voice Memory Assistant",
+    const routed = await fetchChatWithFreeFallbacks(apiKey, [
+      {
+        role: "system",
+        content: systemInstruction(personality, developerMode),
       },
-      body: JSON.stringify({
-        model: OPENROUTER_MODEL_ID,
-        max_tokens: 8192,
-        messages: [
-          {
-            role: "system",
-            content: systemInstruction(personality, developerMode),
-          },
-          { role: "user", content: message.trim() },
-        ],
-        stream: true,
-      }),
-    });
+      { role: "user", content: message.trim() },
+    ]);
+    upstream = routed.response;
   } catch (err) {
     console.error("[CF Function Error] OpenRouter fetch failed:", err instanceof Error ? err.message : String(err));
     return jsonResponse(
@@ -257,7 +310,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   }
 
   if (upstream.status === 429) {
-    console.error("[CF Function Error] OpenRouter rate limit (429) reached.");
+    console.error("[CF Function Error] All configured free models are rate limited or unavailable (429).");
     return jsonResponse(
       {
         code: "OPENROUTER_RATE_LIMIT",
