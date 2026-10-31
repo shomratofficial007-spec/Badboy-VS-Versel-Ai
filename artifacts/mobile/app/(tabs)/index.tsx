@@ -56,6 +56,7 @@ type BrowserSpeechRecognition = {
   onend: (() => void) | null;
   start: () => void;
   stop: () => void;
+  abort: () => void;
 };
 
 
@@ -397,8 +398,7 @@ export default function ChatScreen() {
         }
       },
       onWakeWordDetected: () => {
-        setWakeDetected(true);
-      },
+        setWakeDetected(true);      },
       onError: (errType) => {
         setError(getVoiceErrorMessage(errType));
       },
