@@ -22,7 +22,8 @@ test("health reports AI unavailable when the secret is missing", async () => {
   assert.deepEqual(await response.json(), {
     status: "degraded",
     aiConfigured: false,
-    model: "nvidia/nemotron-3.5-lightning:free",
+    model: "openrouter/free",
+    fallbackCount: 4,
   });
 });
 
