@@ -351,12 +351,10 @@ export default function ChatScreen() {
       setError('এই ডিভাইসে Speech Recognition সমর্থিত নয়।');
       return;
     }
-    if (Platform.OS !== 'web') {
-      const permState = await checkMicrophonePermission();
-      if (permState === 'denied') {
-        setError(getVoiceErrorMessage('not-allowed'));
-        return;
-      }
+    const permState = await checkMicrophonePermission();
+    if (permState === 'denied') {
+      setError(getVoiceErrorMessage('not-allowed'));
+      return;
     }
 
     setError(null);
