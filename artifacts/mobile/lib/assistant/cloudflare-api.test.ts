@@ -81,7 +81,7 @@ test("chat forwards a valid request and returns real streamed content in client 
   );
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /text\/event-stream/);
-  assert.equal(sentBody?.model, "nvidia/nemotron-3.5-lightning:free");
+  assert.equal(sentBody?.model, "openrouter/free");
   assert.equal(sentBody?.stream, true);
   const messages = sentBody?.messages as Array<{ role: string; content: string }>;
   assert.equal(messages[1]?.content, "হ্যালো");
