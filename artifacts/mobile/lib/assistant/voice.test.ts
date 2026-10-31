@@ -43,6 +43,7 @@ test('voice errors map permission, recognition, network and service failures to 
     ['recognition-service-not-available', /Speech Services by Google/],
     ['start_failed', /Android-এর Speech Recognition চালু হয়নি/],
     ['unknown_error_code', /ভয়েস ইনপুটে সমস্যা হয়েছে/],
+    ['network', /Error code: network/],
   ];
   for (const [error, expected] of cases) {
     assert.match(getVoiceErrorMessage(error), expected, error);

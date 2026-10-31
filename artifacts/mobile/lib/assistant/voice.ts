@@ -167,8 +167,9 @@ type RecognitionInstance = {
   interimResults: boolean;
   maxAlternatives: number;
   onresult: ((event: RecognitionEventLike) => void) | null;
-  onerror: ((event: { error?: string }) => void) | null;
+  onerror: ((event: { error?: string; message?: string }) => void) | null;
   onend: (() => void) | null;
+  onstart?: (() => void) | null;
   start: () => void;
   stop: () => void;
   abort: () => void;
@@ -263,47 +264,48 @@ export function containsWakePhrase(text: string): boolean {
 
 /** User-friendly localized Bangla error messages for voice recognition issues */
 export function getVoiceErrorMessage(errorType?: string): string {
+  let message: string;
   switch (errorType) {
     case 'not-allowed':
     case 'permission-denied':
     case 'denied':
     case 'permission_denied':
-      return 'মাইক্রোফোন ব্যবহারের অনুমতি পাওয়া যায়নি। ব্রাউজার বা ডিভাইসের Settings থেকে Microphone অনুমতি সক্রিয় করুন।';
+      message = 'মাইক্রোফোন ব্যবহারের অনুমতি পাওয়া যায়নি। ব্রাউজার বা ডিভাইসের Settings থেকে Microphone অনুমতি সক্রিয় করুন।'; break;
     case 'no-speech':
     case 'no_match':
     case 'speech_timeout':
-      return 'কোনো কথা শোনা যায়নি। আবার চেষ্টা করুন।';
+      message = 'কোনো কথা শোনা যায়নি। আবার চেষ্টা করুন।'; break;
     case 'network':
     case 'network_failure':
     case 'server':
-      return 'ভয়েস রিকগনিশন সার্ভারে সংযোগ হচ্ছে না। ইন্টারনেট সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।';
+      message = 'ভয়েস রিকগনিশন সার্ভারে সংযোগ হচ্ছে না। ইন্টারনেট সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।'; break;
     case 'audio-capture':
     case 'audio_extra':
-      return 'মাইক্রোফোন ডিভাইসটি পাওয়া যায়নি বা অন্য অ্যাপ ব্যবহার করছে।';
+      message = 'মাইক্রোফোন ডিভাইসটি পাওয়া যায়নি বা অন্য অ্যাপ ব্যবহার করছে।'; break;
     case 'aborted':
-      return 'ভয়েস গ্রহণ ব্যবহারকারী দ্বারা বন্ধ করা হয়েছে।';
+      message = 'ভয়েস গ্রহণ ব্যবহারকারী দ্বারা বন্ধ করা হয়েছে।'; break;
     case 'service-not-allowed':
     case 'language-not-supported':
-      return 'এই ভাষায় Android-এর স্পিচ সার্ভিস সাড়া দেয়নি। Badboy-এর ভাষা বাটন থেকে অন্য ভাষা বেছে নিন; ফোনের Settings → Google → Voice বা Speech Services by Google-এ ভাষা ডাউনলোড/সক্রিয় করুন। সব ভাষা সব ফোনে উপলভ্য নয়।';
+      message = 'এই ভাষায় Android-এর স্পিচ সার্ভিস সাড়া দেয়নি। Badboy-এর ভাষা বাটন থেকে অন্য ভাষা বেছে নিন; ফোনের Settings → Google → Voice বা Speech Services by Google-এ ভাষা ডাউনলোড/সক্রিয় করুন। সব ভাষা সব ফোনে উপলভ্য নয়।'; break;
     case 'busy':
     case 'recognizer-busy':
-      return 'ভয়েস সার্ভিস ব্যস্ত আছে। অন্য কোনো অ্যাপের মাইক্রোফোন ব্যবহার বন্ধ করে আবার চেষ্টা করুন।';
+      message = 'ভয়েস সার্ভিস ব্যস্ত আছে। অন্য কোনো অ্যাপের মাইক্রোফোন ব্যবহার বন্ধ করে আবার চেষ্টা করুন।'; break;
     case 'client':
     case 'unknown':
-      return 'Android-এর Speech Recognition সার্ভিস চালু হতে পারেনি। Google app ও Speech Services by Google আপডেট করে ফোন পুনরায় চালু করুন।';
+      message = 'Android-এর Speech Recognition সার্ভিস চালু হতে পারেনি। Google app ও Speech Services by Google আপডেট করে ফোন পুনরায় চালু করুন।'; break;
     case 'start_failed':
     case 'speech_error':
     case 'recognition-service-not-available':
     case 'service-not-available':
-      return 'Android-এর Speech Recognition চালু হয়নি। Microphone অনুমতি দিন; Google app ও Speech Services by Google সক্রিয়/আপডেট করুন, ইন্টারনেট পরীক্ষা করে ফোন পুনরায় চালু করুন। তারপরও না হলে ফোনের Speech Recognition provider-এ সমস্যা থাকতে পারে।';
+      message = 'Android-এর Speech Recognition চালু হয়নি। Microphone অনুমতি দিন; Google app ও Speech Services by Google সক্রিয়/আপডেট করুন, ইন্টারনেট পরীক্ষা করে ফোন পুনরায় চালু করুন। তারপরও না হলে ফোনের Speech Recognition provider-এ সমস্যা থাকতে পারে।'; break;
     case 'unsupported':
     case 'not_supported':
-      return 'এই ডিভাইসে বা ব্রাউজারে ভয়েস রিকগনিশন সমর্থিত নয়। Google Speech Services বা উপযুক্ত সার্ভিস ইনস্টল আছে কিনা যাচাই করুন।';
+      message = 'এই ডিভাইসে বা ব্রাউজারে ভয়েস রিকগনিশন সমর্থিত নয়। Google Speech Services বা উপযুক্ত সার্ভিস ইনস্টল আছে কিনা যাচাই করুন।'; break;
     default:
-      return 'ভয়েস ইনপুটে সমস্যা হয়েছে। পুনরায় চেষ্টা করুন।';
+      message = 'ভয়েস ইনপুটে সমস্যা হয়েছে। পুনরায় চেষ্টা করুন।'; break;
   }
+  return errorType ? `${message} (Error code: ${errorType})` : message;
 }
-
 /**
  * Note on Background Listening Limitations:
  * Web Speech API and Native Mobile Speech Recognition run while the application is active in the foreground.
@@ -548,8 +550,21 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
     }
   };
 
+  recognition.onstart = () => {
+    console.info('[BadboyVoice] Web Speech API started', {
+      language: recognition.lang,
+      secureContext: typeof window !== 'undefined' ? window.isSecureContext : false,
+    });
+  };
+
   recognition.onerror = (evt) => {
     const errorType = evt?.error ?? 'speech_error';
+    console.error('[BadboyVoice] Web Speech API error', {
+      error: errorType,
+      message: evt?.message ?? null,
+      language: recognition.lang,
+      secureContext: typeof window !== 'undefined' ? window.isSecureContext : false,
+    });
     // Chrome may emit "aborted" when recognition is stopped as part of normal
     // cleanup/watchdog handling. Do not report that as a user-cancelled action.
     if (finished) return;
@@ -558,7 +573,10 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
     callbacks.onError?.(errorType);
   };
 
-  recognition.onend = () => finish();
+  recognition.onend = () => {
+    console.info('[BadboyVoice] Web Speech API ended', { language: recognition.lang });
+    finish();
+  };
 
   try {
     resetWatchdog(() => recognition.abort(), undefined, finish);
