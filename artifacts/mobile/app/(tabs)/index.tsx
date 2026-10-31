@@ -362,12 +362,13 @@ export default function ChatScreen() {
 
     stopDictationRef.current = dictateOnce({
       lang: selectedLang,
-      onTranscript: (text, isFinal) => {
+      onTranscript: (text) => {
         const combined = base ? `${base} ${text}`.trim() : text.trim();
         setDraft(combined.slice(0, 4000));
       },
       onWakeWordDetected: () => {
-        setWakeDetected(true);      },
+        setWakeDetected(true);
+      },
       onError: (errType) => {
         setError(getVoiceErrorMessage(errType));
       },
