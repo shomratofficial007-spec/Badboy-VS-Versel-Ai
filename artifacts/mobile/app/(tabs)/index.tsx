@@ -262,10 +262,16 @@ export default function ChatScreen() {
       setError('এই ডিভাইসে Speech Recognition সমর্থিত নয়।');
       return;
     }
-    const permState = await checkMicrophonePermission();
-    if (permState === 'denied') {
-      setError(getVoiceErrorMessage('not-allowed'));
-      return;
+    // On web, let the browser request microphone access as recognition starts.
+    // Awaiting the Permissions API here can consume Chrome's transient user
+    // activation before SpeechRecognition.start() is called from the mic tap.
+    // Native platforms still need the explicit Expo permission check.
+    if (Platform.OS !== 'web') {
+      const permState = await checkMicrophonePermission();
+      if (permState === 'denied') {
+        setError(getVoiceErrorMessage('not-allowed'));
+        return;
+      }
     }
 
     setError(null);
