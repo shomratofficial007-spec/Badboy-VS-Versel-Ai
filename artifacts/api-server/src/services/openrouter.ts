@@ -62,6 +62,25 @@ function shouldTryNextFreeModel(statusCode: number) {
 }
 
 /**
+ * Emit safe model-routing diagnostics to the server runtime logs.
+ * Never log prompts, user content, API keys, or provider response bodies.
+ */
+function logModelDiagnostic(
+  event: "attempt" | "success" | "failure",
+  modelId: string,
+  statusCode?: number,
+) {
+  console.info(
+    JSON.stringify({
+      component: "badboy-ai-model-routing",
+      event,
+      model: modelId,
+      ...(statusCode === undefined ? {} : { statusCode }),
+    }),
+  );
+}
+
+/**
  * Reasoning is opt-in because not every free model supports it. The same
  * setting is passed to the selected model; unsupported options are omitted
  * by default.
@@ -84,9 +103,9 @@ function getReasoningProviderOptions() {
  * route contract. Fallback is attempted only before the first text chunk:
  * restarting after partial output would duplicate or corrupt the answer.
  *
- * The primary openrouter/free router dynamically filters the current free
- * pool by capabilities (for example image understanding and tool calling).
- * The explicit fallbacks are additional text-chat-only free variants.
+ * Diagnostics record each attempted model, its failure status (if any), and
+ * the model that completed the response. Only model IDs and HTTP status codes
+ * are logged; user content and secrets are never included.
  */
 export async function streamOpenRouterReply(
   messages: OpenRouterMessage[],
@@ -111,6 +130,7 @@ export async function streamOpenRouterReply(
       }
 
       let emittedText = false;
+      logModelDiagnostic("attempt", modelId);
       try {
         const result = streamText({
           model: openrouter(modelId),
@@ -123,6 +143,7 @@ export async function streamOpenRouterReply(
           if (chunk.length > 0) emittedText = true;
           yield chunk;
         }
+        logModelDiagnostic("success", modelId);
         return;
       } catch (error) {
         const failure =
@@ -130,6 +151,7 @@ export async function streamOpenRouterReply(
             ? error
             : new OpenRouterApiError(statusFromError(error));
         lastError = failure;
+        logModelDiagnostic("failure", modelId, failure.statusCode);
 
         // Once any content is sent, do not restart another model and risk
         // returning a mixed or duplicated answer to the client.
