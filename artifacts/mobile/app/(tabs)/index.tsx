@@ -34,9 +34,6 @@ import {
   getNextVoiceLanguage,
   getVoiceLanguageLabel,
   isDictationAvailable,
-  isReadAloudAvailable,
-  speak,
-  stopSpeaking,
 } from '@/lib/assistant/voice';
 import type { ChatMessage } from '@/lib/assistant/types';
 import { useColors } from '@/hooks/useColors';
@@ -79,8 +76,6 @@ export default function ChatScreen() {
   const [busy, setBusy] = useState(false);
   const [improving, setImproving] = useState(false);
   const [listening, setListening] = useState(false);
-  const [speaking, setSpeaking] = useState(false);
-  const [voiceMode, setVoiceMode] = useState(false);
   const [wakeDetected, setWakeDetected] = useState(false);
   const [selectedLang, setSelectedLang] = useState<string>('bn-BD');
   const [error, setError] = useState<string | null>(null);
@@ -96,7 +91,7 @@ export default function ChatScreen() {
   const corePulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    if (listening || speaking || busy) {
+    if (listening || busy) {
       const visualizerLoop = Animated.loop(
         Animated.parallel([
           Animated.sequence([
@@ -130,7 +125,7 @@ export default function ChatScreen() {
       barAnim4.setValue(14);
       corePulse.setValue(1);
     }
-  }, [listening, speaking, busy, barAnim1, barAnim2, barAnim3, barAnim4, corePulse]);
+  }, [listening, busy, barAnim1, barAnim2, barAnim3, barAnim4, corePulse]);
 
   const sendMessage = useCallback(async (rawText: string) => {
     const text = rawText.trim();
@@ -155,9 +150,6 @@ export default function ChatScreen() {
       };
       setMessages([...messages, userMessage, answer]);
       setBusy(false);
-      if (isReadAloudAvailable()) {
-        speak(`"${cleanTitle}" গানটি ইউটিউবে প্লে করা হচ্ছে`, selectedLang);
-      }
       setTimeout(() => {
         void openYouTubeUrl(url, appUrl);
       }, 800);
@@ -172,9 +164,6 @@ export default function ChatScreen() {
       };
       setMessages([...messages, userMessage, answer]);
       setBusy(false);
-      if (isReadAloudAvailable()) {
-        speak('কোন গান শুনতে চাও?', selectedLang);
-      }
       if (isDictationAvailable() && settings.voiceProcessingConsent) {
         setTimeout(() => {
           setListening(true);
@@ -221,19 +210,9 @@ export default function ChatScreen() {
           : 'AI সংযোগে সমস্যা হয়েছে। কিছুক্ষণ পর চেষ্টা করুন।',
       );
     } finally {
-      if (voiceMode && answer.content.trim()) {
-        speak(answer.content, selectedLang, {
-          onStart: () => setSpeaking(true),
-          onDone: () => setSpeaking(false),
-          onError: () => {
-            setSpeaking(false);
-            setError('উত্তরটি শোনানো যায়নি। ফোনের Text-to-Speech সেটিংস পরীক্ষা করে আবার চেষ্টা করুন।');
-          },
-        });
-      }
       setBusy(false);
     }
-  }, [awaitingSongName, busy, messages, selectedLang, setError, setMessages, settings, voiceMode]);
+  }, [awaitingSongName, busy, messages, setError, setMessages, settings]);
 
   const requestImprovement = useCallback(async () => {
     const lastUserMessage = [...messages].reverse().find((item) => item.role === 'user');
@@ -353,7 +332,7 @@ export default function ChatScreen() {
           }
           const combined = [base, finalText, interimText].filter(Boolean).join(' ').trim();
           if (combined) setDraft(combined.slice(0, 4000));
-          if (voiceMode && finalText.trim()) {
+          if (finalText.trim()) {
             const submittedText = finalText.trim().slice(0, 4000);
             setDraft(submittedText);
             setTimeout(() => { void sendMessage(submittedText); }, 0);
@@ -391,7 +370,7 @@ export default function ChatScreen() {
       onTranscript: (text, isFinal) => {
         const combined = base ? `${base} ${text}`.trim() : text.trim();
         setDraft(combined.slice(0, 4000));
-        if (voiceMode && isFinal && text.trim()) {
+        if (isFinal && text.trim()) {
           const finalText = text.trim().slice(0, 4000);
           setDraft(finalText);
           setTimeout(() => { void sendMessage(finalText); }, 0);
@@ -407,35 +386,7 @@ export default function ChatScreen() {
         stopDictationRef.current = null;
       },
     });
-  }, [draft, listening, selectedLang, settings.voiceProcessingConsent, sendMessage, voiceMode]);
-
-  const toggleReadAloud = useCallback(() => {
-    if (speaking) {
-      stopSpeaking();
-      setSpeaking(false);
-      return;
-    }
-    const lastAssistant = [...messages]
-      .reverse()
-      .find((item) => item.role === 'assistant' && item.content.trim());
-    if (!lastAssistant) {
-      setError('পড়ে শোনানোর মতো কোনো বার্তা নেই।');
-      return;
-    }
-    if (!isReadAloudAvailable()) {
-      setError('এই ডিভাইসে বা ব্রাউজারে ভয়েস আউটপুট সমর্থিত নয়।');
-      return;
-    }
-    setError(null);
-    speak(lastAssistant.content, selectedLang, {
-      onStart: () => setSpeaking(true),
-      onDone: () => setSpeaking(false),
-      onError: () => {
-        setSpeaking(false);
-        setError('বার্তাটি শোনানো যায়নি। ফোনের Text-to-Speech সেটিংস পরীক্ষা করে আবার চেষ্টা করুন।');
-      },
-    });
-  }, [messages, selectedLang, setError, speaking]);
+  }, [draft, listening, selectedLang, settings.voiceProcessingConsent, sendMessage]);
 
   const startNewChat = () => {
     if (!messages.length) {
@@ -560,9 +511,8 @@ export default function ChatScreen() {
   };
 
   const getStatusText = () => {
-    if (listening) return wakeDetected ? 'Oi Badboy সনাক্ত হয়েছে!' : (voiceMode ? 'ভয়েস চ্যাটে শুনছি…' : 'শুনছি… ("Oi Badboy" বলুন)');
+    if (listening) return wakeDetected ? 'Oi Badboy সনাক্ত হয়েছে!' : 'কথা বলুন…';
     if (busy) return 'Badboy ভাবছে…';
-    if (speaking) return 'কথা বলছি…';
     if (!settings.onlineAI) return 'অফলাইন মোড';
     return 'Badboy প্রস্তুত';
   };
@@ -570,7 +520,6 @@ export default function ChatScreen() {
   const getStatusColor = () => {
     if (listening) return '#00e5ff';
     if (busy) return '#f59e0b';
-    if (speaking) return '#10b981';
     if (!settings.onlineAI) return '#ef4444';
     return '#38bdf8';
   };
@@ -625,10 +574,6 @@ export default function ChatScreen() {
           ) : null}
           {!isUser && item.content.trim() ? (
             <View style={styles.messageActions}>
-              <Pressable onPress={() => { if (isReadAloudAvailable()) speak(item.content, selectedLang); else setError('এই ডিভাইসে পড়ে শোনানো সমর্থিত নয়।'); }} accessibilityRole="button" accessibilityLabel="উত্তর পড়ে শুনুন" style={[styles.messageAction, { borderColor: colors.border }]}>
-                <Feather name="volume-2" size={13} color={colors.mutedForeground} />
-                <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>শুনুন</Text>
-              </Pressable>
               <Pressable onPress={() => { void shareMessage(item); }} accessibilityRole="button" accessibilityLabel="উত্তর শেয়ার করুন" style={[styles.messageAction, { borderColor: colors.border }]}>
                 <Feather name="share-2" size={13} color={colors.mutedForeground} />
                 <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>শেয়ার</Text>
@@ -838,22 +783,6 @@ export default function ChatScreen() {
           {listening
             ? <ActivityIndicator size="small" color={colors.primaryForeground} />
             : <Feather name="mic" size={18} color={listening ? colors.primaryForeground : colors.foreground} />}
-        </Pressable>
-        <Pressable
-          onPress={() => setVoiceMode((enabled) => !enabled)}
-          accessibilityRole="button"
-          accessibilityLabel={voiceMode ? 'ভয়েস চ্যাট মোড বন্ধ করুন' : 'ভয়েস চ্যাট মোড চালু করুন'}
-          style={[styles.roundButton, { backgroundColor: voiceMode ? colors.primary : colors.secondary }]}
-        >
-          <Feather name="headphones" size={18} color={voiceMode ? colors.primaryForeground : colors.foreground} />
-        </Pressable>
-        <Pressable
-          onPress={() => toggleReadAloud()}
-          accessibilityRole="button"
-          accessibilityLabel={speaking ? 'ভয়েস বন্ধ' : 'পড়ে শোনান'}
-          style={[styles.roundButton, { backgroundColor: colors.secondary }]}
-        >
-          <Feather name={speaking ? 'volume-x' : 'volume-2'} size={18} color={colors.foreground} />
         </Pressable>
         <Pressable
           onPress={() => void sendMessage(draft)}
