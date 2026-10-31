@@ -56,6 +56,7 @@ type BrowserSpeechRecognition = {
   onend: (() => void) | null;
   start: () => void;
   stop: () => void;
+  abort: () => void;
 };
 
 
@@ -318,7 +319,30 @@ export default function ChatScreen() {
         recognition.continuous = false;
         recognition.maxAlternatives = 1;
 
+        // Some browser speech providers never emit onerror/onend. A watchdog
+        // prevents the microphone spinner from remaining active indefinitely.
+        let recognitionFinished = false;
+        let recognitionWatchdog: ReturnType<typeof setTimeout> | null = null;
+        const finishRecognition = () => {
+          if (recognitionFinished) return;
+          recognitionFinished = true;
+          if (recognitionWatchdog) clearTimeout(recognitionWatchdog);
+          recognitionWatchdog = null;
+          setListening(false);
+          stopDictationRef.current = null;
+        };
+        const armRecognitionWatchdog = () => {
+          if (recognitionWatchdog) clearTimeout(recognitionWatchdog);
+          recognitionWatchdog = setTimeout(() => {
+            try { recognition.abort(); } catch { /* Provider may already be stopped. */ }
+            setError('ভয়েস সার্ভিস থেকে সময়মতো সাড়া পাওয়া যায়নি। আবার মাইক্রোফোন চাপুন।');
+            finishRecognition();
+          }, 20000);
+        };
+
         recognition.onresult = (event) => {
+          if (recognitionFinished) return;
+          armRecognitionWatchdog();
           let finalText = '';
           let interimText = '';
           for (let index = event.resultIndex; index < event.results.length; index += 1) {
@@ -336,6 +360,7 @@ export default function ChatScreen() {
           }
         };
         recognition.onerror = (event) => {
+          if (recognitionFinished) return;
           const message = event.error === 'not-allowed'
             ? getVoiceErrorMessage('not-allowed')
             : event.error === 'no-speech'
@@ -344,19 +369,14 @@ export default function ChatScreen() {
                 ? 'নির্বাচিত ভাষা এই ব্রাউজারে সমর্থিত নয়।'
                 : 'ব্রাউজারের Speech Recognition কাজ করেনি। আবার চেষ্টা করুন।';
           setError(message);
-          setListening(false);
-          stopDictationRef.current = null;
+          finishRecognition();
         };
-        recognition.onend = () => {
-          setListening(false);
-          stopDictationRef.current = null;
-        };
+        recognition.onend = finishRecognition;
         stopDictationRef.current = () => {
-          try { recognition.stop(); } catch {
-            setListening(false);
-            stopDictationRef.current = null;
-          }
+          try { recognition.abort(); } catch { /* Already stopped. */ }
+          finishRecognition();
         };
+        armRecognitionWatchdog();
         recognition.start();
       } catch (cause) {
         setListening(false);
@@ -378,8 +398,7 @@ export default function ChatScreen() {
         }
       },
       onWakeWordDetected: () => {
-        setWakeDetected(true);
-      },
+        setWakeDetected(true);      },
       onError: (errType) => {
         setError(getVoiceErrorMessage(errType));
       },
