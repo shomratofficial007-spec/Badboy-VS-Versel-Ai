@@ -103,7 +103,17 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
     [memories],
   );
 
-  const updateMemory = useCallback(\n    async (id: string, title: string, content: string) => {\n      const existing = memories.find((note) => note.id === id);\n      if (!existing) throw new Error('Memory not found.');\n      const updated: MemoryNote = { ...existing, title: title.trim(), content: content.trim() };\n      const next = await updateMemoryNote(updated, memories);\n      setMemories(next);\n    },\n    [memories],\n  );\n\n  const deleteMemory = useCallback(
+  const updateMemory = useCallback(
+    async (id: string, title: string, content: string) => {
+      const existing = memories.find((note) => note.id === id);
+      if (!existing) throw new Error('Memory not found.');
+      const updated: MemoryNote = { ...existing, title: title.trim(), content: content.trim() };
+      const next = await updateMemoryNote(updated, memories);
+      setMemories(next);
+    },
+    [memories],
+  );
+\n  const deleteMemory = useCallback(
     async (id: string) => {
       const next = memories.filter((note) => note.id !== id);
       await removeMemoryNote(id, next);
@@ -127,6 +137,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       setMessages,
       updateSettings,
       saveMemory,
+      updateMemory,
       deleteMemory,
       clearChat,
     }),
