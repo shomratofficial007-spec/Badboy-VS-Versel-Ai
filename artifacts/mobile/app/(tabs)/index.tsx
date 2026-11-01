@@ -505,8 +505,7 @@ export default function ChatScreen() {
         style={[
           styles.header,
           {
-            paddingTop:
-              (Platform.OS === 'web' ? 60 : Math.max(insets.top, 12)) + 8,
+            paddingTop: 8,
             backgroundColor: colors.card,
             borderBottomColor: colors.border,
           },
