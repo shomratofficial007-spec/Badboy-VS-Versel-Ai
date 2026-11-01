@@ -6,7 +6,7 @@ import React, {
   useMemo,
   useState,
 } from 'react';
-import { readLocalState, persistMessages, persistSettings, removeMemoryNote, storeMemoryNote } from '@/lib/assistant/storage';
+import { readLocalState, persistMessages, persistSettings, removeMemoryNote, storeMemoryNote, updateMemoryNote } from '@/lib/assistant/storage';
 import { DEFAULT_SETTINGS, type AssistantSettings, type ChatMessage, type MemoryNote } from '@/lib/assistant/types';
 
 interface AssistantContextValue {
@@ -18,6 +18,7 @@ interface AssistantContextValue {
   setMessages: (messages: ChatMessage[]) => void;
   updateSettings: (update: Partial<AssistantSettings>) => void;
   saveMemory: (title: string, content: string) => Promise<void>;
+  updateMemory: (id: string, title: string, content: string) => Promise<void>;
   deleteMemory: (id: string) => Promise<void>;
   clearChat: () => Promise<void>;
 }
@@ -102,6 +103,21 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
     [memories],
   );
 
+  const updateMemory = useCallback(
+    async (id: string, title: string, content: string) => {
+      const existing = memories.find((note) => note.id === id);
+      if (!existing) throw new Error('Memory note not found.');
+      const updated: MemoryNote = {
+        ...existing,
+        title: title.trim(),
+        content: content.trim(),
+      };
+      const next = await updateMemoryNote(updated, memories);
+      setMemories(next);
+    },
+    [memories],
+  );
+
   const deleteMemory = useCallback(
     async (id: string) => {
       const next = memories.filter((note) => note.id !== id);
@@ -126,10 +142,11 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       setMessages,
       updateSettings,
       saveMemory,
+      updateMemory,
       deleteMemory,
       clearChat,
     }),
-    [ready, messages, memories, settings, storageError, setMessages, updateSettings, saveMemory, deleteMemory, clearChat],
+    [ready, messages, memories, settings, storageError, setMessages, updateSettings, saveMemory, updateMemory, deleteMemory, clearChat],
   );
 
   return <AssistantContext.Provider value={value}>{children}</AssistantContext.Provider>;
