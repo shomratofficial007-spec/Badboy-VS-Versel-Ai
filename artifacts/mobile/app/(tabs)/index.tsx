@@ -802,7 +802,7 @@ const styles = StyleSheet.create({
   brandSub: { fontSize: 11, marginTop: 2 },
   statusBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, maxWidth: 150 },
   statusBadgeText: { fontSize: 10, fontWeight: '600', color: '#ffffff' },
-  langToggle: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, marginHorizontal: 2, maxWidth: '100%' }
+  langToggle: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, marginHorizontal: 2, maxWidth: '100%' },
   langText: { fontSize: 11, fontWeight: '700' },
   visualizerContainer: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 38, marginHorizontal: 8 },
   visualizerBar: { width: 3, borderRadius: 2 },
