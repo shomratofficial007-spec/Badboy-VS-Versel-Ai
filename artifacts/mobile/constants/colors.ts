@@ -7,8 +7,8 @@ const themes = {
   emerald: { background:'#071811', foreground:'#e8fff2', card:'#10271c', cardForeground:'#e8fff2', primary:'#34d399', primaryForeground:'#052016', secondary:'#173728', secondaryForeground:'#6ee7b7', muted:'#1b3a2b', mutedForeground:'#9ab9a7', accent:'#14532d', accentForeground:'#d1fae5', destructive:'#fb7185', destructiveForeground:'#ffffff', border:'#28513a', borderGlow:'#34d39933', input:'#315b43', text:'#e8fff2', tint:'#34d399' },
   sunset: { background:'#1b1010', foreground:'#fff1e8', card:'#2b1a18', cardForeground:'#fff1e8', primary:'#fb923c', primaryForeground:'#261207', secondary:'#42251e', secondaryForeground:'#fdba74', muted:'#4a2b24', mutedForeground:'#c9a394', accent:'#7c2d12', accentForeground:'#ffedd5', destructive:'#f87171', destructiveForeground:'#ffffff', border:'#63392c', borderGlow:'#fb923c33', input:'#704333', text:'#fff1e8', tint:'#fb923c' },
   light: { background:'#f4f7fb', foreground:'#172033', card:'#ffffff', cardForeground:'#172033', primary:'#2563eb', primaryForeground:'#ffffff', secondary:'#e8eef8', secondaryForeground:'#31527f', muted:'#e9eef5', mutedForeground:'#64748b', accent:'#dbeafe', accentForeground:'#1e40af', destructive:'#dc2626', destructiveForeground:'#ffffff', border:'#d7e0ec', borderGlow:'#2563eb22', input:'#cbd5e1', text:'#172033', tint:'#2563eb' },
-};
   // Screenshot-matched Badboy Neon Blue theme; existing selectable palettes remain unchanged.
   badboy: { background:'#020b18', foreground:'#eafaff', card:'#061a2d', cardForeground:'#eafaff', primary:'#00d9ff', primaryForeground:'#00121f', secondary:'#0a2d4a', secondaryForeground:'#8beaff', muted:'#10334d', mutedForeground:'#9bbdce', accent:'#0b4264', accentForeground:'#d8f8ff', destructive:'#fb7185', destructiveForeground:'#ffffff', border:'#145078', borderGlow:'#00d9ff66', input:'#174b6b', text:'#eafaff', tint:'#00d9ff' },
+};
 const colors = { themes, light: themes.badboy, dark: themes.badboy, radius: 18 };
 export default colors;
