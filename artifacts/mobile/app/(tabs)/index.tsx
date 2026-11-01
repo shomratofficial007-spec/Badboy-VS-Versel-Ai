@@ -2,7 +2,6 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useWindowDimensions } from 'react-native';
 import {
   ActivityIndicator,
   Alert,
@@ -72,8 +71,6 @@ function newMessage(role: ChatMessage['role'], content = ''): ChatMessage {
 export default function ChatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { width: windowWidth } = useWindowDimensions();
-  const compactHeader = windowWidth < 520;
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerModal, setDrawerModal] = useState<'search' | 'history' | 'options' | 'newChat' | null>(null);
