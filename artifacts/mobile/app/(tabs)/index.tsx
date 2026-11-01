@@ -423,10 +423,10 @@ export default function ChatScreen() {
   };
 
   const getStatusColor = () => {
-    if (listening) return '#00e5ff';
+    if (listening) return colors.primary;
     if (busy) return '#f59e0b';
-    if (!settings.onlineAI) return '#ef4444';
-    return '#38bdf8';
+    if (!settings.onlineAI) return colors.destructive;
+    return colors.secondaryForeground;
   };
 
   const openYouTubeUrl = async (webUrl: string, appUrl: string) => {
