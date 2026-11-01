@@ -313,7 +313,7 @@ export default function SettingsScreen() {
         <Text style={[styles.body,{color:colors.mutedForeground,marginBottom:10}]}>পছন্দের রং বেছে নাও। পরিবর্তন সঙ্গে সঙ্গে পুরো অ্যাপে দেখা যাবে এবং এই ফোনেই সংরক্ষিত থাকবে।</Text>
         <View style={{flexDirection:'row',flexWrap:'wrap',gap:9}}>
           {([
-            {id:'neon',label:'Badboy Violet',color:'#9b8cff'}, {id:'ocean',label:'Ocean Blue',color:'#38bdf8'}, {id:'purple',label:'Purple',color:'#c084fc'}, {id:'emerald',label:'Emerald',color:'#34d399'}, {id:'sunset',label:'Sunset',color:'#fb923c'}, {id:'light',label:'Light',color:'#2563eb'},
+            {id:'badboy',label:'Badboy Neon Blue',color:'#00d9ff'}, {id:'neon',label:'Badboy Violet',color:'#9b8cff'}, {id:'ocean',label:'Ocean Blue',color:'#38bdf8'}, {id:'purple',label:'Purple',color:'#c084fc'}, {id:'emerald',label:'Emerald',color:'#34d399'}, {id:'sunset',label:'Sunset',color:'#fb923c'}, {id:'light',label:'Light',color:'#2563eb'},
           ] as const).map(theme => { const selected=settings.theme===theme.id; return <Pressable key={theme.id} onPress={()=>updateSettings({theme:theme.id})} accessibilityRole="button" accessibilityState={{selected}} style={{width:'31%',minHeight:66,borderWidth:selected?2:1,borderColor:selected?colors.primary:colors.border,borderRadius:13,padding:9,alignItems:'center',justifyContent:'center',gap:6,backgroundColor:colors.background}}><View style={{width:22,height:22,borderRadius:11,backgroundColor:theme.color}}/><Text style={{fontSize:11,fontWeight:selected?'800':'600',color:colors.foreground}}>{theme.label}</Text>{selected?<Feather name="check-circle" size={13} color={colors.primary}/>:null}</Pressable>; })}
         </View>
       </View>

@@ -10,17 +10,17 @@ export function BadboyLogo({ size = 40 }: BadboyLogoProps) {
     <Svg width={size} height={size} viewBox="0 0 40 40" fill="none">
       <Defs>
         <LinearGradient id="bgGlow" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
-          <Stop offset="0%" stopColor="#211b48" />
-          <Stop offset="100%" stopColor="#080817" />
+          <Stop offset="0%" stopColor="#061a2d" />
+          <Stop offset="100%" stopColor="#020b18" />
         </LinearGradient>
         <LinearGradient id="cyanNeon" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
-          <Stop offset="0%" stopColor="#9b8cff" />
-          <Stop offset="60%" stopColor="#6475ff" />
-          <Stop offset="100%" stopColor="#c084fc" />
+          <Stop offset="0%" stopColor="#00d9ff" />
+          <Stop offset="60%" stopColor="#168bff" />
+          <Stop offset="100%" stopColor="#7c3aed" />
         </LinearGradient>
         <LinearGradient id="borderGlow" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
           <Stop offset="0%" stopColor="#00f0ff" stopOpacity="0.8" />
-          <Stop offset="100%" stopColor="#6475ff" stopOpacity="0.3" />
+          <Stop offset="100%" stopColor="#168bff" stopOpacity="0.3" />
         </LinearGradient>
       </Defs>
 
@@ -37,7 +37,7 @@ export function BadboyLogo({ size = 40 }: BadboyLogoProps) {
       />
 
       {/* Corner Accents */}
-      <Path d="M4 10 L4 4 L10 4" stroke="#9b8cff" strokeWidth="1.5" strokeLinecap="round" />
+      <Path d="M4 10 L4 4 L10 4" stroke="#00d9ff" strokeWidth="1.5" strokeLinecap="round" />
       <Path d="M36 30 L36 36 L30 36" stroke="#00f0ff" strokeWidth="1.5" strokeLinecap="round" />
 
       {/* Sharp Futuristic Stylized "B" */}

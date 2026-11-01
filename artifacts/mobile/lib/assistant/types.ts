@@ -16,7 +16,7 @@ export interface MemoryNote {
   content: string;
 }
 
-export type ThemeName = 'neon' | 'ocean' | 'purple' | 'emerald' | 'sunset' | 'light';
+export type ThemeName = 'badboy' | 'neon' | 'ocean' | 'purple' | 'emerald' | 'sunset' | 'light';
 
 export interface AssistantSettings {
   theme: ThemeName;
@@ -28,7 +28,7 @@ export interface AssistantSettings {
 }
 
 export const DEFAULT_SETTINGS: AssistantSettings = {
-  theme: 'neon',
+  theme: 'badboy',
   onlineAI: true,
   personality: 'Warm, thoughtful, clear, and practical. Always reply in Bangla (Bengali).',
   autoImprove: true,
