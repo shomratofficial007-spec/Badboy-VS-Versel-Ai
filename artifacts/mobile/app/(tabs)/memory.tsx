@@ -16,7 +16,7 @@ import { useColors } from '@/hooks/useColors';
 export default function MemoryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { memories, saveMemory, deleteMemory, storageError } = useAssistant();
+  const { memories, saveMemory, updateMemory, deleteMemory, storageError } = useAssistant();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [search, setSearch] = useState('');
@@ -60,9 +60,10 @@ export default function MemoryScreen() {
             setSaving(true);
             const processAction = async () => {
               if (editingId) {
-                await deleteMemory(editingId);
+                await updateMemory(editingId, cleanTitle, cleanContent);
+              } else {
+                await saveMemory(cleanTitle, cleanContent);
               }
-              await saveMemory(cleanTitle, cleanContent);
             };
             void processAction()
               .then(() => {
@@ -109,7 +110,7 @@ export default function MemoryScreen() {
       ]}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={[styles.eyebrow, { color: colors.primary }]}>LOCAL ENCRYPTED STORAGE</Text>
+      <Text style={[styles.eyebrow, { color: colors.primary }]}>LOCAL DEVICE STORAGE</Text>
       <Text style={[styles.title, { color: colors.foreground }]}>Private Memory</Text>
       <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
         এখানে সংরক্ষিত তথ্য সম্পূর্ণ লোকাল (ডিভাইসে)। কোনো ডেটা ক্লাউড সার্ভার বা AI মডেল ট্রেইনিংয়ে পাঠানো হয় না।
