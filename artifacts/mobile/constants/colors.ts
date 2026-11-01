@@ -1,70 +1,11 @@
-/**
- * Semantic design tokens for Badboy AI Assistant.
- * Modern premium dark navy/black theme with cyan/blue accents and subtle glow.
- */
-
-const colors = {
-  light: {
-    // Core surfaces - Dark Navy/Black base theme
-    background: '#040814',
-    foreground: '#e6f4fe',
-
-    // Cards / elevated surfaces
-    card: '#0a1224',
-    cardForeground: '#e6f4fe',
-
-    // Primary action color (Luminous Cyan / Neon Glow)
-    primary: '#00f0ff',
-    primaryForeground: '#030a17',
-
-    // Secondary / interactive surfaces (Electric Blue Dark)
-    secondary: '#101d36',
-    secondaryForeground: '#38bdf8',
-
-    // Muted / subdued elements
-    muted: '#162847',
-    mutedForeground: '#82a0c7',
-
-    // Accent highlights
-    accent: '#0d3159',
-    accentForeground: '#bae6fd',
-
-    // Destructive actions
-    destructive: '#f43f5e',
-    destructiveForeground: '#ffffff',
-
-    // Borders and input outlines (Glowing Cyan-tinted borders)
-    border: '#172e52',
-    borderGlow: '#00f0ff33',
-    input: '#1a325a',
-
-    text: '#e6f4fe',
-    tint: '#00f0ff',
-  },
-
-  dark: {
-    text: '#e6f4fe',
-    tint: '#00f0ff',
-    background: '#030712',
-    foreground: '#e6f4fe',
-    card: '#08101e',
-    cardForeground: '#e6f4fe',
-    primary: '#00f0ff',
-    primaryForeground: '#030a17',
-    secondary: '#0f1a30',
-    secondaryForeground: '#38bdf8',
-    muted: '#14233e',
-    mutedForeground: '#7dd3fc',
-    accent: '#0b294a',
-    accentForeground: '#bae6fd',
-    destructive: '#f43f5e',
-    destructiveForeground: '#ffffff',
-    border: '#162848',
-    borderGlow: '#00f0ff44',
-    input: '#182f56',
-  },
-
-  radius: 18,
+/** Premium selectable palettes for Badboy AI. */
+const themes = {
+  neon: { background:'#040814', foreground:'#e6f4fe', card:'#0a1224', cardForeground:'#e6f4fe', primary:'#00f0ff', primaryForeground:'#030a17', secondary:'#101d36', secondaryForeground:'#38bdf8', muted:'#162847', mutedForeground:'#82a0c7', accent:'#0d3159', accentForeground:'#bae6fd', destructive:'#f43f5e', destructiveForeground:'#ffffff', border:'#172e52', borderGlow:'#00f0ff33', input:'#1a325a', text:'#e6f4fe', tint:'#00f0ff' },
+  ocean: { background:'#061522', foreground:'#e4f7ff', card:'#0b2638', cardForeground:'#e4f7ff', primary:'#38bdf8', primaryForeground:'#041522', secondary:'#12364b', secondaryForeground:'#7dd3fc', muted:'#17384d', mutedForeground:'#9abaca', accent:'#164e63', accentForeground:'#cffafe', destructive:'#fb7185', destructiveForeground:'#ffffff', border:'#1e4960', borderGlow:'#38bdf833', input:'#24536b', text:'#e4f7ff', tint:'#38bdf8' },
+  purple: { background:'#120d20', foreground:'#f4edff', card:'#211735', cardForeground:'#f4edff', primary:'#c084fc', primaryForeground:'#1b1028', secondary:'#302044', secondaryForeground:'#d8b4fe', muted:'#35264a', mutedForeground:'#b8a5ca', accent:'#4c1d75', accentForeground:'#f3e8ff', destructive:'#fb7185', destructiveForeground:'#ffffff', border:'#49345f', borderGlow:'#c084fc33', input:'#513b69', text:'#f4edff', tint:'#c084fc' },
+  emerald: { background:'#071811', foreground:'#e8fff2', card:'#10271c', cardForeground:'#e8fff2', primary:'#34d399', primaryForeground:'#052016', secondary:'#173728', secondaryForeground:'#6ee7b7', muted:'#1b3a2b', mutedForeground:'#9ab9a7', accent:'#14532d', accentForeground:'#d1fae5', destructive:'#fb7185', destructiveForeground:'#ffffff', border:'#28513a', borderGlow:'#34d39933', input:'#315b43', text:'#e8fff2', tint:'#34d399' },
+  sunset: { background:'#1b1010', foreground:'#fff1e8', card:'#2b1a18', cardForeground:'#fff1e8', primary:'#fb923c', primaryForeground:'#261207', secondary:'#42251e', secondaryForeground:'#fdba74', muted:'#4a2b24', mutedForeground:'#c9a394', accent:'#7c2d12', accentForeground:'#ffedd5', destructive:'#f87171', destructiveForeground:'#ffffff', border:'#63392c', borderGlow:'#fb923c33', input:'#704333', text:'#fff1e8', tint:'#fb923c' },
+  light: { background:'#f4f7fb', foreground:'#172033', card:'#ffffff', cardForeground:'#172033', primary:'#2563eb', primaryForeground:'#ffffff', secondary:'#e8eef8', secondaryForeground:'#31527f', muted:'#e9eef5', mutedForeground:'#64748b', accent:'#dbeafe', accentForeground:'#1e40af', destructive:'#dc2626', destructiveForeground:'#ffffff', border:'#d7e0ec', borderGlow:'#2563eb22', input:'#cbd5e1', text:'#172033', tint:'#2563eb' },
 };
-
+const colors = { themes, light: themes.neon, dark: themes.neon, radius: 18 };
 export default colors;
