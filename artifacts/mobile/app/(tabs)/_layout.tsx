@@ -19,18 +19,54 @@ function TopNavigation() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const compact = width < 360;
+
   return (
-    <View style={[styles.header, { paddingTop: Math.max(insets.top, 8) + 7, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
-      <View style={[styles.headerInner, { maxWidth: 960, alignSelf: 'center', width: '100%' }]}>
-      
-      <View style={styles.brand}><View style={[styles.logo,{backgroundColor:colors.primary}]}><Feather name="zap" size={17} color={colors.primaryForeground}/></View><Text style={[styles.brandText,{color:colors.foreground}]}>Badboy</Text></View>
-      <View style={[styles.nav,{backgroundColor:colors.card,borderColor:colors.border}]}>
-        {items.map(item => {
-          const active = item.name === 'index' ? pathname === '/' || pathname.endsWith('/(tabs)') || pathname.endsWith('/index') : pathname.endsWith('/'+item.name);
-          return <Pressable key={item.name} accessibilityRole="button" accessibilityState={{selected:active}} onPress={()=>router.push(item.route as never)} style={[styles.navItem,active && {backgroundColor:colors.secondary}]}>
-            <Feather name={item.icon} size={16} color={active?colors.primary:colors.mutedForeground}/><Text style={[styles.navText,{color:active?colors.foreground:colors.mutedForeground}]}>{compact ? '' : item.label}</Text>
-          </Pressable>;
-        })}
+    <View
+      style={[
+        styles.header,
+        {
+          paddingTop: Math.max(insets.top, 8) + 7,
+          backgroundColor: colors.background,
+          borderBottomColor: colors.border,
+        },
+      ]}
+    >
+      <View style={styles.headerInner}>
+        <View style={styles.brand}>
+          <View style={[styles.logo, { backgroundColor: colors.primary }]}>
+            <Feather name="zap" size={17} color={colors.primaryForeground} />
+          </View>
+          <Text style={[styles.brandText, { color: colors.foreground }]}>Badboy</Text>
+        </View>
+        <View style={[styles.nav, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          {items.map((item) => {
+            const active =
+              item.name === 'index'
+                ? pathname === '/' || pathname.endsWith('/(tabs)') || pathname.endsWith('/index')
+                : pathname.endsWith('/' + item.name);
+
+            return (
+              <Pressable
+                key={item.name}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                onPress={() => router.push(item.route as never)}
+                style={[styles.navItem, active && { backgroundColor: colors.secondary }]}
+              >
+                <Feather
+                  name={item.icon}
+                  size={16}
+                  color={active ? colors.primary : colors.mutedForeground}
+                />
+                {!compact && (
+                  <Text style={[styles.navText, { color: active ? colors.foreground : colors.mutedForeground }]}>
+                    {item.label}
+                  </Text>
+                )}
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
     </View>
   );
