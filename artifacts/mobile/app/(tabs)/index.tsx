@@ -10,7 +10,9 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Linking,
+  Modal,
   Platform,
+  ScrollView,
   Pressable,
   Share,
   StyleSheet,
@@ -71,6 +73,8 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerModal, setDrawerModal] = useState<'search' | 'history' | null>(null);
+  const [chatSearch, setChatSearch] = useState('');
   const { messages, setMessages, settings, updateSettings } = useAssistant();
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
@@ -584,10 +588,10 @@ export default function ChatScreen() {
             <Pressable style={[styles.drawerPrimary, { backgroundColor: colors.primary }]} onPress={() => { setDrawerOpen(false); startNewChat(); }}>
               <Feather name="plus" size={18} color={colors.primaryForeground} /><Text style={{ color: colors.primaryForeground, fontWeight: '700' }}>নতুন চ্যাট</Text>
             </Pressable>
-            <Pressable style={styles.drawerItem} onPress={() => { setDrawerOpen(false); Alert.alert('চ্যাট খুঁজুন', 'সব চ্যাটের স্থায়ী সার্চ-ইতিহাস পরের ধাপে যোগ করা হবে।'); }}>
+            <Pressable style={styles.drawerItem} onPress={() => { setDrawerOpen(false); setChatSearch(''); setDrawerModal('search'); }}>
               <Feather name="search" size={18} color={colors.foreground} /><Text style={[styles.drawerItemText, { color: colors.foreground }]}>চ্যাট খুঁজুন</Text>
             </Pressable>
-            <Pressable style={styles.drawerItem} onPress={() => { setDrawerOpen(false); Alert.alert('চ্যাট হিস্টোরি', messages.length ? messages.slice(-6).map((m) => (m.role === 'user' ? 'আপনি: ' : 'Badboy: ') + m.content.slice(0, 90)).join('\n\n') : 'এই চ্যাটে এখনো কোনো বার্তা নেই।'); }}>
+            <Pressable style={styles.drawerItem} onPress={() => { setDrawerOpen(false); setDrawerModal('history'); }}>
               <Feather name="clock" size={18} color={colors.foreground} /><Text style={[styles.drawerItemText, { color: colors.foreground }]}>চ্যাট হিস্টোরি</Text>
             </Pressable>
             <Pressable style={styles.drawerItem} onPress={() => { setDrawerOpen(false); showChatOptions(); }}>
@@ -611,6 +615,60 @@ export default function ChatScreen() {
           </View>
         </View>
       ) : null}
+
+      <Modal
+        visible={drawerModal !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setDrawerModal(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.chatModal, { backgroundColor: colors.card, borderColor: colors.border, paddingBottom: Math.max(insets.bottom, 16) }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.brandTitle, { color: colors.foreground }]}>
+                {drawerModal === 'search' ? 'চ্যাট খুঁজুন' : 'চ্যাট হিস্টোরি'}
+              </Text>
+              <Pressable onPress={() => setDrawerModal(null)} accessibilityRole="button" accessibilityLabel="বন্ধ করুন" style={styles.iconButton}>
+                <Feather name="x" size={20} color={colors.foreground} />
+              </Pressable>
+            </View>
+            {drawerModal === 'search' ? (
+              <TextInput
+                value={chatSearch}
+                onChangeText={setChatSearch}
+                placeholder="এই কথোপকথনে খুঁজুন..."
+                placeholderTextColor={colors.mutedForeground}
+                autoFocus
+                style={[styles.searchInput, { color: colors.foreground, borderColor: colors.border }]}
+              />
+            ) : null}
+            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 20 }}>
+              {messages
+                .filter((item) => drawerModal !== 'search' || !chatSearch.trim() || item.content.toLocaleLowerCase().includes(chatSearch.trim().toLocaleLowerCase()))
+                .slice()
+                .reverse()
+                .map((item) => (
+                  <View key={item.id} style={[styles.historyItem, { borderBottomColor: colors.border }]}>
+                    <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700', marginBottom: 4 }}>
+                      {item.role === 'user' ? 'আপনি' : 'Badboy AI'}
+                    </Text>
+                    <Text selectable style={{ color: colors.foreground, fontSize: 14, lineHeight: 21 }}>
+                      {item.content || 'বার্তা খালি'}
+                    </Text>
+                    <Text style={{ color: colors.mutedForeground, fontSize: 11, marginTop: 5 }}>
+                      {new Date(item.createdAt).toLocaleString()}
+                    </Text>
+                  </View>
+                ))}
+              {messages.filter((item) => drawerModal !== 'search' || !chatSearch.trim() || item.content.toLocaleLowerCase().includes(chatSearch.trim().toLocaleLowerCase())).length === 0 ? (
+                <Text style={{ color: colors.mutedForeground, textAlign: 'center', padding: 24 }}>
+                  {drawerModal === 'search' ? 'কোনো মিল পাওয়া যায়নি।' : 'এখনো কোনো চ্যাট মেসেজ নেই।'}
+                </Text>
+              ) : null}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {!messages.length ? (
         <View style={styles.welcome}>
@@ -722,6 +780,11 @@ const styles = StyleSheet.create({
   drawerItem: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 10, borderRadius: 10 },
   drawerItemText: { flex: 1, fontSize: 14, fontWeight: '500' },
   drawerDivider: { height: 1, marginVertical: 12 },
+  modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' },
+  chatModal: { maxHeight: '82%', minHeight: '45%', borderTopLeftRadius: 22, borderTopRightRadius: 22, borderWidth: 1, paddingHorizontal: 18, paddingTop: 16 },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 },
+  searchInput: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, marginBottom: 10 },
+  historyItem: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   header: { paddingHorizontal: 14, paddingBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, gap: 4 },
   brand: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
