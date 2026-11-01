@@ -1,123 +1,39 @@
 import React from 'react';
-import { Platform, StyleSheet, useColorScheme, View } from 'react-native';
-import { useColors } from '@/hooks/useColors';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
-import { isLiquidGlassAvailable } from 'expo-glass-effect';
-import { Tabs } from 'expo-router';
-import { NativeTabs } from 'expo-router/unstable-native-tabs';
-import { SymbolView } from 'expo-symbols';
+import { Tabs, usePathname, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useColors } from '@/hooks/useColors';
 
-// IMPORTANT: iOS 26 uses NativeTabs for native tabs with liquid glass support.
-// NativeTabs intentionally does NOT use custom design tokens — liquid glass
-// is a system-level appearance provided by iOS and cannot be overridden.
-// Custom brand colors are applied only on the ClassicTabLayout path (older iOS / Android / web).
-function NativeTabLayout() {
-  return (
-    <NativeTabs>
-      <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Icon
-          sf={{ default: 'bubble.left', selected: 'bubble.left.fill' }}
-        />
-        <NativeTabs.Trigger.Label>চ্যাট</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="memory">
-        <NativeTabs.Trigger.Icon
-          sf={{ default: 'lock', selected: 'lock.fill' }}
-        />
-        <NativeTabs.Trigger.Label>মেমোরি</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="settings">
-        <NativeTabs.Trigger.Icon
-          sf={{ default: 'slider.horizontal.3', selected: 'slider.horizontal.3' }}
-        />
-        <NativeTabs.Trigger.Label>সেটিংস</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-    </NativeTabs>
-  );
-}
+const items = [
+  { name: 'index', label: 'চ্যাট', icon: 'message-circle' as const, route: '/(tabs)' },
+  { name: 'memory', label: 'মেমোরি', icon: 'bookmark' as const, route: '/(tabs)/memory' },
+  { name: 'settings', label: 'সেটিংস', icon: 'sliders' as const, route: '/(tabs)/settings' },
+];
 
-function ClassicTabLayout() {
+function TopNavigation() {
   const colors = useColors();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const isIOS = Platform.OS === 'ios';
-  const isWeb = Platform.OS === 'web';
-
+  const pathname = usePathname();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.mutedForeground,
-        headerShown: false,
-        tabBarStyle: {
-          position: 'absolute',
-          backgroundColor: isIOS ? 'transparent' : colors.background,
-          borderTopWidth: isWeb ? 1 : 0,
-          borderTopColor: colors.border,
-          elevation: 0,
-          ...(isWeb ? { height: 84 } : {}),
-        },
-        tabBarBackground: () =>
-          isIOS ? (
-            <BlurView
-              intensity={100}
-              tint={isDark ? 'dark' : 'light'}
-              style={StyleSheet.absoluteFill}
-            />
-          ) : isWeb ? (
-            <View
-              style={[
-                StyleSheet.absoluteFill,
-                { backgroundColor: colors.background },
-              ]}
-            />
-          ) : null,
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'চ্যাট',
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="bubble.left" tintColor={color} size={24} />
-            ) : (
-              <Feather name="message-circle" size={22} color={color} />
-            ),
-        }}
-      />
-      <Tabs.Screen
-        name="memory"
-        options={{
-          title: 'মেমোরি',
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="lock" tintColor={color} size={24} />
-            ) : (
-              <Feather name="lock" size={22} color={color} />
-            ),
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'সেটিংস',
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="slider.horizontal.3" tintColor={color} size={24} />
-            ) : (
-              <Feather name="sliders" size={22} color={color} />
-            ),
-        }}
-      />
-    </Tabs>
+    <View style={[styles.header, { paddingTop: Math.max(insets.top, 8) + 7, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+      <View style={styles.brand}><View style={[styles.logo,{backgroundColor:colors.primary}]}><Feather name="zap" size={17} color={colors.primaryForeground}/></View><Text style={[styles.brandText,{color:colors.foreground}]}>Badboy</Text></View>
+      <View style={[styles.nav,{backgroundColor:colors.card,borderColor:colors.border}]}>
+        {items.map(item => {
+          const active = item.name === 'index' ? pathname === '/' || pathname.endsWith('/(tabs)') || pathname.endsWith('/index') : pathname.endsWith('/'+item.name);
+          return <Pressable key={item.name} accessibilityRole="button" accessibilityState={{selected:active}} onPress={()=>router.push(item.route as never)} style={[styles.navItem,active && {backgroundColor:colors.secondary}]}>
+            <Feather name={item.icon} size={16} color={active?colors.primary:colors.mutedForeground}/><Text style={[styles.navText,{color:active?colors.foreground:colors.mutedForeground}]}>{item.label}</Text>
+          </Pressable>;
+        })}
+      </View>
+    </View>
   );
 }
 
 export default function TabLayout() {
-  if (isLiquidGlassAvailable()) {
-    return <NativeTabLayout />;
-  }
-  return <ClassicTabLayout />;
+  const colors = useColors();
+  return <View style={{flex:1,backgroundColor:colors.background}}><TopNavigation/><Tabs screenOptions={{headerShown:false,tabBarStyle:{display:'none'}}}><Tabs.Screen name="index"/><Tabs.Screen name="memory"/><Tabs.Screen name="settings"/></Tabs></View>;
 }
+
+const styles=StyleSheet.create({header:{paddingHorizontal:14,paddingBottom:10,borderBottomWidth:1,gap:10},brand:{height:34,flexDirection:'row',alignItems:'center',gap:8},logo:{width:29,height:29,borderRadius:10,alignItems:'center',justifyContent:'center'},brandText:{fontSize:17,fontWeight:'800',letterSpacing:0.2},nav:{flexDirection:'row',borderWidth:1,borderRadius:15,padding:4,gap:4},navItem:{flex:1,minHeight:39,borderRadius:11,alignItems:'center',justifyContent:'center',flexDirection:'row',gap:6},navText:{fontSize:12,fontWeight:'700'}});
