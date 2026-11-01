@@ -816,7 +816,7 @@ const styles = StyleSheet.create({
   messageList: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
   messageRow: { width: '100%', alignItems: 'flex-start', marginVertical: 4 },
   userRow: { alignItems: 'flex-end' },
-  messageBubble: { maxWidth: 'min(85%, 720px)', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 16, borderWidth: 1 },
+  messageBubble: { maxWidth: '85%', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 16, borderWidth: 1 },
   userBubble: { borderBottomRightRadius: 4 },
   ytButton: {
     flexDirection: 'row',
