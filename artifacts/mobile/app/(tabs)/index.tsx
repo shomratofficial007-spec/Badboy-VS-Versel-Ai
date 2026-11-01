@@ -73,7 +73,7 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerModal, setDrawerModal] = useState<'search' | 'history' | null>(null);
+  const [drawerModal, setDrawerModal] = useState<'search' | 'history' | 'options' | 'newChat' | null>(null);
   const [chatSearch, setChatSearch] = useState('');
   const { messages, setMessages, settings, updateSettings } = useAssistant();
   const [draft, setDraft] = useState('');
@@ -307,16 +307,9 @@ export default function ChatScreen() {
   }, [draft, listening, selectedLang, settings.voiceProcessingConsent, sendMessage]);
 
   const startNewChat = () => {
-    if (!messages.length) {
-      setDraft('');
-      setError(null);
-      return;
-    }
-    Alert.alert('নতুন চ্যাট শুরু করবেন?', 'বর্তমান কথোপকথনটি ইতিহাস থেকে সরিয়ে নতুন চ্যাট শুরু হবে।', [
-      { text: 'বাতিল', style: 'cancel' },
-      { text: 'নতুন চ্যাট', onPress: () => { setMessages([]); setDraft(''); setError(null); } },
-    ]);
+    setDrawerModal('newChat');
   };
+
 
   const shareConversation = async () => {
     if (!messages.length) {
@@ -365,15 +358,9 @@ export default function ChatScreen() {
   };
 
   const showChatOptions = () => {
-    Alert.alert('চ্যাট ও AI অপশন', 'কী করতে চান?', [
-      { text: 'AI ব্যক্তিত্ব / উত্তর-স্টাইল', onPress: chooseAiStyle },
-      { text: 'গল্প, কবিতা, স্ক্রিপ্ট', onPress: showCreativeOptions },
-      { text: 'নতুন চ্যাট', onPress: startNewChat },
-      { text: 'চ্যাট শেয়ার', onPress: () => { void shareConversation(); } },
-      { text: 'চ্যাট মুছুন', style: 'destructive', onPress: clearChat },
-      { text: 'বন্ধ', style: 'cancel' },
-    ]);
+    setDrawerModal('options');
   };
+
 
   const regenerateAnswer = useCallback(async (message: ChatMessage) => {
     if (busy || !settings.onlineAI) {
@@ -594,7 +581,7 @@ export default function ChatScreen() {
             <Pressable style={styles.drawerItem} onPress={() => { setDrawerOpen(false); setDrawerModal('history'); }}>
               <Feather name="clock" size={18} color={colors.foreground} /><Text style={[styles.drawerItemText, { color: colors.foreground }]}>চ্যাট হিস্টোরি</Text>
             </Pressable>
-            <Pressable style={styles.drawerItem} onPress={() => { setDrawerOpen(false); showChatOptions(); }}>
+            <Pressable style={styles.drawerItem} onPress={() => { setDrawerOpen(false); setDrawerModal('options'); }}>
               <Feather name="bookmark" size={18} color={colors.foreground} /><Text style={[styles.drawerItemText, { color: colors.foreground }]}>চ্যাট অপশন</Text>
             </Pressable>
             <View style={[styles.drawerDivider, { backgroundColor: colors.border }]} />
@@ -632,6 +619,29 @@ export default function ChatScreen() {
                 <Feather name="x" size={20} color={colors.foreground} />
               </Pressable>
             </View>
+            {drawerModal === 'options' ? (
+              <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 20, gap: 10 }}>
+                {[
+                  { label: 'AI ব্যক্তিত্ব / উত্তর-স্টাইল', action: () => { setDrawerModal(null); chooseAiStyle(); } },
+                  { label: 'গল্প, কবিতা, স্ক্রিপ্ট', action: () => { setDrawerModal(null); showCreativeOptions(); } },
+                  { label: 'নতুন চ্যাট', action: () => setDrawerModal('newChat') },
+                  { label: 'চ্যাট শেয়ার', action: () => { setDrawerModal(null); void shareConversation(); } },
+                  { label: 'চ্যাট মুছুন', action: () => { setDrawerModal(null); clearChat(); } },
+                ].map((option) => (
+                  <Pressable key={option.label} accessibilityRole="button" onPress={option.action} style={[styles.drawerItem, { minHeight: 50, backgroundColor: colors.secondary }]}>
+                    <Text style={{ color: colors.foreground, fontSize: 14, fontWeight: '600' }}>{option.label}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            ) : drawerModal === 'newChat' ? (
+              <View style={{ paddingVertical: 18, gap: 16 }}>
+                <Text style={{ color: colors.foreground, fontSize: 14, lineHeight: 22 }}>বর্তমান কথোপকথনটি বন্ধ করে নতুন চ্যাট শুরু করতে চাও?</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10 }}>
+                  <Pressable accessibilityRole="button" onPress={() => setDrawerModal(null)} style={[styles.drawerItem, { paddingHorizontal: 16, backgroundColor: colors.secondary }]}><Text style={{ color: colors.foreground }}>বাতিল</Text></Pressable>
+                  <Pressable accessibilityRole="button" onPress={() => { setMessages([]); setDraft(''); setError(null); setDrawerModal(null); }} style={[styles.drawerItem, { paddingHorizontal: 16, backgroundColor: colors.primary }]}><Text style={{ color: colors.primaryForeground, fontWeight: '700' }}>নতুন চ্যাট শুরু</Text></Pressable>
+                </View>
+              </View>
+            ) : null}
             {drawerModal === 'search' ? (
               <TextInput
                 value={chatSearch}
