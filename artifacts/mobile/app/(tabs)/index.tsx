@@ -2,6 +2,7 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useWindowDimensions } from 'react-native';
 import {
   ActivityIndicator,
   Alert,
@@ -71,6 +72,8 @@ function newMessage(role: ChatMessage['role'], content = ''): ChatMessage {
 export default function ChatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+  const compactHeader = windowWidth < 520;
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerModal, setDrawerModal] = useState<'search' | 'history' | 'options' | 'newChat' | null>(null);
@@ -741,7 +744,7 @@ export default function ChatScreen() {
             borderColor: colors.border,
             backgroundColor: colors.card,
             marginBottom:
-              Platform.OS === 'web' ? 80 : Math.max(insets.bottom, 8) + 76,
+              Platform.OS === 'web' ? 12 : Math.max(insets.bottom, 8) + 16,
           },
         ]}
       >
@@ -795,14 +798,14 @@ const styles = StyleSheet.create({
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 },
   searchInput: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, marginBottom: 10 },
   historyItem: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
-  header: { paddingHorizontal: 14, paddingBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, gap: 4 },
-  brand: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  brandTitle: { fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
+  header: { paddingHorizontal: 14, paddingBottom: 10, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, columnGap: 6, rowGap: 8 },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, flexShrink: 1, minWidth: 150 },
+  titleRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
+  brandTitle: { fontSize: 16, fontWeight: '700', letterSpacing: 0.5, flexShrink: 1 },
   brandSub: { fontSize: 11, marginTop: 2 },
-  statusBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
+  statusBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, maxWidth: 150 },
   statusBadgeText: { fontSize: 10, fontWeight: '600', color: '#ffffff' },
-  langToggle: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, marginHorizontal: 6 },
+  langToggle: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, marginHorizontal: 2, maxWidth: '100%' }
   langText: { fontSize: 11, fontWeight: '700' },
   visualizerContainer: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 38, marginHorizontal: 8 },
   visualizerBar: { width: 3, borderRadius: 2 },
