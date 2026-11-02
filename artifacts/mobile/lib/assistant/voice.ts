@@ -345,6 +345,7 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
 
   if (useNative && nativeModule) {
     let finished = false;
+    let hasReceivedTranscript = false;
     const finish = () => {
       if (finished) return;
       finished = true;
@@ -423,7 +424,10 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
             if (!results.length) return;
             const transcript = results[0]?.transcript ?? '';
             const isFinal = event.isFinal ?? false;
-            if (transcript) resetWatchdog(() => nativeModule.abort(), cleanup, finish);
+            if (transcript) {
+              hasReceivedTranscript = true;
+              resetWatchdog(() => nativeModule.abort(), cleanup, finish);
+            }
 
             if (transcript) {
               if (containsWakePhrase(transcript)) {
@@ -454,6 +458,13 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
             language: callbacks.lang ?? 'bn-BD',
           });
           cleanup();
+          // If a transcript was already captured and user finished speaking, suppress
+          // benign 'no-speech' or 'no_match' error from the recognizer shutdown.
+          const errorType = event?.error ?? 'speech_error';
+          if (hasReceivedTranscript && (errorType === 'no-speech' || errorType === 'no_match')) {
+            finish();
+            return;
+          }
           finish();
           callbacks.onError?.(event?.error ?? 'speech_error');
         });
@@ -557,6 +568,41 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
     });
   };
 
+  let hasReceivedTranscript = false;
+
+  recognition.onresult = (event: RecognitionEventLike) => {
+    let finalText = '';
+    let interimText = '';
+    for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      const result = event.results[i];
+      const transcript =
+        typeof result[0]?.transcript === 'string' ? (result[0].transcript as string) : '';
+      if (result.isFinal) finalText += transcript;
+      else interimText += transcript;
+    }
+    const combined = `${finalText}${interimText}`.trim();
+    if (combined) {
+      hasReceivedTranscript = true;
+      resetWatchdog(() => recognition.abort(), undefined, finish);
+    }
+
+    if (combined) {
+      if (containsWakePhrase(combined)) {
+        callbacks.onWakeWordDetected?.();
+      }
+      callbacks.onTranscript(combined, finalText.length > 0 && !interimText);
+    }
+
+    if (finalText && !interimText) {
+      try {
+        recognition.stop();
+      } catch {
+        // Already stopped.
+      }
+      finish();
+    }
+  };
+
   recognition.onerror = (evt) => {
     const errorType = evt?.error ?? 'speech_error';
     console.error('[BadboyVoice] Web Speech API error', {
@@ -565,9 +611,13 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
       language: recognition.lang,
       secureContext: typeof window !== 'undefined' ? window.isSecureContext : false,
     });
-    // Chrome may emit "aborted" when recognition is stopped as part of normal
-    // cleanup/watchdog handling. Do not report that as a user-cancelled action.
+    // If a transcript was already captured and user stopped speaking, Chrome can emit
+    // 'no-speech' right at silence cutoff. Suppress 'no-speech' if we already got speech.
     if (finished) return;
+    if (hasReceivedTranscript && (errorType === 'no-speech' || errorType === 'aborted')) {
+      finish();
+      return;
+    }
     finish();
     if (errorType === 'aborted') return;
     callbacks.onError?.(errorType);
