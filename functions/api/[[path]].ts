@@ -2,6 +2,7 @@
 // Directs /api/assistant/chat requests to OpenRouter with streaming SSE.
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 const OPENROUTER_MODEL_ID = "openrouter/free";
 const OPENROUTER_FREE_FALLBACKS = [
   "cohere/north-mini-code:free",
@@ -13,6 +14,7 @@ const RETRYABLE_UPSTREAM_STATUSES = new Set([404, 408, 429, 500, 502, 503, 504])
 
 interface Env {
   OPENROUTER_API_KEY?: string;
+  GROQ_API_KEY?: string;
 }
 
 const CORS_HEADERS = {
@@ -124,12 +126,23 @@ function extractDeltas(event: string): { texts: string[]; done: boolean } {
 }
 
 
+function base64ToUint8Array(base64: string): Uint8Array {
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i += 1) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
 async function handleTranscriptionRequest(request: Request, env: Env): Promise<Response> {
-  const apiKey = env.OPENROUTER_API_KEY?.trim() || "";
-  if (!apiKey) {
+  const groqApiKey = env.GROQ_API_KEY?.trim() || "";
+  const openrouterApiKey = env.OPENROUTER_API_KEY?.trim() || "";
+
+  if (!groqApiKey && !openrouterApiKey) {
     return jsonResponse({
       code: "AI_NOT_CONFIGURED",
-      error: "OpenRouter speech transcription is not configured on the server.",
+      error: "Speech transcription service is not configured on the server.",
     }, 503);
   }
 
@@ -165,11 +178,73 @@ async function handleTranscriptionRequest(request: Request, env: Env): Promise<R
     return jsonResponse({ error: "Audio must be raw base64 data, without a data-URL prefix." }, 400);
   }
 
+  const format = payload.format.toLowerCase();
+  const lang = typeof payload.language === "string" && payload.language.trim()
+    ? payload.language.trim().slice(0, 12)
+    : undefined;
+
+  // 1. Primary: Groq Cloud Whisper Large-V3 (ultra fast, free-tier supported)
+  if (groqApiKey) {
+    try {
+      const mimeTypes: Record<string, string> = {
+        wav: "audio/wav",
+        mp3: "audio/mpeg",
+        flac: "audio/flac",
+        m4a: "audio/m4a",
+        ogg: "audio/ogg",
+        webm: "audio/webm",
+        aac: "audio/aac",
+      };
+      const mimeType = mimeTypes[format] || "application/octet-stream";
+      const audioBytes = base64ToUint8Array(audioBase64);
+      const audioBlob = new Blob([audioBytes.buffer as ArrayBuffer], { type: mimeType });
+
+      const formData = new FormData();
+      formData.append("file", audioBlob, `audio.${format}`);
+      formData.append("model", "whisper-large-v3");
+      formData.append("response_format", "json");
+      if (lang) {
+        formData.append("language", lang);
+      }
+
+      const groqResponse = await fetch(`${GROQ_BASE_URL}/audio/transcriptions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${groqApiKey}`,
+        },
+        body: formData,
+      });
+
+      if (groqResponse.ok) {
+        const result = (await groqResponse.json()) as { text?: unknown };
+        if (typeof result.text === "string" && result.text.trim()) {
+          return jsonResponse({
+            text: result.text.trim(),
+            provider: "groq",
+            model: "whisper-large-v3",
+          });
+        }
+      } else {
+        console.warn(`[CF Function Warn] Groq whisper transcription returned HTTP ${groqResponse.status}. Attempting fallback.`);
+      }
+    } catch (groqErr) {
+      console.warn("[CF Function Warn] Groq whisper transcription failed:", groqErr instanceof Error ? groqErr.message : String(groqErr));
+    }
+  }
+
+  // 2. Fallback: OpenRouter transcription (openai/whisper-1)
+  if (!openrouterApiKey) {
+    return jsonResponse({
+      code: "TRANSCRIPTION_UPSTREAM_FAILED",
+      error: "Groq speech transcription failed and OpenRouter fallback is not configured.",
+    }, 502);
+  }
+
   try {
     const upstream = await fetch(`${OPENROUTER_BASE_URL}/audio/transcriptions`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${openrouterApiKey}`,
         "Content-Type": "application/json",
         "X-Title": "Badboy Voice Memory Assistant",
       },
@@ -177,11 +252,9 @@ async function handleTranscriptionRequest(request: Request, env: Env): Promise<R
         model: "openai/whisper-1",
         input_audio: {
           data: audioBase64,
-          format: payload.format.toLowerCase(),
+          format,
         },
-        ...(typeof payload.language === "string" && payload.language.trim()
-          ? { language: payload.language.trim().slice(0, 12) }
-          : {}),
+        ...(lang ? { language: lang } : {}),
       }),
     });
 
@@ -206,6 +279,8 @@ async function handleTranscriptionRequest(request: Request, env: Env): Promise<R
     }
     return jsonResponse({
       text: result.text,
+      provider: "openrouter",
+      model: "openai/whisper-1",
       ...(result.usage !== undefined ? { usage: result.usage } : {}),
     });
   } catch (err) {
@@ -215,6 +290,241 @@ async function handleTranscriptionRequest(request: Request, env: Env): Promise<R
       error: "Could not reach the speech transcription service. Check the internet and try again.",
     }, 502);
   }
+}
+
+const EDGE_TTS_VOICE_MAP: Record<string, string> = {
+  "bn-bd": "bn-BD-PradeepNeural",
+  "bn-in": "bn-IN-BashkarNeural",
+  "bn": "bn-BD-PradeepNeural",
+  "en-us": "en-US-JennyNeural",
+  "en-gb": "en-GB-SoniaNeural",
+  "en-in": "en-IN-NeerjaNeural",
+  "en": "en-US-JennyNeural",
+  "hi-in": "hi-IN-SwaraNeural",
+  "hi": "hi-IN-SwaraNeural",
+  "ur-pk": "ur-PK-UzmaNeural",
+  "ar-sa": "ar-SA-ZariyahNeural",
+  "es-es": "es-ES-ElviraNeural",
+  "fr-fr": "fr-FR-DeniseNeural",
+  "de-de": "de-DE-KatjaNeural",
+  "ja-jp": "ja-JP-NanamiNeural",
+};
+
+function resolveEdgeTtsVoice(language?: string): string {
+  if (!language) return "bn-BD-PradeepNeural";
+  const normalized = language.trim().toLowerCase();
+  if (EDGE_TTS_VOICE_MAP[normalized]) return EDGE_TTS_VOICE_MAP[normalized];
+  const langBase = normalized.split("-")[0];
+  return EDGE_TTS_VOICE_MAP[langBase] || "bn-BD-PradeepNeural";
+}
+
+/**
+ * Microsoft Edge-TTS WebSocket synthesizer.
+ * Connects to Microsoft Edge's ReadAloud service to stream natural neural speech.
+ */
+async function synthesizeEdgeTts(text: string, voice: string): Promise<Uint8Array | null> {
+  const trustedToken = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
+  const wsUrl = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=${trustedToken}`;
+
+  return new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(wsUrl);
+    } catch {
+      return resolve(null);
+    }
+
+    const audioChunks: Uint8Array[] = [];
+    const timeout = setTimeout(() => {
+      try {
+        ws.close();
+      } catch {
+        // ignore
+      }
+      resolve(null);
+    }, 7000);
+
+    ws.onopen = () => {
+      const now = new Date().toISOString();
+      const configMsg =
+        `X-Timestamp:${now}\r\n` +
+        `Content-Type:application/json; charset=utf-8\r\n` +
+        `Path:speech.config\r\n\r\n` +
+        `{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"true"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}\r\n`;
+      ws.send(configMsg);
+
+      const escaped = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&apos;");
+      const reqId = "req-" + Date.now().toString(16);
+      const ssml =
+        `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">` +
+        `<voice name="${voice}">${escaped}</voice>` +
+        `</speak>`;
+      const ssmlMsg =
+        `X-RequestId:${reqId}\r\n` +
+        `Content-Type:application/ssml+xml\r\n` +
+        `Path:ssml\r\n\r\n` +
+        `${ssml}`;
+      ws.send(ssmlMsg);
+    };
+
+    ws.onmessage = async (event: MessageEvent) => {
+      if (typeof event.data === "string") {
+        if (event.data.includes("Path:turn.end")) {
+          clearTimeout(timeout);
+          try {
+            ws.close();
+          } catch {
+            // ignore
+          }
+          if (audioChunks.length === 0) return resolve(null);
+          const totalLength = audioChunks.reduce((acc, c) => acc + c.length, 0);
+          const merged = new Uint8Array(totalLength);
+          let offset = 0;
+          for (const chunk of audioChunks) {
+            merged.set(chunk, offset);
+            offset += chunk.length;
+          }
+          resolve(merged);
+        }
+      } else {
+        try {
+          const rawBuf = await (event.data as Blob).arrayBuffer();
+          const view = new DataView(rawBuf);
+          if (rawBuf.byteLength > 2) {
+            const headerLen = view.getUint16(0);
+            if (rawBuf.byteLength > 2 + headerLen) {
+              const audioBytes = new Uint8Array(rawBuf.slice(2 + headerLen));
+              audioChunks.push(audioBytes);
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    ws.onerror = () => {
+      clearTimeout(timeout);
+      resolve(null);
+    };
+
+    ws.onclose = () => {
+      clearTimeout(timeout);
+      if (audioChunks.length > 0) {
+        const totalLength = audioChunks.reduce((acc, c) => acc + c.length, 0);
+        const merged = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of audioChunks) {
+          merged.set(chunk, offset);
+          offset += chunk.length;
+        }
+        resolve(merged);
+      } else {
+        resolve(null);
+      }
+    };
+  });
+}
+
+async function handleSpeechRequest(request: Request, env: Env): Promise<Response> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: "Invalid speech request body." }, 400);
+  }
+
+  const { text, language = "bn-BD" } = (body ?? {}) as {
+    text?: unknown;
+    language?: unknown;
+  };
+
+  if (
+    typeof text !== "string" ||
+    !text.trim() ||
+    text.length > 4000 ||
+    typeof language !== "string" ||
+    language.length > 30
+  ) {
+    return jsonResponse({
+      code: "INVALID_SPEECH_REQUEST",
+      error: "Invalid speech text or language parameter.",
+    }, 400);
+  }
+
+  const cleanText = text.trim();
+  const selectedVoice = resolveEdgeTtsVoice(language);
+
+  // 1. Primary: Microsoft Edge-TTS Natural Neural Voice
+  try {
+    const edgeAudio = await synthesizeEdgeTts(cleanText, selectedVoice);
+    if (edgeAudio && edgeAudio.byteLength > 0) {
+      return new Response(edgeAudio.buffer as ArrayBuffer, {
+        status: 200,
+        headers: {
+          "Content-Type": "audio/mpeg",
+          "Cache-Control": "no-store",
+          "X-TTS-Voice": selectedVoice,
+          "X-TTS-Engine": "microsoft-edge",
+          ...CORS_HEADERS,
+        },
+      });
+    }
+  } catch (edgeErr) {
+    console.warn("[CF Function Warn] Edge-TTS synthesis failed:", edgeErr instanceof Error ? edgeErr.message : String(edgeErr));
+  }
+
+  // 2. Secondary fallback: OpenRouter audio/speech (if configured)
+  const openrouterApiKey = env.OPENROUTER_API_KEY?.trim();
+  if (openrouterApiKey) {
+    try {
+      const upstream = await fetch(`${OPENROUTER_BASE_URL}/audio/speech`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${openrouterApiKey}`,
+          "Content-Type": "application/json",
+          Accept: "audio/mpeg",
+        },
+        body: JSON.stringify({
+          model: "fish-audio/s2.1-pro-free:free",
+          input: cleanText,
+          response_format: "mp3",
+          voice: selectedVoice,
+        }),
+      });
+
+      if (upstream.ok) {
+        const audioBytes = await upstream.arrayBuffer();
+        if (audioBytes.byteLength > 0) {
+          return new Response(audioBytes, {
+            status: 200,
+            headers: {
+              "Content-Type": upstream.headers.get("content-type") || "audio/mpeg",
+              "Cache-Control": "no-store",
+              "X-TTS-Voice": selectedVoice,
+              "X-TTS-Engine": "openrouter-fish-audio",
+              ...CORS_HEADERS,
+            },
+          });
+        }
+      }
+    } catch (ttsErr) {
+      console.warn("[CF Function Warn] Cloud speech upstream failed:", ttsErr instanceof Error ? ttsErr.message : String(ttsErr));
+    }
+  }
+
+  // 3. Graceful fallback response instructing client to use native TTS (window.speechSynthesis / expo-speech)
+  return jsonResponse({
+    code: "FALLBACK_TO_CLIENT_TTS",
+    message: "Server TTS generation bypassed or completed; fallback to client speech synthesis.",
+    voice: selectedVoice,
+    language,
+  }, 200);
 }
 
 export async function handleApiRequest(request: Request, env: Env): Promise<Response> {
@@ -246,6 +556,10 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
 
   if (request.method === "POST" && pathname === "/api/assistant/transcribe") {
     return handleTranscriptionRequest(request, env);
+  }
+
+  if (request.method === "POST" && (pathname === "/api/assistant/speech" || pathname === "/api/assistant/speak")) {
+    return handleSpeechRequest(request, env);
   }
 
   if (request.method !== "POST" || pathname !== "/api/assistant/chat") {
