@@ -318,9 +318,11 @@ test("onRequestPost - speech endpoint validates inputs and falls back gracefully
   } as any;
 
   const validResponse = await onRequestPost(validContext);
-  assert.strictEqual(validResponse.status, 200);
+  assert.strictEqual(validResponse.status, 503);
+  assert.strictEqual(validResponse.headers.get("Content-Type"), "application/json");
   const json = (await validResponse.json()) as any;
   assert.strictEqual(json.code, "FALLBACK_TO_CLIENT_TTS");
+  assert.match(json.error, /local speech engine/i);
   assert.strictEqual(json.voice, "bn-BD-PradeepNeural");
 });
 
