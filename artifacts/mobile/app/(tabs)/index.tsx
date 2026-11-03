@@ -300,6 +300,23 @@ export default function ChatScreen() {
     }
   }, [audioRecorderState.isRecording, finishRecordedVoice]);
 
+  useEffect(() => {
+    return () => {
+      if (!audioRecordingStartedRef.current) return;
+      audioRecordingStartedRef.current = false;
+      void audioRecorder
+        .stop()
+        .then(() => {
+          const recordingUri = audioRecorder.uri;
+          if (recordingUri) {
+            return FileSystem.deleteAsync(recordingUri, { idempotent: true });
+          }
+          return undefined;
+        })
+        .catch(() => undefined);
+    };
+  }, [audioRecorder]);
+
   const toggleVoice = useCallback(async () => {
     if (!settings.voiceProcessingConsent) {
       setError('ভয়েস ব্যবহারের জন্য Settings-এ Voice Consent সক্ষম করুন।');
