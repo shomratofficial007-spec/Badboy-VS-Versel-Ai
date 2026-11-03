@@ -28,9 +28,10 @@ import {
   isGeneralMusicRequest,
 } from '@/lib/assistant/youtube';
 import { useAssistant } from '@/context/AssistantContext';
-import { streamReply } from '@/lib/assistant/api';
+import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
+import * as FileSystem from 'expo-file-system/legacy';
+import { streamReply, transcribeRecordedAudio } from '@/lib/assistant/api';
 import {
-  checkMicrophonePermission,
   dictateOnce,
   getVoiceErrorMessage,
   getNextVoiceLanguage,
@@ -86,6 +87,10 @@ export default function ChatScreen() {
   const [awaitingSongName, setAwaitingSongName] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const stopDictationRef = useRef<(() => void) | null>(null);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const audioRecorderState = useAudioRecorderState(audioRecorder, 250);
+  const audioRecordingStartedRef = useRef(false);
+  const transcriptionInFlightRef = useRef(false);
 
   // Audio Visualizer Bar & Core Pulse Animations
   const barAnim1 = useRef(new Animated.Value(12)).current;
@@ -216,7 +221,7 @@ export default function ChatScreen() {
     } finally {
       setBusy(false);
     }
-  }, [awaitingSongName, busy, messages, setError, setMessages, settings]);
+  }, [awaitingSongName, busy, messages, selectedLang, setError, setMessages, settings]);
 
   const requestImprovement = useCallback(async () => {
     const lastUserMessage = [...messages].reverse().find((item) => item.role === 'user');
@@ -251,38 +256,110 @@ export default function ChatScreen() {
     }
   }, [improving, messages, settings, updateSettings]);
 
+  const finishRecordedVoice = useCallback(async () => {
+    if (!audioRecordingStartedRef.current || transcriptionInFlightRef.current) return;
+    transcriptionInFlightRef.current = true;
+    audioRecordingStartedRef.current = false;
+    let recordingUri: string | null = null;
+
+    try {
+      if (audioRecorder.isRecording) await audioRecorder.stop();
+      recordingUri = audioRecorder.uri;
+      if (!recordingUri) throw new Error('অডিও রেকর্ডিং সম্পূর্ণ হয়নি। আবার চেষ্টা করুন।');
+
+      const transcript = await transcribeRecordedAudio(recordingUri, selectedLang);
+      if (!transcript.trim()) throw new Error('কোনো কথা শনাক্ত করা যায়নি। আবার চেষ্টা করুন।');
+      setDraft(transcript);
+      await sendMessage(transcript);
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'ভয়েস সার্ভারে পাঠানো যায়নি। ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করুন।',
+      );
+    } finally {
+      if (recordingUri) {
+        await FileSystem.deleteAsync(recordingUri, { idempotent: true }).catch(() => undefined);
+      }
+      await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+      setListening(false);
+      transcriptionInFlightRef.current = false;
+    }
+  }, [audioRecorder, selectedLang, sendMessage]);
+
+  useEffect(() => {
+    // The recorder automatically stops after the configured 20-second limit.
+    if (
+      Platform.OS !== 'web' &&
+      audioRecordingStartedRef.current &&
+      !audioRecorderState.isRecording
+    ) {
+      void finishRecordedVoice();
+    }
+  }, [audioRecorderState.isRecording, finishRecordedVoice]);
+
   const toggleVoice = useCallback(async () => {
     if (!settings.voiceProcessingConsent) {
       setError('ভয়েস ব্যবহারের জন্য Settings-এ Voice Consent সক্ষম করুন।');
       return;
     }
+
     if (listening) {
-      stopDictationRef.current?.();
-      stopDictationRef.current = null;
-      setListening(false);
+      if (Platform.OS !== 'web' && audioRecordingStartedRef.current) {
+        try {
+          await audioRecorder.stop();
+          await finishRecordedVoice();
+        } catch (cause) {
+          audioRecordingStartedRef.current = false;
+          setListening(false);
+          await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+          setError(cause instanceof Error ? cause.message : 'অডিও রেকর্ডিং বন্ধ করা যায়নি।');
+        }
+      } else {
+        stopDictationRef.current?.();
+        stopDictationRef.current = null;
+        setListening(false);
+      }
       return;
     }
+
+    if (Platform.OS !== 'web') {
+      try {
+        const permission = await requestRecordingPermissionsAsync();
+        if (!permission.granted) {
+          setError(getVoiceErrorMessage('permission_denied'));
+          return;
+        }
+        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+        await audioRecorder.prepareToRecordAsync();
+        transcriptionInFlightRef.current = false;
+        audioRecordingStartedRef.current = true;
+        audioRecorder.record({ forDuration: 20 });
+        setError(null);
+        setListening(true);
+      } catch (cause) {
+        audioRecordingStartedRef.current = false;
+        setListening(false);
+        await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : 'মাইক্রোফোন চালু করা যায়নি। অনুমতি ও ডিভাইস সেটিংস পরীক্ষা করুন।',
+        );
+      }
+      return;
+    }
+
     if (!isDictationAvailable()) {
       setError('এই ডিভাইসে Speech Recognition সমর্থিত নয়।');
       return;
     }
-    // On web, let the browser request microphone access as recognition starts.
-    // Awaiting the Permissions API here can consume Chrome's transient user
-    // activation before SpeechRecognition.start() is called from the mic tap.
-    // Native platforms still need the explicit Expo permission check.
-    if (Platform.OS !== 'web') {
-      const permState = await checkMicrophonePermission();
-      if (permState === 'denied') {
-        setError(getVoiceErrorMessage('not-allowed'));
-        return;
-      }
-    }
 
+    // Web Speech API asks for microphone access when recognition starts.
     setError(null);
     setListening(true);
     setWakeDetected(false);
     const base = draft;
-
     stopDictationRef.current = dictateOnce({
       lang: selectedLang,
       onTranscript: (text, isFinal) => {
@@ -294,17 +371,22 @@ export default function ChatScreen() {
           setTimeout(() => { void sendMessage(finalText); }, 0);
         }
       },
-      onWakeWordDetected: () => {
-        setWakeDetected(true);      },
-      onError: (errType) => {
-        setError(getVoiceErrorMessage(errType));
-      },
+      onWakeWordDetected: () => setWakeDetected(true),
+      onError: (errType) => setError(getVoiceErrorMessage(errType)),
       onDone: () => {
         setListening(false);
         stopDictationRef.current = null;
       },
     });
-  }, [draft, listening, selectedLang, settings.voiceProcessingConsent, sendMessage]);
+  }, [
+    audioRecorder,
+    draft,
+    finishRecordedVoice,
+    listening,
+    selectedLang,
+    sendMessage,
+    settings.voiceProcessingConsent,
+  ]);
 
   const startNewChat = () => {
     setDrawerModal('newChat');

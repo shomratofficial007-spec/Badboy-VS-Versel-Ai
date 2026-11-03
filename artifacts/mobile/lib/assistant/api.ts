@@ -1,4 +1,5 @@
 import { fetch as expoFetch } from 'expo/fetch';
+import * as FileSystem from 'expo-file-system/legacy';
 import type { AssistantSettings } from '@/lib/assistant/types';
 import { getTranscriptionLanguageCode } from './transcriptionLanguage';
 
@@ -105,6 +106,19 @@ export async function transcribeAudio(
   }
   if (!result.text?.trim()) throw new Error('কোনো কথা শনাক্ত করা যায়নি। আবার চেষ্টা করুন।');
   return result.text.trim();
+}
+
+/** Read a completed Expo audio recording and send it to the server-side Whisper endpoint. */
+export async function transcribeRecordedAudio(
+  recordingUri: string,
+  language: string,
+): Promise<string> {
+  if (!recordingUri.trim()) throw new Error('অডিও রেকর্ডিং ফাইল পাওয়া যায়নি।');
+  const audioBase64 = await FileSystem.readAsStringAsync(recordingUri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+  if (!audioBase64.trim()) throw new Error('রেকর্ড করা অডিও ফাঁকা। আবার চেষ্টা করুন।');
+  return transcribeAudio(audioBase64, 'm4a', language);
 }
 
 
