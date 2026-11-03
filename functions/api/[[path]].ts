@@ -90,6 +90,116 @@ function jsonResponse(data: unknown, status = 200) {
   });
 }
 
+const MAX_CHAT_REQUEST_BYTES = 64 * 1024;
+const MAX_SPEECH_REQUEST_BYTES = 64 * 1024;
+// Base64 expands audio by roughly 4/3. Keep the existing 6 MB encoded-audio
+// contract plus a small allowance for JSON metadata.
+const MAX_TRANSCRIPTION_REQUEST_BYTES = 6_100_000;
+
+type JsonBodyReadResult =
+  | { body: unknown }
+  | { response: Response };
+
+/**
+ * Parse JSON with an application-level byte ceiling.
+ * Content-Length is only an early-rejection hint; the stream is always counted
+ * so chunked requests cannot bypass the limit by omitting that header.
+ */
+async function readJsonBody(
+  request: Request,
+  maxBytes: number,
+): Promise<JsonBodyReadResult> {
+  const contentType = request.headers
+    .get("content-type")
+    ?.split(";")[0]
+    .trim()
+    .toLowerCase();
+
+  if (contentType !== "application/json") {
+    return {
+      response: jsonResponse(
+        { code: "UNSUPPORTED_MEDIA_TYPE", error: "Content-Type must be application/json." },
+        415,
+      ),
+    };
+  }
+
+  const contentLength = request.headers.get("content-length");
+  if (contentLength !== null) {
+    const declaredBytes = Number(contentLength);
+    if (!Number.isSafeInteger(declaredBytes) || declaredBytes < 0) {
+      return {
+        response: jsonResponse(
+          { code: "INVALID_CONTENT_LENGTH", error: "Invalid Content-Length header." },
+          400,
+        ),
+      };
+    }
+    if (declaredBytes > maxBytes) {
+      return {
+        response: jsonResponse(
+          { code: "REQUEST_BODY_TOO_LARGE", error: "Request body exceeds the endpoint size limit." },
+          413,
+        ),
+      };
+    }
+  }
+
+  if (!request.body) {
+    return {
+      response: jsonResponse({ code: "INVALID_JSON_BODY", error: "Request body is required." }, 400),
+    };
+  }
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return {
+          response: jsonResponse(
+            { code: "REQUEST_BODY_TOO_LARGE", error: "Request body exceeds the endpoint size limit." },
+            413,
+          ),
+        };
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return {
+      response: jsonResponse({ code: "INVALID_JSON_BODY", error: "Could not read request body." }, 400),
+    };
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // The reader may already have been cancelled.
+    }
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  try {
+    const source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return { body: JSON.parse(source) as unknown };
+  } catch {
+    return {
+      response: jsonResponse({ code: "INVALID_JSON_BODY", error: "Request body must contain valid JSON." }, 400),
+    };
+  }
+}
+
 function systemInstruction(personality: string, developerMode: boolean) {
   const base =
     "You are Badboy, a highly intelligent, polite personal AI assistant with smart reasoning capabilities. Reply strictly in natural Bangla (Bengali) language by default. You also understand Banglish (Bengali written in English alphabet) and English. If the user explicitly speaks or requests English, reply in clear English. For complex questions or tasks, structure your response using these 5 points where appropriate: 1. Direct Answer, 2. Explanation, 3. Sources/Evidence, 4. Limitations, 5. Next Practical Step. When the user asks to play a song or open YouTube, confirm politely in Bangla and state that YouTube search results will open on their device. Never claim that music or video is playing inside the chat unless verified. Ask before sensitive data changes or external actions.";
@@ -146,14 +256,10 @@ async function handleTranscriptionRequest(request: Request, env: Env): Promise<R
     }, 503);
   }
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return jsonResponse({ error: "Invalid transcription request body." }, 400);
-  }
+  const parsedBody = await readJsonBody(request, MAX_TRANSCRIPTION_REQUEST_BYTES);
+  if ("response" in parsedBody) return parsedBody.response;
 
-  const payload = (body ?? {}) as {
+  const payload = (parsedBody.body ?? {}) as {
     audioBase64?: unknown;
     format?: unknown;
     language?: unknown;
@@ -432,14 +538,10 @@ async function synthesizeEdgeTts(text: string, voice: string): Promise<Uint8Arra
 }
 
 async function handleSpeechRequest(request: Request, env: Env): Promise<Response> {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return jsonResponse({ error: "Invalid speech request body." }, 400);
-  }
+  const parsedBody = await readJsonBody(request, MAX_SPEECH_REQUEST_BYTES);
+  if ("response" in parsedBody) return parsedBody.response;
 
-  const { text, language = "bn-BD" } = (body ?? {}) as {
+  const { text, language = "bn-BD" } = (parsedBody.body ?? {}) as {
     text?: unknown;
     language?: unknown;
   };
@@ -580,14 +682,10 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     return jsonResponse({ error: "Endpoint not found." }, 404);
   }
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return jsonResponse({ error: "Invalid assistant message body." }, 400);
-  }
+  const parsedBody = await readJsonBody(request, MAX_CHAT_REQUEST_BYTES);
+  if ("response" in parsedBody) return parsedBody.response;
 
-  const { message, personality = "", developerMode = false } = (body ?? {}) as {
+  const { message, personality = "", developerMode = false } = (parsedBody.body ?? {}) as {
     message?: unknown;
     personality?: unknown;
     developerMode?: unknown;
