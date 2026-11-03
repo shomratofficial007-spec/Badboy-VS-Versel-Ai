@@ -531,6 +531,15 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
     callbacks.onDone?.();
   };
 
+  recognition.onstart = () => {
+    console.info('[BadboyVoice] Web Speech API started', {
+      language: recognition.lang,
+      secureContext: typeof window !== 'undefined' ? window.isSecureContext : false,
+    });
+  };
+
+  let hasReceivedTranscript = false;
+
   recognition.onresult = (event: RecognitionEventLike) => {
     let finalText = '';
     let interimText = '';

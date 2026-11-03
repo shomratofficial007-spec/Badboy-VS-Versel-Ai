@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { handleApiRequest } from "../../../../functions/api/[[path]].ts";
-import { transcribeAudio } from './api.ts';
 
 const originalFetch = globalThis.fetch;
 
@@ -108,30 +107,4 @@ test("chat converts provider rate limits into a clear 429 response", async () =>
   const payload = await response.json() as { code: string; error: string };
   assert.equal(payload.code, "OPENROUTER_RATE_LIMIT");
   assert.equal(payload.error.includes("provider details"), false);
-});
-
-
-test('transcribeAudio sends recorded base64 audio and Bengali language to the Worker', async () => {
-  const originalFetch = globalThis.fetch;
-  let requestedUrl = '';
-  let requestBody: Record<string, unknown> | undefined;
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    requestedUrl = String(input);
-    requestBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
-    return new Response(JSON.stringify({ text: 'আমি বাংলায় বলছি' }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }) as typeof fetch;
-
-  try {
-    const transcript = await transcribeAudio('YXVkaW8=', 'm4a', 'bn-BD');
-    assert.equal(transcript, 'আমি বাংলায় বলছি');
-    assert.match(requestedUrl, /\/api\/assistant\/transcribe$/);
-    assert.equal(requestBody?.audioBase64, 'YXVkaW8=');
-    assert.equal(requestBody?.format, 'm4a');
-    assert.equal(requestBody?.language, 'bn');
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
 });

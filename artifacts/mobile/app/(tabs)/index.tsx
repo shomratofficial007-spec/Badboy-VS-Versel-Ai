@@ -269,6 +269,8 @@ export default function ChatScreen() {
 
       const transcript = await transcribeRecordedAudio(recordingUri, selectedLang);
       if (!transcript.trim()) throw new Error('কোনো কথা শনাক্ত করা যায়নি। আবার চেষ্টা করুন।');
+      await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+      setListening(false);
       setDraft(transcript);
       await sendMessage(transcript);
     } catch (cause) {
