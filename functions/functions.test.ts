@@ -152,6 +152,150 @@ test("onRequestPost - streams response when valid request and API key provided",
   }
 });
 
+test("onRequestPost - transcribe returns 503 if neither GROQ_API_KEY nor OPENROUTER_API_KEY is configured", async () => {
+  const context = {
+    request: new Request("https://example.com/api/assistant/transcribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        audioBase64: Buffer.from("dummy-audio").toString("base64"),
+        format: "mp3",
+      }),
+    }),
+    env: {},
+  } as any;
+
+  const response = await onRequestPost(context);
+  assert.strictEqual(response.status, 503);
+  const json = (await response.json()) as any;
+  assert.strictEqual(json.code, "AI_NOT_CONFIGURED");
+});
+
+test("onRequestPost - transcribe uses Groq Whisper Large-V3 as primary when GROQ_API_KEY is provided", async () => {
+  const originalFetch = globalThis.fetch;
+  let groqCalled = false;
+  let sentAuth = "";
+
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    if (url.includes("api.groq.com/openai/v1/audio/transcriptions")) {
+      groqCalled = true;
+      sentAuth = (init?.headers as Record<string, string>)?.Authorization || "";
+      return new Response(JSON.stringify({ text: "Groq বাংলা ট্রান্সক্রিপশন সফল" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw new Error(`Unexpected URL called: ${url}`);
+  }) as typeof globalThis.fetch;
+
+  try {
+    const context = {
+      request: new Request("https://example.com/api/assistant/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          audioBase64: Buffer.from("test-audio-content").toString("base64"),
+          format: "mp3",
+          language: "bn",
+        }),
+      }),
+      env: { GROQ_API_KEY: "test-groq-key", OPENROUTER_API_KEY: "test-openrouter-key" },
+    } as any;
+
+    const response = await onRequestPost(context);
+    assert.strictEqual(response.status, 200);
+    const json = (await response.json()) as any;
+    assert.strictEqual(groqCalled, true);
+    assert.strictEqual(sentAuth, "Bearer test-groq-key");
+    assert.strictEqual(json.text, "Groq বাংলা ট্রান্সক্রিপশন সফল");
+    assert.strictEqual(json.provider, "groq");
+    assert.strictEqual(json.model, "whisper-large-v3");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("onRequestPost - transcribe falls back to OpenRouter when Groq fails with 429", async () => {
+  const originalFetch = globalThis.fetch;
+  let groqAttempted = false;
+  let openrouterAttempted = false;
+
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    if (url.includes("api.groq.com")) {
+      groqAttempted = true;
+      return new Response(JSON.stringify({ error: { message: "Rate limit reached" } }), {
+        status: 429,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.includes("openrouter.ai/api/v1/audio/transcriptions")) {
+      openrouterAttempted = true;
+      const body = JSON.parse(String(init?.body || "{}"));
+      assert.strictEqual(body.model, "openai/whisper-1");
+      return new Response(JSON.stringify({ text: "OpenRouter ফলব্যাক ট্রান্সক্রিপশন" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw new Error(`Unexpected URL called: ${url}`);
+  }) as typeof globalThis.fetch;
+
+  try {
+    const context = {
+      request: new Request("https://example.com/api/assistant/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          audioBase64: Buffer.from("test-audio-bytes").toString("base64"),
+          format: "wav",
+          language: "bn",
+        }),
+      }),
+      env: { GROQ_API_KEY: "test-groq-key", OPENROUTER_API_KEY: "test-openrouter-key" },
+    } as any;
+
+    const response = await onRequestPost(context);
+    assert.strictEqual(response.status, 200);
+    const json = (await response.json()) as any;
+    assert.strictEqual(groqAttempted, true);
+    assert.strictEqual(openrouterAttempted, true);
+    assert.strictEqual(json.text, "OpenRouter ফলব্যাক ট্রান্সক্রিপশন");
+    assert.strictEqual(json.provider, "openrouter");
+    assert.strictEqual(json.model, "openai/whisper-1");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("onRequestPost - speech endpoint validates inputs and falls back gracefully", async () => {
+  const badContext = {
+    request: new Request("https://example.com/api/assistant/speech", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "" }),
+    }),
+    env: {},
+  } as any;
+
+  const badResponse = await onRequestPost(badContext);
+  assert.strictEqual(badResponse.status, 400);
+
+  const validContext = {
+    request: new Request("https://example.com/api/assistant/speech", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "হ্যালো ব্যাডবয়", language: "bn-BD" }),
+    }),
+    env: {},
+  } as any;
+
+  const validResponse = await onRequestPost(validContext);
+  assert.strictEqual(validResponse.status, 200);
+  const json = (await validResponse.json()) as any;
+  assert.strictEqual(json.code, "FALLBACK_TO_CLIENT_TTS");
+  assert.strictEqual(json.voice, "bn-BD-PradeepNeural");
+});
+
 test("onRequestPost - advances through fallback models on retryable 404, 429, 500, 503 errors and network failures", async () => {
   const originalFetch = globalThis.fetch;
   const attemptedModels: string[] = [];
