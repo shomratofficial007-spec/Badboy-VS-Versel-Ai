@@ -620,13 +620,14 @@ async function handleSpeechRequest(request: Request, env: Env): Promise<Response
     }
   }
 
-  // 3. Graceful fallback response instructing client to use native TTS (window.speechSynthesis / expo-speech)
+  // The mobile client treats every 2xx response as audio bytes. Use a non-2xx
+  // status so requestSpeech parses this JSON error and voice.ts activates local TTS.
   return jsonResponse({
     code: "FALLBACK_TO_CLIENT_TTS",
-    message: "Server TTS generation bypassed or completed; fallback to client speech synthesis.",
+    error: "Cloud speech is unavailable. Use the device's local speech engine.",
     voice: selectedVoice,
     language,
-  }, 200);
+  }, 503);
 }
 
 export async function handleApiRequest(request: Request, env: Env): Promise<Response> {
