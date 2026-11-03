@@ -540,15 +540,29 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
 
   if (request.method === "GET") {
     if (pathname === "/api/healthz" || pathname === "/api/health") {
-      const aiConfigured = Boolean(env.OPENROUTER_API_KEY?.trim());
+      const chatConfigured = Boolean(env.OPENROUTER_API_KEY?.trim());
+      const transcriptionConfigured = Boolean(
+        env.GROQ_API_KEY?.trim() || env.OPENROUTER_API_KEY?.trim(),
+      );
+      const anyCapabilityConfigured = chatConfigured || transcriptionConfigured;
       return jsonResponse(
         {
-          status: aiConfigured ? "ok" : "degraded",
-          aiConfigured,
+          status: chatConfigured ? "ok" : anyCapabilityConfigured ? "partial" : "degraded",
+          // Keep the legacy field for existing clients; it describes chat only.
+          aiConfigured: chatConfigured,
+          capabilities: {
+            chat: chatConfigured,
+            transcription: transcriptionConfigured,
+            serverSpeech: chatConfigured,
+          },
+          providers: {
+            openrouter: chatConfigured,
+            groqTranscription: Boolean(env.GROQ_API_KEY?.trim()),
+          },
           model: OPENROUTER_MODEL_ID,
           fallbackCount: OPENROUTER_FREE_FALLBACKS.length,
         },
-        aiConfigured ? 200 : 503,
+        anyCapabilityConfigured ? 200 : 503,
       );
     }
     return jsonResponse({ error: "Endpoint not found." }, 404);

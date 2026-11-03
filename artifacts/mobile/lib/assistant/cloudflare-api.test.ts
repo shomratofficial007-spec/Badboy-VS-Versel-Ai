@@ -22,6 +22,8 @@ test("health reports AI unavailable when the secret is missing", async () => {
   assert.deepEqual(await response.json(), {
     status: "degraded",
     aiConfigured: false,
+    capabilities: { chat: false, transcription: false, serverSpeech: false },
+    providers: { openrouter: false, groqTranscription: false },
     model: "openrouter/free",
     fallbackCount: 4,
   });

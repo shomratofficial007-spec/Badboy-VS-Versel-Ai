@@ -15,6 +15,8 @@ test("onRequestGet - health check endpoint returns status ok", async () => {
   assert.deepStrictEqual(json, {
     status: "degraded",
     aiConfigured: false,
+    capabilities: { chat: false, transcription: false, serverSpeech: false },
+    providers: { openrouter: false, groqTranscription: false },
     model: "openrouter/free",
     fallbackCount: 4,
   });
@@ -32,9 +34,33 @@ test("onRequestGet - health check endpoint without leading /api prefix returns s
   assert.deepStrictEqual(json, {
     status: "degraded",
     aiConfigured: false,
+    capabilities: { chat: false, transcription: false, serverSpeech: false },
+    providers: { openrouter: false, groqTranscription: false },
     model: "openrouter/free",
     fallbackCount: 4,
   });
+});
+
+test("onRequestGet - reports transcription capability when only Groq is configured", async () => {
+  const context = {
+    request: new Request("https://example.com/api/health"),
+    env: { GROQ_API_KEY: "test-groq-key" },
+  } as any;
+
+  const response = await onRequestGet(context);
+  assert.strictEqual(response.status, 200);
+  const json = (await response.json()) as any;
+  assert.deepStrictEqual(json.capabilities, {
+    chat: false,
+    transcription: true,
+    serverSpeech: false,
+  });
+  assert.deepStrictEqual(json.providers, {
+    openrouter: false,
+    groqTranscription: true,
+  });
+  assert.strictEqual(json.aiConfigured, false);
+  assert.strictEqual(json.status, "partial");
 });
 
 test("onRequestPost - handles assistant/chat without leading /api prefix", async () => {
@@ -65,6 +91,8 @@ test("onRequestGet - health check endpoint with trailing slash returns status ok
   assert.deepStrictEqual(json, {
     status: "degraded",
     aiConfigured: false,
+    capabilities: { chat: false, transcription: false, serverSpeech: false },
+    providers: { openrouter: false, groqTranscription: false },
     model: "openrouter/free",
     fallbackCount: 4,
   });

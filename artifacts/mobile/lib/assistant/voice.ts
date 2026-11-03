@@ -531,36 +531,6 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
     callbacks.onDone?.();
   };
 
-  recognition.onresult = (event: RecognitionEventLike) => {
-    let finalText = '';
-    let interimText = '';
-    for (let i = event.resultIndex; i < event.results.length; i += 1) {
-      const result = event.results[i];
-      const transcript =
-        typeof result[0]?.transcript === 'string' ? (result[0].transcript as string) : '';
-      if (result.isFinal) finalText += transcript;
-      else interimText += transcript;
-    }
-    const combined = `${finalText}${interimText}`.trim();
-    if (combined) resetWatchdog(() => recognition.abort(), undefined, finish);
-
-    if (combined) {
-      if (containsWakePhrase(combined)) {
-        callbacks.onWakeWordDetected?.();
-      }
-      callbacks.onTranscript(combined, finalText.length > 0 && !interimText);
-    }
-
-    if (finalText && !interimText) {
-      try {
-        recognition.stop();
-      } catch {
-        // Already stopped.
-      }
-      finish();
-    }
-  };
-
   recognition.onstart = () => {
     console.info('[BadboyVoice] Web Speech API started', {
       language: recognition.lang,
