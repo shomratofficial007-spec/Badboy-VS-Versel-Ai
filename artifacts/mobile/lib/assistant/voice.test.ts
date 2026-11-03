@@ -8,6 +8,7 @@ import {
   VOICE_LANGUAGES,
   isDictationAvailable,
   isReadAloudAvailable,
+  getSpeechPlaybackTimeoutMs,
 } from './voice.ts';
 
 test('wake phrases: English and Bangla aliases are recognized', () => {
@@ -63,4 +64,12 @@ test('voice language catalogue includes Bengali and English plus international l
   assert.equal(getVoiceLanguageLabel('bn-BD'), 'বাংলা (বাংলাদেশ)');
   assert.equal(getNextVoiceLanguage('bn-BD'), 'bn-IN');
   assert.equal(getNextVoiceLanguage('unknown-locale'), 'bn-BD');
+});
+
+test('speech playback watchdog scales with reply length and stays bounded', () => {
+  assert.equal(getSpeechPlaybackTimeoutMs(0), 45_000);
+  assert.equal(getSpeechPlaybackTimeoutMs(100), 45_000);
+  assert.equal(getSpeechPlaybackTimeoutMs(1_000), 100_000);
+  assert.equal(getSpeechPlaybackTimeoutMs(4_000), 240_000);
+  assert.equal(getSpeechPlaybackTimeoutMs(Number.NaN), 45_000);
 });

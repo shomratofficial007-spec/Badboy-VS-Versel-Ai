@@ -626,11 +626,49 @@ export interface SpeechLifecycleCallbacks {
   onError?: (error: unknown) => void;
 }
 
+/** Bound playback watchdogs while allowing longer assistant replies to finish. */
+export function getSpeechPlaybackTimeoutMs(textLength: number): number {
+  const safeLength = Number.isFinite(textLength) ? Math.max(0, Math.floor(textLength)) : 0;
+  return Math.max(45_000, Math.min(240_000, safeLength * 100));
+}
+
 /** Speak text through the device's native TTS engine or browser local voices. */
 let activeCloudPlayer: { pause: () => void; release: () => void } | null = null;
+let activeCloudSubscription: { remove: () => void } | null = null;
 let activeCloudFile: { delete: () => void; uri: string } | null = null;
 let activeWebAudio: HTMLAudioElement | null = null;
+let activeWebAudioUrl: string | null = null;
+let activeSpeechCleanup: (() => void) | null = null;
 let speechRunId = 0;
+
+function releaseCloudPlayback(): void {
+  if (activeCloudSubscription) {
+    try { activeCloudSubscription.remove(); } catch { /* Ignore cleanup errors. */ }
+    activeCloudSubscription = null;
+  }
+  if (activeCloudPlayer) {
+    try { activeCloudPlayer.pause(); activeCloudPlayer.release(); } catch { /* Ignore cleanup errors. */ }
+    activeCloudPlayer = null;
+  }
+  if (activeCloudFile) {
+    try { activeCloudFile.delete(); } catch { /* Cache cleanup is best-effort. */ }
+    activeCloudFile = null;
+  }
+}
+
+function releaseWebPlayback(): void {
+  if (activeWebAudio) {
+    const audio = activeWebAudio;
+    activeWebAudio = null;
+    audio.onended = null;
+    audio.onerror = null;
+    try { audio.pause(); audio.src = ''; } catch { /* Ignore cleanup errors. */ }
+  }
+  if (activeWebAudioUrl) {
+    try { URL.revokeObjectURL(activeWebAudioUrl); } catch { /* Ignore cleanup errors. */ }
+    activeWebAudioUrl = null;
+  }
+}
 
 /** Prefer free cloud TTS; fall back to the existing device/browser TTS on failure. */
 export function speak(
@@ -647,30 +685,47 @@ export function speak(
   const runId = speechRunId;
   let settled = false;
   let localWatchdog: ReturnType<typeof setTimeout> | null = null;
+  let cloudWatchdog: ReturnType<typeof setTimeout> | null = null;
+  let requestWatchdog: ReturnType<typeof setTimeout> | null = null;
+  const playbackTimeout = getSpeechPlaybackTimeoutMs(clean.length);
   const isCurrent = () => runId === speechRunId;
-  const clearLocalWatchdog = () => {
+  const clearWatchdogs = () => {
     if (localWatchdog) clearTimeout(localWatchdog);
+    if (cloudWatchdog) clearTimeout(cloudWatchdog);
     localWatchdog = null;
+    cloudWatchdog = null;
+    // Keep the request timeout alive after Stop so an unabortable fetch still settles.
+  };
+  activeSpeechCleanup = clearWatchdogs;
+  const cleanup = () => {
+    clearWatchdogs();
+    releaseCloudPlayback();
+    releaseWebPlayback();
+    if (activeSpeechCleanup === clearWatchdogs) activeSpeechCleanup = null;
   };
   const finish = () => {
     if (settled || !isCurrent()) return;
     settled = true;
-    clearLocalWatchdog();
+    cleanup();
     callbacks.onDone?.();
   };
   const fail = (error: unknown) => {
     if (settled || !isCurrent()) return;
     settled = true;
-    clearLocalWatchdog();
+    cleanup();
     callbacks.onError?.(error);
   };
 
   const speakLocally = () => {
     if (!isCurrent() || settled) return;
-    clearLocalWatchdog();
+    if (cloudWatchdog) clearTimeout(cloudWatchdog);
+    cloudWatchdog = null;
+    releaseCloudPlayback();
+    releaseWebPlayback();
+    if (localWatchdog) clearTimeout(localWatchdog);
     localWatchdog = setTimeout(() => {
       fail(new Error('Local speech playback timed out.'));
-    }, 30000);
+    }, playbackTimeout);
     const os = getPlatformOS();
     const speechModule = getSpeechModule();
     if (os !== 'web' && os !== 'node' && speechModule) {
@@ -703,15 +758,18 @@ export function speak(
       // Lazy-load Expo-only modules so Node-based voice unit tests can import this file.
       const { requestSpeech } = require('./api') as typeof import('./api');
       // A stalled free TTS provider must not leave the UI in a permanent speaking state.
-      let timeoutId: ReturnType<typeof setTimeout> | null = null;
       const timeout = new Promise<never>((_resolve, reject) => {
-        timeoutId = setTimeout(() => reject(new Error('Cloud speech request timed out.')), 12000);
+        requestWatchdog = setTimeout(
+          () => reject(new Error('Cloud speech request timed out.')),
+          12000,
+        );
       });
       let bytes: Uint8Array;
       try {
         bytes = await Promise.race([requestSpeech(clean, lang), timeout]);
       } finally {
-        if (timeoutId) clearTimeout(timeoutId);
+        if (requestWatchdog) clearTimeout(requestWatchdog);
+        requestWatchdog = null;
       }
       if (!isCurrent() || settled) return;
       if (typeof window !== 'undefined' && getPlatformOS() === 'web') {
@@ -722,36 +780,37 @@ export function speak(
         const url = URL.createObjectURL(new Blob([audioBuffer], { type: 'audio/mpeg' }));
         const audio = new Audio(url);
         activeWebAudio = audio;
-        audio.onended = () => { URL.revokeObjectURL(url); if (activeWebAudio === audio) activeWebAudio = null; finish(); };
-        audio.onerror = () => { URL.revokeObjectURL(url); if (activeWebAudio === audio) activeWebAudio = null; speakLocally(); };
+        activeWebAudioUrl = url;
+        audio.onended = finish;
+        audio.onerror = speakLocally;
+        cloudWatchdog = setTimeout(speakLocally, playbackTimeout);
         await audio.play();
-        callbacks.onStart?.();
+        if (isCurrent() && !settled) callbacks.onStart?.();
         return;
       }
       const { createAudioPlayer } = require('expo-audio') as typeof import('expo-audio');
       const { File, Paths } = require('expo-file-system') as typeof import('expo-file-system');
       const file = new File(Paths.cache, `badboy-tts-${Date.now()}.mp3`);
       file.create();
-      await file.write(bytes);
       activeCloudFile = file;
+      await file.write(bytes);
+      if (!isCurrent() || settled) {
+        releaseCloudPlayback();
+        return;
+      }
       const player = createAudioPlayer({ uri: file.uri });
       activeCloudPlayer = player;
-      player.addListener('playbackStatusUpdate', (status) => {
+      activeCloudSubscription = player.addListener('playbackStatusUpdate', (status) => {
         if (!isCurrent() || settled) return;
         if (status.didJustFinish) {
-          player.release();
-          activeCloudPlayer = null;
-          try { file.delete(); } catch { /* Cache cleanup is best-effort. */ }
-          activeCloudFile = null;
           finish();
         } else if (status.error) {
-          player.release();
-          activeCloudPlayer = null;
           speakLocally();
         }
       });
+      cloudWatchdog = setTimeout(speakLocally, playbackTimeout);
       player.play();
-      if (isCurrent()) callbacks.onStart?.();
+      if (isCurrent() && !settled) callbacks.onStart?.();
     } catch {
       speakLocally();
     }
@@ -762,18 +821,10 @@ export function speak(
 export function stopSpeaking(): void {
   // Invalidate pending network requests and delayed playback callbacks.
   speechRunId += 1;
-  if (activeCloudPlayer) {
-    try { activeCloudPlayer.pause(); activeCloudPlayer.release(); } catch { /* Ignore cleanup errors. */ }
-    activeCloudPlayer = null;
-  }
-  if (activeCloudFile) {
-    try { activeCloudFile.delete(); } catch { /* Ignore cache cleanup errors. */ }
-    activeCloudFile = null;
-  }
-  if (activeWebAudio) {
-    try { activeWebAudio.pause(); activeWebAudio.src = ''; } catch { /* Ignore. */ }
-    activeWebAudio = null;
-  }
+  activeSpeechCleanup?.();
+  activeSpeechCleanup = null;
+  releaseCloudPlayback();
+  releaseWebPlayback();
   const os = getPlatformOS();
   const speechModule = getSpeechModule();
   if (os !== 'web' && os !== 'node' && speechModule) {
