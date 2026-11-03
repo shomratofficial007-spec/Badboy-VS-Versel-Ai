@@ -692,10 +692,9 @@ export function speak(
   const clearWatchdogs = () => {
     if (localWatchdog) clearTimeout(localWatchdog);
     if (cloudWatchdog) clearTimeout(cloudWatchdog);
-    if (requestWatchdog) clearTimeout(requestWatchdog);
     localWatchdog = null;
     cloudWatchdog = null;
-    requestWatchdog = null;
+    // Keep the request timeout alive after Stop so an unabortable fetch still settles.
   };
   activeSpeechCleanup = clearWatchdogs;
   const cleanup = () => {
