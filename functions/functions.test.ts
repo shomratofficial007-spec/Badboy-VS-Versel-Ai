@@ -439,3 +439,83 @@ test("onRequestPost - returns final error when all fallback models fail with 500
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("onRequestPost - rejects oversized chat JSON while reading a chunked body", async () => {
+  const context = {
+    request: new Request("https://example.com/api/assistant/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "x".repeat(70 * 1024) }),
+    }),
+    env: { OPENROUTER_API_KEY: "test-secret-key" },
+  } as any;
+
+  const response = await onRequestPost(context);
+  assert.strictEqual(response.status, 413);
+  const json = (await response.json()) as any;
+  assert.strictEqual(json.code, "REQUEST_BODY_TOO_LARGE");
+});
+
+test("onRequestPost - rejects oversized transcription JSON before calling providers", async () => {
+  const originalFetch = globalThis.fetch;
+  let providerCalled = false;
+  globalThis.fetch = (async () => {
+    providerCalled = true;
+    throw new Error("Provider must not be called for oversized requests.");
+  }) as typeof globalThis.fetch;
+
+  try {
+    const context = {
+      request: new Request("https://example.com/api/assistant/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          audioBase64: "A".repeat(6_100_001),
+          format: "m4a",
+        }),
+      }),
+      env: { GROQ_API_KEY: "test-groq-key" },
+    } as any;
+
+    const response = await onRequestPost(context);
+    assert.strictEqual(response.status, 413);
+    const json = (await response.json()) as any;
+    assert.strictEqual(json.code, "REQUEST_BODY_TOO_LARGE");
+    assert.strictEqual(providerCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("onRequestPost - rejects non-JSON request content types", async () => {
+  const context = {
+    request: new Request("https://example.com/api/assistant/speech", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: "not-json",
+    }),
+    env: {},
+  } as any;
+
+  const response = await onRequestPost(context);
+  assert.strictEqual(response.status, 415);
+  const json = (await response.json()) as any;
+  assert.strictEqual(json.code, "UNSUPPORTED_MEDIA_TYPE");
+});
+
+test("onRequestPost - rejects malformed JSON with a consistent error envelope", async () => {
+  const context = {
+    request: new Request("https://example.com/api/assistant/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{invalid-json",
+    }),
+    env: { OPENROUTER_API_KEY: "test-secret-key" },
+  } as any;
+
+  const response = await onRequestPost(context);
+  assert.strictEqual(response.status, 400);
+  const json = (await response.json()) as any;
+  assert.strictEqual(json.code, "INVALID_JSON_BODY");
+});
