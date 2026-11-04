@@ -40,6 +40,7 @@ import {
 } from '@/lib/assistant/voice';
 import type { ChatMessage } from '@/lib/assistant/types';
 import { useColors } from '@/hooks/useColors';
+import { startOfflineWakeWord, stopOfflineWakeWord, subscribeToWakeWord } from '@/lib/assistant/wakeWord';
 
 type BrowserSpeechRecognitionResultEvent = {
   resultIndex: number;
@@ -406,6 +407,31 @@ export default function ChatScreen() {
     sendMessage,
     settings.voiceProcessingConsent,
   ]);
+
+  // Android foreground microphone service is started only after voice consent and permission.
+  const wakeHandoffRef = useRef(false);
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !settings.voiceProcessingConsent) return;
+    let active = true;
+    const subscription = subscribeToWakeWord(() => {
+      if (!active || wakeHandoffRef.current) return;
+      wakeHandoffRef.current = true;
+      setWakeDetected(true);
+      void stopOfflineWakeWord().finally(() => {
+        if (active) void toggleVoice();
+        setTimeout(() => { wakeHandoffRef.current = false; }, 1800);
+      });
+    });
+    void requestRecordingPermissionsAsync().then((permission) => {
+      if (!active || !permission.granted) return;
+      return startOfflineWakeWord().then((status) => {
+        if (status.state === 'error') setError(status.message ?? 'Hey Badboy চালু করা যায়নি।');
+      });
+    }).catch((cause) => {
+      if (active) setError(cause instanceof Error ? cause.message : 'Hey Badboy চালু করা যায়নি।');
+    });
+    return () => { active = false; subscription.remove(); };
+  }, [settings.voiceProcessingConsent, toggleVoice]);
 
   const startNewChat = () => {
     setDrawerModal('newChat');

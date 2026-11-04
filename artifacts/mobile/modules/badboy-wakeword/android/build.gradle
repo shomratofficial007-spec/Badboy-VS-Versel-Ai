@@ -1,0 +1,14 @@
+group = 'expo.modules.badboywakeword'
+version = '1.0.0'
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+android {
+  namespace "expo.modules.badboywakeword"
+  compileSdkVersion safeExtGet("compileSdkVersion", 36)
+  defaultConfig { minSdkVersion safeExtGet("minSdkVersion", 34) }
+  sourceSets { main { assets.srcDirs += ['src/main/assets'] } }
+}
+dependencies {
+  implementation project(':expo-modules-core')
+  implementation 'org.tensorflow:tensorflow-lite:2.17.0'
+}

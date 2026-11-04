@@ -21,9 +21,7 @@
     },
     "android": {
       "package": "com.badboyai.assistant",
-      "permissions": [
-        "RECORD_AUDIO"
-      ],
+      "permissions": ["RECORD_AUDIO", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_MICROPHONE", "POST_NOTIFICATIONS"],
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#030814"
