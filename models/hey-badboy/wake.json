@@ -1,0 +1,35 @@
+{
+  "phrase": "hey badboy",
+  "threshold": 0.696,
+  "sample_rate": 16000,
+  "audio_window_samples": 16000,
+  "n_mels": 40,
+  "n_fft": 512,
+  "win_length": 400,
+  "hop_length": 160,
+  "window_frames": 101,
+  "mel_fmin_hz": 0.0,
+  "mel_fmax_hz": 8000.0,
+  "window_type": "hann",
+  "preprocessing": [
+    {"op":"highpass_filter","cutoff_hz":100.0,"order":8,"mains_notch_hz":[50.0,60.0]},
+    {"op":"peak_normalize","target_dbfs":-3.0},
+    {"op":"log_mel"},
+    {"op":"cmn"}
+  ],
+  "trigger": {
+    "consecutive_frames":2,
+    "refractory_seconds":0.7,
+    "ema_alpha":0.5
+  },
+  "energy_gate": {
+    "rms_threshold_dbfs":-55.0,
+    "voice_band_min_fraction":0.15,
+    "voice_band_lo_hz":100.0,
+    "voice_band_hi_hz":7000.0
+  },
+  "model_size":"medium",
+  "channels":64,
+  "n_blocks":3,
+  "heed_export_version":1
+}
