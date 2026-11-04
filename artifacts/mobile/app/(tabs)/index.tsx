@@ -410,6 +410,8 @@ export default function ChatScreen() {
 
   // Android foreground microphone service is started only after voice consent and permission.
   const wakeHandoffRef = useRef(false);
+  const toggleVoiceRef = useRef(toggleVoice);
+  useEffect(() => { toggleVoiceRef.current = toggleVoice; }, [toggleVoice]);
   useEffect(() => {
     if (Platform.OS !== 'android' || !settings.voiceProcessingConsent) return;
     let active = true;
@@ -418,7 +420,7 @@ export default function ChatScreen() {
       wakeHandoffRef.current = true;
       setWakeDetected(true);
       void stopOfflineWakeWord().finally(() => {
-        if (active) void toggleVoice();
+        if (active) void toggleVoiceRef.current();
         setTimeout(() => { wakeHandoffRef.current = false; }, 1800);
       });
     });
@@ -431,7 +433,7 @@ export default function ChatScreen() {
       if (active) setError(cause instanceof Error ? cause.message : 'Hey Badboy চালু করা যায়নি।');
     });
     return () => { active = false; subscription.remove(); };
-  }, [settings.voiceProcessingConsent, toggleVoice]);
+  }, [settings.voiceProcessingConsent]);
 
   const startNewChat = () => {
     setDrawerModal('newChat');

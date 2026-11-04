@@ -75,7 +75,7 @@ class BadboyWakeWordService : Service() {
   return Array(40){m->DoubleArray(257){k->when{ k<bins[m]||k>bins[m+2]->0.0;k<bins[m+1]->(k-bins[m]).toDouble()/max(1,bins[m+1]-bins[m]);else->(bins[m+2]-k).toDouble()/max(1,bins[m+2]-bins[m+1])}}}
  }
  private fun fft(r:DoubleArray,v:DoubleArray){val n=r.size;var j=0
-  for(i in 1 until n){var b=n shr 1;while(j and b!=0){j=j xor b;b=b shr 1};j=j xor b;if(i<j){var z=r[i];r[i]=r[j];r[j]=z;z=v[i];v[i]=v[j];v[j]=z}}
+  for(i in 1 until n){var b=n shr 1;while((j and b)!=0){j=j xor b;b=b shr 1};j=j xor b;if(i<j){var z=r[i];r[i]=r[j];r[j]=z;z=v[i];v[i]=v[j];v[j]=z}}
   var len=2;while(len<=n){val a=-2*PI/len;val wr0=cos(a);val wi0=sin(a);var s=0
    while(s<n){var wr=1.0;var wi=0.0;for(k in 0 until len/2){val u=s+k;val q=u+len/2;val tr=r[q]*wr-v[q]*wi;val ti=r[q]*wi+v[q]*wr;r[q]=r[u]-tr;v[q]=v[u]-ti;r[u]+=tr;v[u]+=ti;val nw=wr*wr0-wi*wi0;wi=wr*wi0+wi*wr0;wr=nw};s+=len};len=len shl 1}
  }

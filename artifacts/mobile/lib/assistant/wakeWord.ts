@@ -24,8 +24,9 @@ type NativeWakeWordModule = {
 function nativeModule(): NativeWakeWordModule | null {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { NativeModules, Platform } = require('react-native');
-    return Platform.OS === 'android' ? NativeModules.BadboyWakeWord ?? null : null;
+    const { Platform } = require('react-native');
+    const { requireNativeModule } = require('expo-modules-core');
+    return Platform.OS === 'android' ? requireNativeModule('BadboyWakeWord') : null;
   } catch { return null; }
 }
 export function isOfflineWakeWordSupported(): boolean {
