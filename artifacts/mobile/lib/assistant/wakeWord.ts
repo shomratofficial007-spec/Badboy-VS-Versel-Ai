@@ -59,7 +59,7 @@ export function subscribeToWakeWord(listener: (event: WakeWordEvent) => void): {
   type WakeWordEventMap = {
     onWakeWordDetected(event: WakeWordEvent): void;
   };
-  const emitter = new EventEmitter<WakeWordEventMap>(native);
+  const emitter = new EventEmitter<WakeWordEventMap>(native as never);
   return emitter.addListener('onWakeWordDetected', (event) => {
     if (event.phrase === 'hey-badboy') listener(event);
   });
