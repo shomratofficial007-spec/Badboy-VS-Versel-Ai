@@ -1,9 +1,22 @@
-name: Android APK (manual)
+name: Android APK (automatic + manual)
 
-# This workflow is intentionally manual. It does not run on pushes or PRs.
-# It creates the Android native project in the ephemeral GitHub runner,
-# validates the app, builds an installable debug APK, and uploads it.
+# Automatically validate and build on app changes and pull requests.
+# Manual workflow_dispatch remains available for on-demand builds.
 on:
+  push:
+    paths:
+      - "artifacts/mobile/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/android-apk.yml"
+  pull_request:
+    paths:
+      - "artifacts/mobile/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/android-apk.yml"
   workflow_dispatch:
 
 permissions:
