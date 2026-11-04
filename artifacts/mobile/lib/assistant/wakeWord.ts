@@ -56,8 +56,11 @@ export async function stopOfflineWakeWord(): Promise<WakeWordStatus> {
 export function subscribeToWakeWord(listener: (event: WakeWordEvent) => void): { remove(): void } {
   const native = nativeModule();
   if (!native) return { remove() {} };
-  const emitter = new EventEmitter(native as never);
-  return emitter.addListener<WakeWordEvent>('onWakeWordDetected', (event) => {
+  type WakeWordEventMap = {
+    onWakeWordDetected(event: WakeWordEvent): void;
+  };
+  const emitter = new EventEmitter<WakeWordEventMap>(native);
+  return emitter.addListener('onWakeWordDetected', (event) => {
     if (event.phrase === 'hey-badboy') listener(event);
   });
 }
