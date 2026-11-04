@@ -2,9 +2,6 @@
  * Typed boundary for the optional Android-native offline Hey Badboy engine.
  * The native module must own microphone capture and must never upload audio.
  */
-import { EventEmitter, requireNativeModule } from 'expo-modules-core';
-import { Platform } from 'react-native';
-
 export type WakeWordState = 'stopped' | 'starting' | 'listening' | 'triggered' | 'error';
 export interface WakeWordStatus {
   state: WakeWordState;
@@ -25,7 +22,9 @@ type NativeWakeWordModule = {
 };
 function nativeModule(): NativeWakeWordModule | null {
   try {
-    return Platform.OS === 'android' ? requireNativeModule<NativeWakeWordModule>('BadboyWakeWord') : null;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { NativeModules, Platform } = require('react-native');
+    return Platform.OS === 'android' ? NativeModules.BadboyWakeWord ?? null : null;
   } catch { return null; }
 }
 export function isOfflineWakeWordSupported(): boolean {
@@ -57,8 +56,7 @@ export function subscribeToWakeWord(listener: (event: WakeWordEvent) => void): {
   const native = nativeModule();
   if (!native) return { remove() {} };
   if (!native) return { remove() {} };
-  const emitter = new EventEmitter(native as never);
-  return emitter.addListener<WakeWordEvent>('onWakeWordDetected', (event) => {
+  return native.addListener('onWakeWordDetected', (event) => {
     if (event.phrase === 'hey-badboy') listener(event);
   });
 }
