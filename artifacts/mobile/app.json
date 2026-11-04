@@ -21,7 +21,9 @@
     },
     "android": {
       "package": "com.badboyai.assistant",
-      "permissions": ["RECORD_AUDIO"],
+      "permissions": [
+        "RECORD_AUDIO"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#030814"
@@ -46,7 +48,8 @@
           "microphonePermission": "Use your microphone when you choose to send a voice message."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "./plugins/with-android-min-sdk"
     ],
     "experiments": {
       "typedRoutes": true,
