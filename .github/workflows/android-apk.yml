@@ -1,52 +1,63 @@
-name: Build Android APK
+name: Android APK (manual)
 
-# EAS Android builds have a monthly free-plan quota. Keep this workflow
-# manually triggerable so exhausted EAS quota does not fail every push/PR.
-# The free GitHub-hosted runner workflow builds the APK automatically instead.
+# This workflow is intentionally manual. It does not run on pushes or PRs.
+# It creates the Android native project in the ephemeral GitHub runner,
+# validates the app, builds an installable debug APK, and uploads it.
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  build-apk:
-    name: Build preview APK with Expo EAS
+  android-debug-apk:
+    name: Validate and build Android debug APK
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install pnpm
+      - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10.8.1
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate EAS credentials
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      - name: Run typecheck and mobile tests
         run: |
-          if [ -z "$EXPO_TOKEN" ]; then
-            echo "::error::Missing GitHub Actions secret EXPO_TOKEN. Add an Expo access token in repository Settings > Secrets and variables > Actions."
-            exit 1
-          fi
+          pnpm run typecheck
+          pnpm --filter @workspace/mobile run test
 
-      - name: Install EAS CLI
-        run: npm install --global eas-cli
+      - name: Generate native Android project with Expo Prebuild
+        run: pnpm --filter @workspace/mobile exec expo prebuild --platform android --non-interactive
 
-      - name: Link existing Expo project
-        working-directory: artifacts/mobile
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: eas init --id 7e81e952-0453-43f1-94b2-e2ce873a6382 --non-interactive
+      - name: Build installable debug APK
+        working-directory: artifacts/mobile/android
+        run: ./gradlew --no-daemon assembleDebug
 
-      - name: Build Android APK
-        working-directory: artifacts/mobile
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: eas build --platform android --profile preview --non-interactive
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: badboy-android-debug-apk
+          path: artifacts/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
