@@ -2,6 +2,9 @@
  * Typed boundary for the optional Android-native offline Hey Badboy engine.
  * The native module must own microphone capture and must never upload audio.
  */
+import { EventEmitter, requireNativeModule } from 'expo-modules-core';
+import { Platform } from 'react-native';
+
 export type WakeWordState = 'stopped' | 'starting' | 'listening' | 'triggered' | 'error';
 export interface WakeWordStatus {
   state: WakeWordState;
@@ -19,14 +22,10 @@ type NativeWakeWordModule = {
   getStatus(): Promise<WakeWordStatus>;
   start(options?: { threshold?: number }): Promise<WakeWordStatus>;
   stop(): Promise<WakeWordStatus>;
-  addListener(name: 'onWakeWordDetected', listener: (event: WakeWordEvent) => void): { remove(): void };
 };
 function nativeModule(): NativeWakeWordModule | null {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { Platform } = require('react-native');
-    const { requireNativeModule } = require('expo-modules-core');
-    return Platform.OS === 'android' ? requireNativeModule('BadboyWakeWord') : null;
+    return Platform.OS === 'android' ? requireNativeModule<NativeWakeWordModule>('BadboyWakeWord') : null;
   } catch { return null; }
 }
 export function isOfflineWakeWordSupported(): boolean {
@@ -57,7 +56,9 @@ export async function stopOfflineWakeWord(): Promise<WakeWordStatus> {
 export function subscribeToWakeWord(listener: (event: WakeWordEvent) => void): { remove(): void } {
   const native = nativeModule();
   if (!native) return { remove() {} };
-  return native.addListener('onWakeWordDetected', (event) => {
+  if (!native) return { remove() {} };
+  const emitter = new EventEmitter(native as never);
+  return emitter.addListener<WakeWordEvent>('onWakeWordDetected', (event) => {
     if (event.phrase === 'hey-badboy') listener(event);
   });
 }
