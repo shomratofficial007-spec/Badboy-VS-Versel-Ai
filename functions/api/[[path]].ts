@@ -288,6 +288,12 @@ async function handleTranscriptionRequest(request: Request, env: Env): Promise<R
   const lang = typeof payload.language === "string" && payload.language.trim()
     ? payload.language.trim().slice(0, 12)
     : undefined;
+  const isBengali = lang?.toLowerCase().split(/[-_]/, 1)[0] === "bn";
+  // Keep Bengali speech in Bengali script and preserve the speaker's actual words.
+  // This is a transcription-style hint only; no chat history or generated answer is supplied.
+  const transcriptionPrompt = isBengali
+    ? "বাংলাদেশি বাংলা কথোপকথন হুবহু বাংলা লিপিতে লিখুন। কথার অর্থ বদলাবেন না, অনুবাদ বা সারাংশ করবেন না। স্পষ্টভাবে বলা ইংরেজি শব্দ ইংরেজিতেই রাখুন।"
+    : undefined;
 
   // 1. Primary: Groq Cloud Whisper Large-V3 (ultra fast, free-tier supported)
   if (groqApiKey) {
@@ -309,8 +315,12 @@ async function handleTranscriptionRequest(request: Request, env: Env): Promise<R
       formData.append("file", audioBlob, `audio.${format}`);
       formData.append("model", "whisper-large-v3");
       formData.append("response_format", "json");
+      formData.append("temperature", "0");
       if (lang) {
         formData.append("language", lang);
+      }
+      if (transcriptionPrompt) {
+        formData.append("prompt", transcriptionPrompt);
       }
 
       const groqResponse = await fetch(`${GROQ_BASE_URL}/audio/transcriptions`, {
