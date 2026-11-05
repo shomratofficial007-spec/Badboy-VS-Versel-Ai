@@ -110,6 +110,7 @@ export default function ChatScreen() {
   const [busy, setBusy] = useState(false);
   const [improving, setImproving] = useState(false);
   const [listening, setListening] = useState(false);
+  const [voiceConversationActive, setVoiceConversationActive] = useState(false);
   const voiceMode = settings.autoSpeakReplies;
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [wakeDetected, setWakeDetected] = useState(false);
@@ -125,6 +126,7 @@ export default function ChatScreen() {
   const speechDetectedRef = useRef(false);
   const lastVoiceActivityAtRef = useRef(0);
   const voiceSessionActiveRef = useRef(false);
+  const continuousVoiceConversationRef = useRef(false);
 
   useEffect(() => { setSelectedLang(settings.voiceLanguage); }, [settings.voiceLanguage]);
   useEffect(() => {
@@ -189,8 +191,44 @@ export default function ChatScreen() {
     });
   }, [selectedLang, settings.voiceOutputEnabled]);
 
+  const startVoiceCapture = useCallback(async () => {
+    if (!voiceSessionActiveRef.current || audioRecordingStartedRef.current || transcriptionInFlightRef.current) return;
+    if (Platform.OS === 'web') {
+      setError('Hands-free Voice Conversation বর্তমানে Android অ্যাপে উপলভ্য।');
+      continuousVoiceConversationRef.current = false;
+      voiceSessionActiveRef.current = false;
+      setVoiceConversationActive(false);
+      return;
+    }
+    try {
+      const permission = await requestRecordingPermissionsAsync();
+      if (!permission.granted) throw new Error(getVoiceErrorMessage('permission_denied'));
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await audioRecorder.prepareToRecordAsync();
+      transcriptionInFlightRef.current = false;
+      speechDetectedRef.current = false;
+      lastVoiceActivityAtRef.current = Date.now();
+      audioRecordingStartedRef.current = true;
+      audioRecorder.record({ forDuration: 20 });
+      setError(null);
+      setListening(true);
+    } catch (cause) {
+      audioRecordingStartedRef.current = false;
+      setListening(false);
+      await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+      setError(cause instanceof Error ? cause.message : 'Voice Conversation চালু করা যায়নি।');
+      continuousVoiceConversationRef.current = false;
+      voiceSessionActiveRef.current = false;
+      setVoiceConversationActive(false);
+    }
+  }, [audioRecorder]);
+
   const resumeWakeWord = useCallback(async () => {
     if (!voiceSessionActiveRef.current) return;
+    if (continuousVoiceConversationRef.current) {
+      await startVoiceCapture();
+      return;
+    }
     voiceSessionActiveRef.current = false;
     if (Platform.OS !== 'android' || !settings.voiceProcessingConsent || !settings.wakeWordEnabled) return;
     try {
@@ -199,7 +237,53 @@ export default function ChatScreen() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Hey Badboy পুনরায় চালু করা যায়নি।');
     }
-  }, [settings.voiceProcessingConsent, settings.wakeWordEnabled]);
+  }, [settings.voiceProcessingConsent, settings.wakeWordEnabled, startVoiceCapture]);
+
+  const startVoiceConversation = useCallback(async () => {
+    if (voiceConversationActive) return;
+    if (!settings.voiceInputEnabled || !settings.voiceOutputEnabled) {
+      setError('Voice Conversation-এর জন্য Settings-এ Voice Input ও Voice Output চালু করুন।');
+      return;
+    }
+    if (!settings.voiceProcessingConsent) {
+      setError('Voice Conversation ব্যবহারের আগে Settings-এ Voice Consent দিন।');
+      return;
+    }
+    if (Platform.OS !== 'android') {
+      setError('Hands-free Voice Conversation বর্তমানে Android অ্যাপের জন্য প্রস্তুত করা হচ্ছে।');
+      return;
+    }
+    stopSpeaking();
+    setSpeakingMessageId(null);
+    setError(null);
+    continuousVoiceConversationRef.current = true;
+    voiceSessionActiveRef.current = true;
+    setVoiceConversationActive(true);
+    await stopOfflineWakeWord().catch(() => undefined);
+    await startVoiceCapture();
+  }, [settings.voiceInputEnabled, settings.voiceOutputEnabled, settings.voiceProcessingConsent, startVoiceCapture, voiceConversationActive]);
+
+  const stopVoiceConversation = useCallback(async () => {
+    continuousVoiceConversationRef.current = false;
+    voiceSessionActiveRef.current = false;
+    setVoiceConversationActive(false);
+    stopSpeaking();
+    setSpeakingMessageId(null);
+    stopDictationRef.current?.();
+    stopDictationRef.current = null;
+    if (audioRecordingStartedRef.current) {
+      audioRecordingStartedRef.current = false;
+      await audioRecorder.stop().catch(() => undefined);
+      const recordingUri = audioRecorder.uri;
+      if (recordingUri) await FileSystem.deleteAsync(recordingUri, { idempotent: true }).catch(() => undefined);
+    }
+    transcriptionInFlightRef.current = false;
+    setListening(false);
+    await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+    if (Platform.OS === 'android' && settings.voiceProcessingConsent && settings.wakeWordEnabled && settings.voiceInputEnabled) {
+      await startOfflineWakeWord().catch((cause) => setError(cause instanceof Error ? cause.message : 'Hey Badboy পুনরায় চালু করা যায়নি।'));
+    }
+  }, [audioRecorder, settings.voiceInputEnabled, settings.voiceProcessingConsent, settings.wakeWordEnabled]);
 
   const sendMessage = useCallback(async (rawText: string) => {
     const text = rawText.trim();
@@ -363,7 +447,7 @@ export default function ChatScreen() {
       await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
       setListening(false);
       setDraft(transcript);
-      if (settings.autoSubmitVoice) await sendMessage(transcript);
+      if (settings.autoSubmitVoice || continuousVoiceConversationRef.current) await sendMessage(transcript);
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -406,6 +490,9 @@ export default function ChatScreen() {
 
   useEffect(() => {
     return () => {
+      continuousVoiceConversationRef.current = false;
+      voiceSessionActiveRef.current = false;
+      stopSpeaking();
       if (!audioRecordingStartedRef.current) return;
       audioRecordingStartedRef.current = false;
       void audioRecorder
@@ -677,7 +764,9 @@ export default function ChatScreen() {
   };
 
   const getStatusText = () => {
-    if (listening) return wakeDetected ? 'Oi Badboy সনাক্ত হয়েছে!' : 'কথা বলুন…';
+    if (voiceConversationActive && listening) return 'Badboy শুনছে…';
+    if (voiceConversationActive && busy) return 'Badboy উত্তর দিচ্ছে…';
+    if (listening) return wakeDetected ? 'Hey Badboy সনাক্ত হয়েছে!' : 'কথা বলুন…';
     if (busy) return 'Badboy ভাবছে…';
     if (!settings.onlineAI) return 'অফলাইন মোড';
     return 'Badboy প্রস্তুত';
@@ -1020,7 +1109,7 @@ export default function ChatScreen() {
           accessibilityHint="কীবোর্ড খুললে লেখার ঘরটি কীবোর্ডের ঠিক ওপরে থাকবে।"
         />
         <Pressable
-          onPress={() => void toggleVoice()}
+          onPress={() => voiceConversationActive ? void stopVoiceConversation() : void toggleVoice()}
           accessibilityRole="button"
           accessibilityLabel={listening ? 'ভয়েস গ্রহণ বন্ধ করুন' : 'ভয়েস অন করুন'}
           disabled={!settings.voiceInputEnabled || !settings.voiceProcessingConsent}
@@ -1029,6 +1118,15 @@ export default function ChatScreen() {
           {listening
             ? <ActivityIndicator size="small" color={colors.primaryForeground} />
             : <Feather name="mic" size={18} color={listening ? colors.primaryForeground : colors.foreground} />}
+        </Pressable>
+        <Pressable
+          onPress={() => voiceConversationActive ? void stopVoiceConversation() : void startVoiceConversation()}
+          accessibilityRole="button"
+          accessibilityLabel={voiceConversationActive ? 'Voice Conversation বন্ধ করুন' : 'Hands-free Voice Conversation চালু করুন'}
+          disabled={!settings.voiceInputEnabled || !settings.voiceOutputEnabled || !settings.voiceProcessingConsent}
+          style={[styles.roundButton, { backgroundColor: voiceConversationActive ? colors.primary : colors.secondary, opacity: !settings.voiceInputEnabled || !settings.voiceOutputEnabled || !settings.voiceProcessingConsent ? 0.45 : 1 }]}
+        >
+          <Feather name={voiceConversationActive ? 'phone-off' : 'radio'} size={18} color={voiceConversationActive ? colors.primaryForeground : colors.foreground} />
         </Pressable>
         <Pressable
           onPress={() => updateSettings({ autoSpeakReplies: !voiceMode })}
