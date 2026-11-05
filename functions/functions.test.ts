@@ -208,6 +208,13 @@ test("onRequestPost - transcribe uses Groq Whisper Large-V3 as primary when GROQ
     if (url.includes("api.groq.com/openai/v1/audio/transcriptions")) {
       groqCalled = true;
       sentAuth = (init?.headers as Record<string, string>)?.Authorization || "";
+      const formData = init?.body as FormData;
+      assert.strictEqual(formData.get("language"), "bn");
+      assert.strictEqual(formData.get("temperature"), "0");
+      assert.strictEqual(
+        formData.get("prompt"),
+        "বাংলাদেশি বাংলা কথোপকথন হুবহু বাংলা লিপিতে লিখুন। কথার অর্থ বদলাবেন না, অনুবাদ বা সারাংশ করবেন না। স্পষ্টভাবে বলা ইংরেজি শব্দ ইংরেজিতেই রাখুন।",
+      );
       return new Response(JSON.stringify({ text: "Groq বাংলা ট্রান্সক্রিপশন সফল" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
