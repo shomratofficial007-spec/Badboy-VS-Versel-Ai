@@ -9,6 +9,8 @@ import {
   isDictationAvailable,
   isReadAloudAvailable,
   getSpeechPlaybackTimeoutMs,
+  shouldStopVoiceRecordingForSilence,
+  VOICE_SILENCE_DURATION_MS,
 } from './voice.ts';
 
 test('wake phrases: English and Bangla aliases are recognized', () => {
@@ -72,4 +74,14 @@ test('speech playback watchdog scales with reply length and stays bounded', () =
   assert.equal(getSpeechPlaybackTimeoutMs(1_000), 100_000);
   assert.equal(getSpeechPlaybackTimeoutMs(4_000), 240_000);
   assert.equal(getSpeechPlaybackTimeoutMs(Number.NaN), 45_000);
+});
+
+
+test('voice recording auto-stop requires speech followed by sustained silence', () => {
+  const lastSpeechAt = 10000;
+  assert.equal(shouldStopVoiceRecordingForSilence(-60, false, lastSpeechAt, 20000), false);
+  assert.equal(shouldStopVoiceRecordingForSilence(-30, true, lastSpeechAt, 20000), false);
+  assert.equal(shouldStopVoiceRecordingForSilence(-60, true, lastSpeechAt, lastSpeechAt + VOICE_SILENCE_DURATION_MS - 1), false);
+  assert.equal(shouldStopVoiceRecordingForSilence(-60, true, lastSpeechAt, lastSpeechAt + VOICE_SILENCE_DURATION_MS), true);
+  assert.equal(shouldStopVoiceRecordingForSilence(undefined, true, lastSpeechAt, 20000), false);
 });
