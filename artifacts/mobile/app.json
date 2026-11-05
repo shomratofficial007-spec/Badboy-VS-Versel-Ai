@@ -47,7 +47,8 @@
         }
       ],
       "expo-secure-store",
-      "./plugins/with-android-min-sdk"
+      "./plugins/with-android-min-sdk",
+      "./plugins/with-android-bundled-debug"
     ],
     "experiments": {
       "typedRoutes": true,
