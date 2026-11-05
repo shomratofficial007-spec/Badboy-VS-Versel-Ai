@@ -638,14 +638,6 @@ export function shouldStopVoiceRecordingForSilence(
     now - lastVoiceActivityAt >= VOICE_SILENCE_DURATION_MS;
 }
 
-export const VOICE_SILENCE_THRESHOLD_DBFS = -45;
-export const VOICE_SILENCE_DURATION_MS = 1400;
-
-export function shouldStopVoiceRecordingForSilence(metering: number | null | undefined, speechDetected: boolean, lastVoiceActivityAt: number, now = Date.now()): boolean {
-  if (typeof metering !== 'number' || !Number.isFinite(metering)) return false;
-  if (metering > VOICE_SILENCE_THRESHOLD_DBFS) return false;
-  return speechDetected && lastVoiceActivityAt > 0 && now - lastVoiceActivityAt >= VOICE_SILENCE_DURATION_MS;
-}
 
 export interface SpeechLifecycleCallbacks {
   onStart?: () => void;
