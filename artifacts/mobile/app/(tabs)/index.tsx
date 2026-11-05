@@ -86,7 +86,7 @@ export default function ChatScreen() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerModal, setDrawerModal] = useState<'search' | 'history' | 'options' | 'newChat' | null>(null);
   const [chatSearch, setChatSearch] = useState('');
-  const { messages, setMessages, settings, updateSettings } = useAssistant();
+  const { messages, setMessages, settings, updateSettings, setExpertReviewDraft } = useAssistant();
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [improving, setImproving] = useState(false);
@@ -730,6 +730,18 @@ export default function ChatScreen() {
               <Pressable onPress={() => { void shareMessage(item); }} accessibilityRole="button" accessibilityLabel="উত্তর শেয়ার করুন" style={[styles.messageAction, { borderColor: colors.border }]}>
                 <Feather name="share-2" size={13} color={colors.mutedForeground} />
                 <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>শেয়ার</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  setExpertReviewDraft(item.content);
+                  router.push('/(tabs)/settings' as never);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Expert Review-এ পাঠান"
+                style={[styles.messageAction, { borderColor: colors.border }]}
+              >
+                <Feather name="clipboard" size={13} color={colors.mutedForeground} />
+                <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Expert Review</Text>
               </Pressable>
               <Pressable onPress={() => void regenerateAnswer(item)} disabled={busy} accessibilityRole="button" accessibilityLabel="উত্তর আবার তৈরি করুন" style={[styles.messageAction, { borderColor: colors.border, opacity: busy ? 0.5 : 1 }]}>
                 <Feather name="refresh-cw" size={13} color={colors.mutedForeground} />
