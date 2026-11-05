@@ -63,9 +63,18 @@ jobs:
       - name: Generate native Android project with Expo Prebuild
         run: pnpm --filter @workspace/mobile exec expo prebuild --platform android --no-install
 
-      - name: Build installable debug APK
+      - name: Build installable debug APK with embedded JavaScript
         working-directory: artifacts/mobile/android
         run: ./gradlew --no-daemon assembleDebug
+
+      - name: Verify APK contains the JavaScript bundle
+        working-directory: artifacts/mobile/android
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          unzip -p "$APK" assets/index.android.bundle > /tmp/badboy-index.android.bundle
+          test -s /tmp/badboy-index.android.bundle
+          echo "Verified embedded JavaScript bundle ($(wc -c < /tmp/badboy-index.android.bundle) bytes)."
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
