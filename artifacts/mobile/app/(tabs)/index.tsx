@@ -37,10 +37,16 @@ import {
   getNextVoiceLanguage,
   getVoiceLanguageLabel,
   isDictationAvailable,
+  speak,
 } from '@/lib/assistant/voice';
 import type { ChatMessage } from '@/lib/assistant/types';
 import { useColors } from '@/hooks/useColors';
 import { startOfflineWakeWord, stopOfflineWakeWord, subscribeToWakeWord } from '@/lib/assistant/wakeWord';
+
+const VOICE_RECORDING_OPTIONS = {
+  ...RecordingPresets.HIGH_QUALITY,
+  isMeteringEnabled: true,
+};
 
 type BrowserSpeechRecognitionResultEvent = {
   resultIndex: number;
@@ -88,10 +94,13 @@ export default function ChatScreen() {
   const [awaitingSongName, setAwaitingSongName] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const stopDictationRef = useRef<(() => void) | null>(null);
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const audioRecorder = useAudioRecorder(VOICE_RECORDING_OPTIONS);
   const audioRecorderState = useAudioRecorderState(audioRecorder, 250);
   const audioRecordingStartedRef = useRef(false);
   const transcriptionInFlightRef = useRef(false);
+  const speechDetectedRef = useRef(false);
+  const lastVoiceActivityAtRef = useRef(0);
+  const voiceSessionActiveRef = useRef(false);
 
   // Audio Visualizer Bar & Core Pulse Animations
   const barAnim1 = useRef(new Animated.Value(12)).current;
@@ -137,6 +146,29 @@ export default function ChatScreen() {
     }
   }, [listening, busy, barAnim1, barAnim2, barAnim3, barAnim4, corePulse]);
 
+  const speakVoiceReply = useCallback(async (text: string) => {
+    if (!voiceSessionActiveRef.current || !text.trim()) return;
+    await new Promise<void>((resolve) => {
+      const started = speak(text, selectedLang, {
+        onDone: resolve,
+        onError: resolve,
+      });
+      if (!started) resolve();
+    });
+  }, [selectedLang]);
+
+  const resumeWakeWord = useCallback(async () => {
+    if (!voiceSessionActiveRef.current) return;
+    voiceSessionActiveRef.current = false;
+    if (Platform.OS !== 'android' || !settings.voiceProcessingConsent) return;
+    try {
+      const status = await startOfflineWakeWord();
+      if (status.state === 'error') setError(status.message ?? 'Hey Badboy পুনরায় চালু করা যায়নি।');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Hey Badboy পুনরায় চালু করা যায়নি।');
+    }
+  }, [settings.voiceProcessingConsent]);
+
   const sendMessage = useCallback(async (rawText: string) => {
     const text = rawText.trim();
     if (!text || busy) return;
@@ -160,6 +192,10 @@ export default function ChatScreen() {
       };
       setMessages([...messages, userMessage, answer]);
       setBusy(false);
+      if (voiceSessionActiveRef.current) {
+        await speakVoiceReply(answer.content);
+        await resumeWakeWord();
+      }
       setTimeout(() => {
         void openYouTubeUrl(url, appUrl);
       }, 800);
@@ -174,6 +210,7 @@ export default function ChatScreen() {
       };
       setMessages([...messages, userMessage, answer]);
       setBusy(false);
+      if (voiceSessionActiveRef.current) await speakVoiceReply(answer.content);
       if (isDictationAvailable() && settings.voiceProcessingConsent) {
         setTimeout(() => {
           setListening(true);
@@ -188,6 +225,7 @@ export default function ChatScreen() {
             onDone: () => {
               setListening(false);
               stopDictationRef.current = null;
+              if (voiceSessionActiveRef.current) void resumeWakeWord();
             },
           });
         }, 1200);
@@ -200,6 +238,7 @@ export default function ChatScreen() {
       setMessages(working);
       setError('অফলাইন মোড চালু আছে। বার্তা AI-তে পাঠানো হচ্ছে না।');
       setBusy(false);
+      await resumeWakeWord();
       return;
     }
 
@@ -221,8 +260,12 @@ export default function ChatScreen() {
       );
     } finally {
       setBusy(false);
+      if (voiceSessionActiveRef.current) {
+        await speakVoiceReply(answer.content);
+        await resumeWakeWord();
+      }
     }
-  }, [awaitingSongName, busy, messages, selectedLang, setError, setMessages, settings]);
+  }, [awaitingSongName, busy, messages, resumeWakeWord, selectedLang, setError, setMessages, settings, speakVoiceReply]);
 
   const requestImprovement = useCallback(async () => {
     const lastUserMessage = [...messages].reverse().find((item) => item.role === 'user');
@@ -291,15 +334,26 @@ export default function ChatScreen() {
   }, [audioRecorder, selectedLang, sendMessage]);
 
   useEffect(() => {
-    // The recorder automatically stops after the configured 20-second limit.
+    if (Platform.OS === 'web' || !audioRecordingStartedRef.current || !audioRecorderState.isRecording) return;
+    const meter = audioRecorderState.metering;
+    if (typeof meter !== 'number' || !Number.isFinite(meter)) return;
+
+    const now = Date.now();
+    // Expo Audio reports metering in dBFS. Require actual speech activity first,
+    // then stop after 1.4 seconds of sustained near-silence.
+    if (meter > -45) {
+      speechDetectedRef.current = true;
+      lastVoiceActivityAtRef.current = now;
+      return;
+    }
     if (
-      Platform.OS !== 'web' &&
-      audioRecordingStartedRef.current &&
-      !audioRecorderState.isRecording
+      speechDetectedRef.current &&
+      lastVoiceActivityAtRef.current > 0 &&
+      now - lastVoiceActivityAtRef.current >= 1400
     ) {
       void finishRecordedVoice();
     }
-  }, [audioRecorderState.isRecording, finishRecordedVoice]);
+  }, [audioRecorderState.isRecording, audioRecorderState.metering, finishRecordedVoice]);
 
   useEffect(() => {
     return () => {
@@ -353,7 +407,10 @@ export default function ChatScreen() {
         await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
         await audioRecorder.prepareToRecordAsync();
         transcriptionInFlightRef.current = false;
+        speechDetectedRef.current = false;
+        lastVoiceActivityAtRef.current = Date.now();
         audioRecordingStartedRef.current = true;
+        // Silence detection ends normal turns; 20 seconds remains a hard safety cap.
         audioRecorder.record({ forDuration: 20 });
         setError(null);
         setListening(true);
@@ -418,6 +475,7 @@ export default function ChatScreen() {
     const subscription = subscribeToWakeWord(() => {
       if (!active || wakeHandoffRef.current) return;
       wakeHandoffRef.current = true;
+      voiceSessionActiveRef.current = true;
       setWakeDetected(true);
       void stopOfflineWakeWord().finally(() => {
         if (active) void toggleVoiceRef.current();
