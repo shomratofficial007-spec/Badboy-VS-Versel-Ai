@@ -484,7 +484,7 @@ export default function SettingsScreen() {
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Expert Review & Code Analysis</Text>
         </View>
         <Text style={[styles.body, { color: colors.mutedForeground }]}>
-          Badboy-এর কোনো উত্তর, কোড, Error বা প্রস্তাব এখানে পাঠাও। GitHub PAT যুক্ত থাকলে Repository-এর live file inventory যাচাই করে বিশ্লেষণ করবে। এটি শুধু রিপোর্ট তৈরি করে—কোড, PR বা Deploy পরিবর্তন করে না।
+          Badboy-এর কোনো উত্তর, কোড, Error বা প্রস্তাব এখানে পাঠাও। বিশ্লেষণের জন্য লেখাটি তোমার নির্বাচিত AI service-এ পাঠানো হবে। GitHub PAT যুক্ত থাকলে Repository-এর live file inventory যাচাই করবে। এটি শুধু রিপোর্ট তৈরি করে—কোড, PR বা Deploy পরিবর্তন করে না।
         </Text>
         <TextInput
           value={expertReviewInput}
@@ -519,7 +519,7 @@ export default function SettingsScreen() {
             <Text selectable style={[styles.body, { color: colors.foreground, lineHeight: 21 }]}>{expertReviewReport}</Text>
             <Pressable onPress={() => void handleShareExpertReport()} style={[styles.primaryButton, { backgroundColor: colors.secondary, marginTop: 8 }]}>
               <Feather name="share-2" size={15} color={colors.secondaryForeground} />
-              <Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>Copy / Share Report</Text>
+              <Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>রিপোর্ট শেয়ার করুন</Text>
             </Pressable>
           </View>
         ) : null}
