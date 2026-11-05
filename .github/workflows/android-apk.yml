@@ -67,7 +67,7 @@ jobs:
         working-directory: artifacts/mobile/android
         run: |
           sed -n '/react[[:space:]]*{/,/^[[:space:]]*}/p' app/build.gradle
-          grep -Eq '^[[:space:]]*debuggableVariants[[:space:]]*=[[:space:]]*\\[[[:space:]]*\\]' app/build.gradle
+          grep -Fq 'debuggableVariants = []' app/build.gradle
 
       - name: Build installable debug APK with embedded JavaScript
         working-directory: artifacts/mobile/android
