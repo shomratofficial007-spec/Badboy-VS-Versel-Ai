@@ -38,6 +38,8 @@ import {
   getVoiceLanguageLabel,
   isDictationAvailable,
   speak,
+  shouldStopVoiceRecordingForSilence,
+  VOICE_SILENCE_THRESHOLD_DBFS,
 } from '@/lib/assistant/voice';
 import type { ChatMessage } from '@/lib/assistant/types';
 import { useColors } from '@/hooks/useColors';
@@ -344,18 +346,17 @@ export default function ChatScreen() {
     if (typeof meter !== 'number' || !Number.isFinite(meter)) return;
 
     const now = Date.now();
-    // Expo Audio reports metering in dBFS. Require actual speech activity first,
-    // then stop after 1.4 seconds of sustained near-silence.
-    if (meter > -45) {
+    if (meter > VOICE_SILENCE_THRESHOLD_DBFS) {
       speechDetectedRef.current = true;
       lastVoiceActivityAtRef.current = now;
       return;
     }
-    if (
-      speechDetectedRef.current &&
-      lastVoiceActivityAtRef.current > 0 &&
-      now - lastVoiceActivityAtRef.current >= 1400
-    ) {
+    if (shouldStopVoiceRecordingForSilence(
+      meter,
+      speechDetectedRef.current,
+      lastVoiceActivityAtRef.current,
+      now,
+    )) {
       void finishRecordedVoice();
     }
   }, [audioRecorderState.isRecording, audioRecorderState.metering, finishRecordedVoice]);
