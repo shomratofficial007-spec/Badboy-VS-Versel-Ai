@@ -91,10 +91,10 @@ export default function ChatScreen() {
   const [busy, setBusy] = useState(false);
   const [improving, setImproving] = useState(false);
   const [listening, setListening] = useState(false);
-  const [voiceMode, setVoiceMode] = useState(false);
+  const voiceMode = settings.autoSpeakReplies;
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [wakeDetected, setWakeDetected] = useState(false);
-  const [selectedLang, setSelectedLang] = useState<string>('bn-BD');
+  const [selectedLang, setSelectedLang] = useState<string>(settings.voiceLanguage);
   const [error, setError] = useState<string | null>(null);
   const [awaitingSongName, setAwaitingSongName] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
@@ -106,6 +106,8 @@ export default function ChatScreen() {
   const speechDetectedRef = useRef(false);
   const lastVoiceActivityAtRef = useRef(0);
   const voiceSessionActiveRef = useRef(false);
+
+  useEffect(() => { setSelectedLang(settings.voiceLanguage); }, [settings.voiceLanguage]);
 
   // Audio Visualizer Bar & Core Pulse Animations
   const barAnim1 = useRef(new Animated.Value(12)).current;
@@ -152,7 +154,7 @@ export default function ChatScreen() {
   }, [listening, busy, barAnim1, barAnim2, barAnim3, barAnim4, corePulse]);
 
   const speakVoiceReply = useCallback(async (text: string) => {
-    if (!voiceSessionActiveRef.current || !text.trim()) return;
+    if (!settings.voiceOutputEnabled || !voiceSessionActiveRef.current || !text.trim()) return;
     await new Promise<void>((resolve) => {
       const started = speak(text, selectedLang, {
         onDone: () => resolve(),
@@ -160,19 +162,19 @@ export default function ChatScreen() {
       });
       if (!started) resolve();
     });
-  }, [selectedLang]);
+  }, [selectedLang, settings.voiceOutputEnabled]);
 
   const resumeWakeWord = useCallback(async () => {
     if (!voiceSessionActiveRef.current) return;
     voiceSessionActiveRef.current = false;
-    if (Platform.OS !== 'android' || !settings.voiceProcessingConsent) return;
+    if (Platform.OS !== 'android' || !settings.voiceProcessingConsent || !settings.wakeWordEnabled) return;
     try {
       const status = await startOfflineWakeWord();
       if (status.state === 'error') setError(status.message ?? 'Hey Badboy পুনরায় চালু করা যায়নি।');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Hey Badboy পুনরায় চালু করা যায়নি।');
     }
-  }, [settings.voiceProcessingConsent]);
+  }, [settings.voiceProcessingConsent, settings.wakeWordEnabled]);
 
   const sendMessage = useCallback(async (rawText: string) => {
     const text = rawText.trim();
@@ -270,7 +272,7 @@ export default function ChatScreen() {
       if (voiceSessionActiveRef.current) {
         await speakVoiceReply(answer.content);
         await resumeWakeWord();
-      } else if (voiceMode && answer.content.trim()) {
+      } else if (voiceMode && settings.voiceOutputEnabled && answer.content.trim()) {
         await new Promise<void>((resolve) => {
           setSpeakingMessageId(answer.id);
           const started = speak(answer.content, selectedLang, {
@@ -336,7 +338,7 @@ export default function ChatScreen() {
       await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
       setListening(false);
       setDraft(transcript);
-      await sendMessage(transcript);
+      if (settings.autoSubmitVoice) await sendMessage(transcript);
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -354,7 +356,7 @@ export default function ChatScreen() {
       // restore offline wake-word listening instead of leaving the assistant idle.
       await resumeWakeWord();
     }
-  }, [audioRecorder, resumeWakeWord, selectedLang, sendMessage]);
+  }, [audioRecorder, resumeWakeWord, selectedLang, sendMessage, settings.autoSubmitVoice]);
 
   useEffect(() => {
     if (Platform.OS === 'web' || !audioRecordingStartedRef.current || !audioRecorderState.isRecording) return;
@@ -395,6 +397,10 @@ export default function ChatScreen() {
   }, [audioRecorder]);
 
   const toggleVoice = useCallback(async () => {
+    if (!settings.voiceInputEnabled) {
+      setError('Settings থেকে Voice Input চালু করুন।');
+      return;
+    }
     if (!settings.voiceProcessingConsent) {
       setError('ভয়েস ব্যবহারের জন্য Settings-এ Voice Consent সক্ষম করুন।');
       return;
@@ -464,7 +470,7 @@ export default function ChatScreen() {
       onTranscript: (text, isFinal) => {
         const combined = base ? `${base} ${text}`.trim() : text.trim();
         setDraft(combined.slice(0, 4000));
-        if (isFinal && text.trim()) {
+        if (isFinal && text.trim() && settings.autoSubmitVoice) {
           const finalText = text.trim().slice(0, 4000);
           setDraft(finalText);
           setTimeout(() => { void sendMessage(finalText); }, 0);
@@ -485,6 +491,8 @@ export default function ChatScreen() {
     selectedLang,
     sendMessage,
     settings.voiceProcessingConsent,
+    settings.voiceInputEnabled,
+    settings.autoSubmitVoice,
   ]);
 
   // Android foreground microphone service is started only after voice consent and permission.
@@ -492,7 +500,7 @@ export default function ChatScreen() {
   const toggleVoiceRef = useRef(toggleVoice);
   useEffect(() => { toggleVoiceRef.current = toggleVoice; }, [toggleVoice]);
   useEffect(() => {
-    if (Platform.OS !== 'android' || !settings.voiceProcessingConsent) return;
+    if (Platform.OS !== 'android' || !settings.voiceProcessingConsent || !settings.wakeWordEnabled || !settings.voiceInputEnabled) return;
     let active = true;
     const subscription = subscribeToWakeWord(() => {
       if (!active || wakeHandoffRef.current) return;
@@ -513,7 +521,7 @@ export default function ChatScreen() {
       if (active) setError(cause instanceof Error ? cause.message : 'Hey Badboy চালু করা যায়নি।');
     });
     return () => { active = false; subscription.remove(); };
-  }, [settings.voiceProcessingConsent]);
+  }, [settings.voiceProcessingConsent, settings.wakeWordEnabled, settings.voiceInputEnabled]);
 
   const startNewChat = () => {
     setDrawerModal('newChat');
@@ -602,6 +610,7 @@ export default function ChatScreen() {
   }, [busy, messages, setMessages, settings]);
 
   const playMessage = useCallback((message: ChatMessage) => {
+    if (!settings.voiceOutputEnabled) return;
     if (speakingMessageId === message.id) {
       stopSpeaking();
       setSpeakingMessageId(null);
@@ -617,7 +626,7 @@ export default function ChatScreen() {
       },
     });
     if (!started) setSpeakingMessageId(null);
-  }, [selectedLang, setError, speakingMessageId]);
+  }, [selectedLang, setError, speakingMessageId, settings.voiceOutputEnabled]);
 
   const shareMessage = async (message: ChatMessage) => {
     try {
@@ -990,6 +999,7 @@ export default function ChatScreen() {
           onPress={() => void toggleVoice()}
           accessibilityRole="button"
           accessibilityLabel={listening ? 'ভয়েস গ্রহণ বন্ধ করুন' : 'ভয়েস অন করুন'}
+          disabled={!settings.voiceInputEnabled || !settings.voiceProcessingConsent}
           style={[styles.roundButton, { backgroundColor: listening ? colors.primary : colors.secondary }]}
         >
           {listening
@@ -997,7 +1007,7 @@ export default function ChatScreen() {
             : <Feather name="mic" size={18} color={listening ? colors.primaryForeground : colors.foreground} />}
         </Pressable>
         <Pressable
-          onPress={() => setVoiceMode((enabled) => !enabled)}
+          onPress={() => updateSettings({ autoSpeakReplies: !voiceMode })}
           accessibilityRole="button"
           accessibilityLabel={voiceMode ? 'স্বয়ংক্রিয় ভয়েস উত্তর বন্ধ করুন' : 'স্বয়ংক্রিয় ভয়েস উত্তর চালু করুন'}
           style={[styles.roundButton, { backgroundColor: voiceMode ? colors.primary : colors.secondary }]}
