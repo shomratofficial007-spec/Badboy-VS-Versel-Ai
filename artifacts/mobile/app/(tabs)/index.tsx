@@ -1,14 +1,14 @@
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Animated,
   FlatList,
   Keyboard,
-  KeyboardAvoidingView,
+  KeyboardAvoidingView as CoreKeyboardAvoidingView,
   Linking,
   Modal,
   Platform,
@@ -20,6 +20,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { KeyboardAvoidingView as ControllerKeyboardAvoidingView } from 'react-native-keyboard-controller';
+import type { StyleProp, ViewStyle } from 'react-native';
 import { BadboyLogo } from '@/components/BadboyLogo';
 import {
   cleanSongQuery,
@@ -69,6 +71,23 @@ type BrowserSpeechRecognition = {
   abort: () => void;
 };
 
+
+
+function ChatKeyboardAvoider({ children, style }: { children: ReactNode; style: StyleProp<ViewStyle> }) {
+  if (Platform.OS === 'web') {
+    return (
+      <CoreKeyboardAvoidingView style={style} behavior="height" keyboardVerticalOffset={0}>
+        {children}
+      </CoreKeyboardAvoidingView>
+    );
+  }
+
+  return (
+    <ControllerKeyboardAvoidingView style={style} behavior="padding" automaticOffset>
+      {children}
+    </ControllerKeyboardAvoidingView>
+  );
+}
 
 function newMessage(role: ChatMessage['role'], content = ''): ChatMessage {
   return {
@@ -743,11 +762,7 @@ export default function ChatScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.screen, { backgroundColor: colors.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 4 : 0}
-    >
+    <ChatKeyboardAvoider style={[styles.screen, { backgroundColor: colors.background }]}>
       {/* Badboy Futuristic Top Bar */}
       <View
         style={[
@@ -957,6 +972,7 @@ export default function ChatScreen() {
           inverted
           contentContainerStyle={styles.messageList}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           onContentSizeChange={() => listRef.current?.scrollToOffset({ offset: 0, animated: true })}
           ListFooterComponent={
             settings.autoImprove && settings.onlineAI ? (
@@ -987,8 +1003,7 @@ export default function ChatScreen() {
           {
             borderColor: colors.border,
             backgroundColor: colors.card,
-            marginBottom:
-              Platform.OS === 'web' ? 12 : Math.max(insets.bottom, 8) + 16,
+            marginBottom: Math.max(insets.bottom, 8),
           },
         ]}
       >
@@ -1000,8 +1015,9 @@ export default function ChatScreen() {
           multiline
           maxLength={4000}
           returnKeyType="default"
-          style={[styles.input, { color: colors.foreground }]}
+          style={[styles.input, { color: colors.foreground, textAlignVertical: 'top' }]}
           accessibilityLabel="আপনার প্রশ্ন"
+          accessibilityHint="কীবোর্ড খুললে লেখার ঘরটি কীবোর্ডের ঠিক ওপরে থাকবে।"
         />
         <Pressable
           onPress={() => void toggleVoice()}
@@ -1032,7 +1048,7 @@ export default function ChatScreen() {
           {busy ? <ActivityIndicator size="small" color={colors.primaryForeground} /> : <Feather name="arrow-up" size={20} color={colors.primaryForeground} />}
         </Pressable>
       </View>
-    </KeyboardAvoidingView>
+    </ChatKeyboardAvoider>
   );
 }
 
