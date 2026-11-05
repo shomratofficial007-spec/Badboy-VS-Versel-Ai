@@ -223,8 +223,11 @@ export default function ChatScreen() {
       continuousVoiceConversationRef.current = false;
       voiceSessionActiveRef.current = false;
       setVoiceConversationActive(false);
+      if (settings.voiceProcessingConsent && settings.wakeWordEnabled && settings.voiceInputEnabled) {
+        await startOfflineWakeWord().catch(() => undefined);
+      }
     }
-  }, [audioRecorder]);
+  }, [audioRecorder, settings.voiceInputEnabled, settings.voiceProcessingConsent, settings.wakeWordEnabled]);
 
   const resumeWakeWord = useCallback(async () => {
     if (!voiceSessionActiveRef.current) return;
@@ -281,7 +284,6 @@ export default function ChatScreen() {
       const recordingUri = audioRecorder.uri;
       if (recordingUri) await FileSystem.deleteAsync(recordingUri, { idempotent: true }).catch(() => undefined);
     }
-    transcriptionInFlightRef.current = false;
     setListening(false);
     await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
     if (Platform.OS === 'android' && settings.voiceProcessingConsent && settings.wakeWordEnabled && settings.voiceInputEnabled) {
@@ -437,6 +439,7 @@ export default function ChatScreen() {
 
   const finishRecordedVoice = useCallback(async () => {
     if (!audioRecordingStartedRef.current || transcriptionInFlightRef.current) return;
+    const wasVoiceConversation = continuousVoiceConversationRef.current;
     transcriptionInFlightRef.current = true;
     audioRecordingStartedRef.current = false;
     let recordingUri: string | null = null;
@@ -451,7 +454,7 @@ export default function ChatScreen() {
       await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
       setListening(false);
       setDraft(transcript);
-      if (settings.autoSubmitVoice || continuousVoiceConversationRef.current) await sendMessage(transcript);
+      if (wasVoiceConversation ? continuousVoiceConversationRef.current : settings.autoSubmitVoice) await sendMessage(transcript);
     } catch (cause) {
       setError(
         cause instanceof Error
