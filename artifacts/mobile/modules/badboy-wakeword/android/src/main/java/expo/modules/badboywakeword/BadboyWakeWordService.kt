@@ -61,7 +61,7 @@ class BadboyWakeWordService : Service() {
  private fun features(x:FloatArray):Array<FloatArray>{
   val out=Array(40){FloatArray(101)};val win=FloatArray(400){i->(.5-.5*cos(2*PI*i/399)).toFloat()};val bank=melBank()
   for(t in 0..100){val re=DoubleArray(512);val im=DoubleArray(512);val start=t*160-200
-   for(i in 0..399){val at=start+i;re[i]=(if(at in x.indices)x[at] else 0f)*win[i]}
+   for(i in 0..399){val at=start+i;re[i]=(if(at in x.indices)x[at].toDouble() else 0.0)*win[i].toDouble()}
    fft(re,im);val power=DoubleArray(257){k->(re[k]*re[k]+im[k]*im[k])/512}
    for(m in 0..39){var e=0.0;for(k in 0..256)e+=power[k]*bank[m][k];out[m][t]=ln(max(e,1e-10)).toFloat()}
   }
