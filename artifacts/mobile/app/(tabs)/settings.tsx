@@ -722,28 +722,63 @@ export default function SettingsScreen() {
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
           <Feather name="mic" size={17} color={colors.primary} />
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>ভয়েস ও “Oi”</Text>
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Voice Control Center</Text>
         </View>
-        <SettingSwitch
-          colors={colors}
-          title="ভয়েস সম্মতি"
-          subtitle="চালু থাকলে ব্রাউজারে ভয়েস টাইপিং ও পড়ে শোনানো ব্যবহার করা যাবে। ভয়েস টাইপিংয়ে আপনার কণ্ঠ ব্রাউজারের speech service-এ পাঠানো হয়।"
-          value={settings.voiceProcessingConsent}
-          onValueChange={(value) => updateSettings({ voiceProcessingConsent: value })}
-        />
+        <SettingSwitch colors={colors} title="Voice Processing Consent" subtitle="ভয়েস ফিচার ব্যবহারের অনুমতি। রেকর্ড করা অডিও transcription-এর জন্য অনলাইন AI সার্ভারে পাঠানো হতে পারে।" value={settings.voiceProcessingConsent} onValueChange={(value) => updateSettings({ voiceProcessingConsent: value })} />
         <View style={[styles.rule, { backgroundColor: colors.border }]} />
-        <Text style={[styles.body, { color: colors.mutedForeground }]}>
-          নির্বাচিত OpenRouter free model সরাসরি অডিও বার্তা নিতে পারে না, তাই চ্যাটে মাইক চাপলে ব্রাউজারের ভয়েস টাইপিং লেখায় রূপ নেয়; স্পিকার চাপলে শেষ উত্তর ডিভাইসে পড়ে শোনানো হয়।
-        </Text>
+        <SettingSwitch colors={colors} title="Voice Input" subtitle="মাইক্রোফোন দিয়ে বাংলা/ইংরেজি কথা থেকে লেখা তৈরি।" value={settings.voiceInputEnabled} onValueChange={(value) => updateSettings({ voiceInputEnabled: value })} />
+        <SettingSwitch colors={colors} title="Voice Output" subtitle="Badboy-এর উত্তর TTS দিয়ে পড়ে শোনানো এবং Play/Stop নিয়ন্ত্রণ।" value={settings.voiceOutputEnabled} onValueChange={(value) => updateSettings({ voiceOutputEnabled: value })} />
+        <SettingSwitch colors={colors} title="Auto Speak Replies" subtitle="নতুন AI উত্তর এলে নিজে থেকে পড়ে শোনাবে।" value={settings.autoSpeakReplies} onValueChange={(value) => updateSettings({ autoSpeakReplies: value })} />
+        <SettingSwitch colors={colors} title="Auto Submit Voice Input" subtitle="কথা শেষ হলে transcription স্বয়ংক্রিয়ভাবে AI-তে পাঠাবে। বন্ধ থাকলে লেখা draft-এ থাকবে।" value={settings.autoSubmitVoice} onValueChange={(value) => updateSettings({ autoSubmitVoice: value })} />
+        <SettingSwitch colors={colors} title="Hey Badboy Wake Word" subtitle="সম্মতি ও microphone permission থাকলে Android-এ wake-word listener চালু রাখবে।" value={settings.wakeWordEnabled} onValueChange={(value) => updateSettings({ wakeWordEnabled: value })} />
+        <View style={[styles.rule, { backgroundColor: colors.border }]} />
+        <Text style={[styles.label, { color: colors.foreground, marginBottom: 8 }]}>Voice Language</Text>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {([{ id: 'bn-BD', label: 'বাংলা (Bangladesh)' }, { id: 'en-US', label: 'English (US)' }] as const).map((item) => (
+            <Pressable key={item.id} onPress={() => updateSettings({ voiceLanguage: item.id })} accessibilityRole="button" accessibilityState={{ selected: settings.voiceLanguage === item.id }} style={{ flex: 1, minHeight: 42, borderWidth: 1, borderRadius: 11, borderColor: settings.voiceLanguage === item.id ? colors.primary : colors.border, backgroundColor: settings.voiceLanguage === item.id ? colors.secondary : colors.background, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 }}>
+              <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: settings.voiceLanguage === item.id ? '800' : '600' }}>{item.label}</Text>
+            </Pressable>
+          ))}
+        </View>
         <View style={[styles.wakeCard, { backgroundColor: colors.accent }]}>
-          <Feather name="moon" size={16} color={colors.accentForeground} />
+          <Feather name="shield" size={16} color={colors.accentForeground} />
           <Text style={[styles.wakeText, { color: colors.accentForeground }]}>
-            “Oi” ব্যাকগ্রাউন্ড wake word এখনো চালু নয়। এর জন্য আলাদা native wake-word engine ও custom model দরকার; কেবল রেকর্ডিং permission দিয়ে ফোন সারাক্ষণ শুনবে না।
+            Wake Word চালু করতে Voice Consent, microphone permission এবং সমর্থিত Android build দরকার। Settings-এর সুইচ বন্ধ করলে listener আর শুরু হবে না।
           </Text>
         </View>
-        <Text style={[styles.smallNote, { color: colors.mutedForeground }]}>
-          Microphone background recording permission build-এ রাখা আছে, তবে wake-word detector যোগ না হওয়া পর্যন্ত background listening শুরু হবে না।
+      </View>
+
+      <View style={[styles.section, sectionCard]}>
+        <View style={styles.sectionTitleRow}>
+          <Feather name="layers" size={17} color={colors.primary} />
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Future Development Roadmap</Text>
+        </View>
+        <Text style={[styles.body, { color: colors.mutedForeground, marginBottom: 10 }]}>
+          এগুলো ভবিষ্যৎ উন্নয়নের জন্য তোমার পছন্দ সংরক্ষণ করবে। সংশ্লিষ্ট ফিচার তৈরি ও সংযুক্ত না হওয়া পর্যন্ত সুইচ অন করলেই ফিচার চালু হবে না।
         </Text>
+        {([
+          ['webDevelopment', 'Web Development', 'ওয়েব অ্যাপ, API ও Cloudflare উন্নয়ন'],
+          ['appDevelopment', 'App Development', 'Android / iOS অ্যাপ ও APK workflow'],
+          ['selfDevelopment', 'Self Development', 'Badboy-এর নিজের সক্ষমতা উন্নয়ন'],
+          ['autonomousAgent', 'Autonomous Task Manager', 'অনুমোদিত কাজ পরিকল্পনা ও ধাপে ধাপে সম্পাদন'],
+          ['projectBrain', 'Project Brain', 'প্রজেক্ট ফাইল, আর্কিটেকচার ও সিদ্ধান্তের জ্ঞানভান্ডার'],
+          ['autoQA', 'Auto QA & Testing', 'স্বয়ংক্রিয় পরীক্ষা, bug detection ও validation'],
+          ['pluginMarketplace', 'Plugin Marketplace', 'নতুন টুল ও external app সংযোগ'],
+          ['providerManager', 'AI Provider Manager', 'একাধিক AI provider, model ও fallback নিয়ন্ত্রণ'],
+          ['automationHub', 'Automation Hub', 'রিমাইন্ডার, সময়সূচি ও recurring workflow'],
+          ['releaseRecovery', 'Release & Recovery', 'Preview, release, rollback ও recovery workflow'],
+          ['integrations', 'App Integrations', 'Telegram এবং ভবিষ্যতের app integrations'],
+          ['localMemoryControls', 'Advanced Memory', 'মেমোরি review, edit, export ও delete controls'],
+        ] as const).map(([key, title, subtitle]) => (
+          <SettingSwitch
+            key={key}
+            colors={colors}
+            title={title}
+            subtitle={subtitle}
+            value={settings.roadmap[key]}
+            onValueChange={(value) => updateSettings({ roadmap: { ...settings.roadmap, [key]: value } })}
+          />
+        ))}
       </View>
 
       <View style={[styles.section, sectionCard]}>

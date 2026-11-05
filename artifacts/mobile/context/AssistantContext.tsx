@@ -51,7 +51,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
         if (!mounted) return;
         setMessagesState(state.messages);
         setMemories(state.memories);
-        setSettings({ ...DEFAULT_SETTINGS, ...state.settings });
+        setSettings({ ...DEFAULT_SETTINGS, ...state.settings, roadmap: { ...DEFAULT_SETTINGS.roadmap, ...state.settings.roadmap } });
         setReady(true);
       })
       .catch(() => {
