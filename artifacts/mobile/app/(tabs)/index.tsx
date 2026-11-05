@@ -229,6 +229,8 @@ export default function ChatScreen() {
             },
           });
         }, 1200);
+      } else {
+        await resumeWakeWord();
       }
       return;
     }
@@ -330,8 +332,11 @@ export default function ChatScreen() {
       await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
       setListening(false);
       transcriptionInFlightRef.current = false;
+      // If recording/transcription failed before sendMessage owned the turn,
+      // restore offline wake-word listening instead of leaving the assistant idle.
+      await resumeWakeWord();
     }
-  }, [audioRecorder, selectedLang, sendMessage]);
+  }, [audioRecorder, resumeWakeWord, selectedLang, sendMessage]);
 
   useEffect(() => {
     if (Platform.OS === 'web' || !audioRecordingStartedRef.current || !audioRecorderState.isRecording) return;
