@@ -122,6 +122,7 @@ export default function ChatScreen() {
   const audioRecorder = useAudioRecorder(VOICE_RECORDING_OPTIONS);
   const audioRecorderState = useAudioRecorderState(audioRecorder, 250);
   const audioRecordingStartedRef = useRef(false);
+  const recordingObservedRef = useRef(false);
   const transcriptionInFlightRef = useRef(false);
   const speechDetectedRef = useRef(false);
   const lastVoiceActivityAtRef = useRef(0);
@@ -208,12 +209,14 @@ export default function ChatScreen() {
       transcriptionInFlightRef.current = false;
       speechDetectedRef.current = false;
       lastVoiceActivityAtRef.current = Date.now();
+      recordingObservedRef.current = false;
       audioRecordingStartedRef.current = true;
       audioRecorder.record({ forDuration: 20 });
       setError(null);
       setListening(true);
     } catch (cause) {
       audioRecordingStartedRef.current = false;
+      recordingObservedRef.current = false;
       setListening(false);
       await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
       setError(cause instanceof Error ? cause.message : 'Voice Conversation চালু করা যায়নি।');
@@ -273,6 +276,7 @@ export default function ChatScreen() {
     stopDictationRef.current = null;
     if (audioRecordingStartedRef.current) {
       audioRecordingStartedRef.current = false;
+      recordingObservedRef.current = false;
       await audioRecorder.stop().catch(() => undefined);
       const recordingUri = audioRecorder.uri;
       if (recordingUri) await FileSystem.deleteAsync(recordingUri, { idempotent: true }).catch(() => undefined);
@@ -460,6 +464,7 @@ export default function ChatScreen() {
       }
       await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
       setListening(false);
+      recordingObservedRef.current = false;
       transcriptionInFlightRef.current = false;
       // If recording/transcription failed before sendMessage owned the turn,
       // restore offline wake-word listening instead of leaving the assistant idle.
@@ -468,7 +473,12 @@ export default function ChatScreen() {
   }, [audioRecorder, resumeWakeWord, selectedLang, sendMessage, settings.autoSubmitVoice]);
 
   useEffect(() => {
-    if (Platform.OS === 'web' || !audioRecordingStartedRef.current || !audioRecorderState.isRecording) return;
+    if (Platform.OS === 'web' || !audioRecordingStartedRef.current) return;
+    if (!audioRecorderState.isRecording) {
+      if (recordingObservedRef.current) void finishRecordedVoice();
+      return;
+    }
+    recordingObservedRef.current = true;
     const meter = audioRecorderState.metering;
     if (typeof meter !== 'number' || !Number.isFinite(meter)) return;
 
@@ -549,6 +559,7 @@ export default function ChatScreen() {
         transcriptionInFlightRef.current = false;
         speechDetectedRef.current = false;
         lastVoiceActivityAtRef.current = Date.now();
+        recordingObservedRef.current = false;
         audioRecordingStartedRef.current = true;
         // Silence detection ends normal turns; 20 seconds remains a hard safety cap.
         audioRecorder.record({ forDuration: 20 });
