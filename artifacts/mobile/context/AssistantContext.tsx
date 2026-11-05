@@ -161,7 +161,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       setExpertReviewDraft,
       clearExpertReviewDraft,
     }),
-    [ready, messages, memories, settings, storageError, setMessages, updateSettings, saveMemory, updateMemory, deleteMemory, clearChat],
+    [ready, messages, memories, settings, storageError, setMessages, updateSettings, saveMemory, updateMemory, deleteMemory, clearChat, expertReviewDraft, setExpertReviewDraft, clearExpertReviewDraft],
   );
 
   return <AssistantContext.Provider value={value}>{children}</AssistantContext.Provider>;
