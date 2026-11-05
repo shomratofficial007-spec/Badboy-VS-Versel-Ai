@@ -61,7 +61,7 @@ jobs:
           pnpm --filter @workspace/mobile run test
 
       - name: Generate native Android project with Expo Prebuild
-        run: pnpm --filter @workspace/mobile exec expo prebuild --platform android --non-interactive
+        run: pnpm --filter @workspace/mobile exec expo prebuild --platform android --no-install
 
       - name: Build installable debug APK
         working-directory: artifacts/mobile/android
