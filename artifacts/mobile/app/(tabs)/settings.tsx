@@ -8,6 +8,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Switch,
   Text,
@@ -15,6 +16,8 @@ import {
   View,
 } from 'react-native';
 import { useAssistant } from '@/context/AssistantContext';
+import { streamReply } from '@/lib/assistant/api';
+import { buildExpertReviewPrompt, inspectBadboyRepository, type RepositoryEvidence } from '@/lib/assistant/expertReview';
 import { useColors } from '@/hooks/useColors';
 import {
   checkTelegramMessages,
@@ -53,7 +56,7 @@ interface LocalTelegramMessage {
 export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { settings, updateSettings, clearChat } = useAssistant();
+  const { settings, updateSettings, clearChat, expertReviewDraft, clearExpertReviewDraft } = useAssistant();
   const [personalityDraft, setPersonalityDraft] = useState(settings.personality);
   const [botTokenDraft, setBotTokenDraft] = useState('');
   const [telegramConnected, setTelegramConnected] = useState(false);
@@ -84,6 +87,11 @@ export default function SettingsScreen() {
   const [projectBrain, setProjectBrain] = useState<ProjectBrain | null>(null);
   const [qaResult, setQaResult] = useState<QAResult | null>(null);
   const [plugins, setPlugins] = useState<PluginItem[]>([]);
+  const [expertReviewInput, setExpertReviewInput] = useState('');
+  const [expertReviewReport, setExpertReviewReport] = useState('');
+  const [expertReviewEvidence, setExpertReviewEvidence] = useState<RepositoryEvidence | null>(null);
+  const [expertReviewBusy, setExpertReviewBusy] = useState(false);
+  const [expertReviewError, setExpertReviewError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -107,6 +115,47 @@ export default function SettingsScreen() {
 
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (expertReviewDraft.trim()) {
+      setExpertReviewInput(expertReviewDraft);
+      setExpertReviewReport('');
+      clearExpertReviewDraft();
+    }
+  }, [expertReviewDraft, clearExpertReviewDraft]);
+
+  const handleExpertReview = async () => {
+    const pasted = expertReviewInput.trim();
+    if (!pasted || expertReviewBusy || !settings.onlineAI) return;
+    setExpertReviewBusy(true);
+    setExpertReviewError(null);
+    setExpertReviewReport('');
+    try {
+      const evidence = await inspectBadboyRepository();
+      setExpertReviewEvidence(evidence);
+      const summary = JSON.stringify(getProjectBrainSummary(), null, 2);
+      const prompt = buildExpertReviewPrompt(pasted, evidence, summary);
+      let report = '';
+      await streamReply(prompt, settings, (chunk) => {
+        report += chunk;
+        setExpertReviewReport(report);
+      });
+      if (!report.trim()) throw new Error('বিশ্লেষণ থেকে কোনো রিপোর্ট পাওয়া যায়নি।');
+    } catch (cause) {
+      setExpertReviewError(cause instanceof Error ? cause.message : 'Expert Review সম্পন্ন করা যায়নি।');
+    } finally {
+      setExpertReviewBusy(false);
+    }
+  };
+
+  const handleShareExpertReport = async () => {
+    if (!expertReviewReport.trim()) return;
+    try {
+      await Share.share({ title: 'Badboy Expert Review', message: expertReviewReport });
+    } catch {
+      setExpertReviewError('রিপোর্ট শেয়ার করা যায়নি।');
+    }
+  };
 
   const handleRunAgentTask = async (overridePrompt?: string, userConfirmed: boolean = false) => {
     const prompt = (overridePrompt || agentPrompt).trim();
@@ -427,6 +476,53 @@ export default function SettingsScreen() {
           value={settings.autoImprove}
           onValueChange={(value) => updateSettings({ autoImprove: value })}
         />
+      </View>
+
+      <View style={[styles.section, sectionCard]}>
+        <View style={styles.sectionTitleRow}>
+          <Feather name="clipboard" size={17} color={colors.primary} />
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Expert Review & Code Analysis</Text>
+        </View>
+        <Text style={[styles.body, { color: colors.mutedForeground }]}>
+          Badboy-এর কোনো উত্তর, কোড, Error বা প্রস্তাব এখানে পাঠাও। GitHub PAT যুক্ত থাকলে Repository-এর live file inventory যাচাই করে বিশ্লেষণ করবে। এটি শুধু রিপোর্ট তৈরি করে—কোড, PR বা Deploy পরিবর্তন করে না।
+        </Text>
+        <TextInput
+          value={expertReviewInput}
+          onChangeText={setExpertReviewInput}
+          placeholder="Badboy-এর উত্তর, কোড বা Error এখানে paste করো…"
+          placeholderTextColor={colors.mutedForeground}
+          multiline
+          textAlignVertical="top"
+          style={[styles.telegramInput, { color: colors.foreground, borderColor: colors.input, minHeight: 120, marginTop: 8 }]}
+        />
+        <Pressable
+          onPress={() => void handleExpertReview()}
+          disabled={!expertReviewInput.trim() || expertReviewBusy || !settings.onlineAI}
+          style={[styles.primaryButton, { backgroundColor: colors.primary, opacity: !expertReviewInput.trim() || expertReviewBusy || !settings.onlineAI ? 0.5 : 1 }]}
+        >
+          {expertReviewBusy ? <ActivityIndicator size="small" color={colors.primaryForeground} /> : <Feather name="search" size={15} color={colors.primaryForeground} />}
+          <Text style={{ color: colors.primaryForeground, fontWeight: '700' }}>Expert Review চালাও</Text>
+        </Pressable>
+        {!settings.onlineAI ? <Text style={[styles.smallNote, { color: colors.destructive }]}>অনলাইন AI বন্ধ আছে। Expert Review চালাতে Online AI চালু করো।</Text> : null}
+        {expertReviewEvidence ? (
+          <View style={[styles.wakeCard, { backgroundColor: colors.secondary }]}>
+            <Feather name={expertReviewEvidence.status === 'verified' ? 'check-circle' : 'alert-circle'} size={15} color={colors.secondaryForeground} />
+            <Text style={[styles.wakeText, { color: colors.secondaryForeground }]}>
+              Repository: {expertReviewEvidence.status.toUpperCase()} · {expertReviewEvidence.filePaths.length} file path · {expertReviewEvidence.note}
+            </Text>
+          </View>
+        ) : null}
+        {expertReviewError ? <Text style={[styles.smallNote, { color: colors.destructive }]}>{expertReviewError}</Text> : null}
+        {expertReviewReport ? (
+          <View style={[styles.infoCard, { borderColor: colors.border, backgroundColor: colors.background }]}>
+            <Text style={[styles.label, { color: colors.foreground }]}>বিশ্লেষণ রিপোর্ট</Text>
+            <Text selectable style={[styles.body, { color: colors.foreground, lineHeight: 21 }]}>{expertReviewReport}</Text>
+            <Pressable onPress={() => void handleShareExpertReport()} style={[styles.primaryButton, { backgroundColor: colors.secondary, marginTop: 8 }]}>
+              <Feather name="share-2" size={15} color={colors.secondaryForeground} />
+              <Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>Copy / Share Report</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
 
       {/* Developer Control Center */}
