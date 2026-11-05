@@ -152,8 +152,8 @@ export default function ChatScreen() {
     if (!voiceSessionActiveRef.current || !text.trim()) return;
     await new Promise<void>((resolve) => {
       const started = speak(text, selectedLang, {
-        onDone: resolve,
-        onError: resolve,
+        onDone: () => resolve(),
+        onError: () => resolve(),
       });
       if (!started) resolve();
     });
