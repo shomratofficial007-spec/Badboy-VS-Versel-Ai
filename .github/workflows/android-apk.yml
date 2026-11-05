@@ -63,8 +63,16 @@ jobs:
       - name: Generate native Android project with Expo Prebuild
         run: pnpm --filter @workspace/mobile exec expo prebuild --platform android --no-install
 
+      - name: Verify React Native debug bundle configuration
+        working-directory: artifacts/mobile/android
+        run: |
+          sed -n '/react[[:space:]]*{/,/^[[:space:]]*}/p' app/build.gradle
+          grep -Eq '^[[:space:]]*debuggableVariants[[:space:]]*=[[:space:]]*\\[\\s*\\]' app/build.gradle
+
       - name: Build installable debug APK with embedded JavaScript
         working-directory: artifacts/mobile/android
+        env:
+          NODE_ENV: production
         run: ./gradlew --no-daemon assembleDebug
 
       - name: Verify APK contains the JavaScript bundle
