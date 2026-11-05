@@ -25,6 +25,26 @@ export interface AssistantSettings {
   autoImprove: boolean;
   developerMode: boolean;
   voiceProcessingConsent: boolean;
+  voiceInputEnabled: boolean;
+  voiceOutputEnabled: boolean;
+  autoSpeakReplies: boolean;
+  wakeWordEnabled: boolean;
+  autoSubmitVoice: boolean;
+  voiceLanguage: 'bn-BD' | 'en-US';
+  roadmap: {
+    webDevelopment: boolean;
+    appDevelopment: boolean;
+    selfDevelopment: boolean;
+    autonomousAgent: boolean;
+    projectBrain: boolean;
+    autoQA: boolean;
+    pluginMarketplace: boolean;
+    providerManager: boolean;
+    automationHub: boolean;
+    releaseRecovery: boolean;
+    integrations: boolean;
+    localMemoryControls: boolean;
+  };
 }
 
 export const DEFAULT_SETTINGS: AssistantSettings = {
@@ -34,4 +54,24 @@ export const DEFAULT_SETTINGS: AssistantSettings = {
   autoImprove: true,
   developerMode: false,
   voiceProcessingConsent: false,
+  voiceInputEnabled: true,
+  voiceOutputEnabled: true,
+  autoSpeakReplies: false,
+  wakeWordEnabled: true,
+  autoSubmitVoice: true,
+  voiceLanguage: 'bn-BD',
+  roadmap: {
+    webDevelopment: true,
+    appDevelopment: true,
+    selfDevelopment: true,
+    autonomousAgent: true,
+    projectBrain: true,
+    autoQA: true,
+    pluginMarketplace: true,
+    providerManager: true,
+    automationHub: true,
+    releaseRecovery: true,
+    integrations: true,
+    localMemoryControls: true,
+  },
 };
