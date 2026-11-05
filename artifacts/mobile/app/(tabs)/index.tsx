@@ -108,6 +108,12 @@ export default function ChatScreen() {
   const voiceSessionActiveRef = useRef(false);
 
   useEffect(() => { setSelectedLang(settings.voiceLanguage); }, [settings.voiceLanguage]);
+  useEffect(() => {
+    if (!settings.voiceOutputEnabled) {
+      stopSpeaking();
+      setSpeakingMessageId(null);
+    }
+  }, [settings.voiceOutputEnabled]);
 
   // Audio Visualizer Bar & Core Pulse Animations
   const barAnim1 = useRef(new Animated.Value(12)).current;
@@ -520,7 +526,7 @@ export default function ChatScreen() {
     }).catch((cause) => {
       if (active) setError(cause instanceof Error ? cause.message : 'Hey Badboy চালু করা যায়নি।');
     });
-    return () => { active = false; subscription.remove(); };
+    return () => { active = false; subscription.remove(); void stopOfflineWakeWord().catch(() => undefined); };
   }, [settings.voiceProcessingConsent, settings.wakeWordEnabled, settings.voiceInputEnabled]);
 
   const startNewChat = () => {
@@ -715,10 +721,12 @@ export default function ChatScreen() {
           ) : null}
           {!isUser && item.content.trim() ? (
             <View style={styles.messageActions}>
-              <Pressable onPress={() => playMessage(item)} accessibilityRole="button" accessibilityLabel={speakingMessageId === item.id ? 'পড়া বন্ধ করুন' : 'উত্তর পড়ে শুনুন'} style={[styles.messageAction, { borderColor: colors.border }]}>
-                <Feather name={speakingMessageId === item.id ? 'volume-x' : 'volume-2'} size={13} color={colors.mutedForeground} />
-                <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>{speakingMessageId === item.id ? 'বন্ধ' : 'শুনুন'}</Text>
-              </Pressable>
+              {settings.voiceOutputEnabled ? (
+                <Pressable onPress={() => playMessage(item)} accessibilityRole="button" accessibilityLabel={speakingMessageId === item.id ? 'পড়া বন্ধ করুন' : 'উত্তর পড়ে শুনুন'} style={[styles.messageAction, { borderColor: colors.border }]}>
+                  <Feather name={speakingMessageId === item.id ? 'volume-x' : 'volume-2'} size={13} color={colors.mutedForeground} />
+                  <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>{speakingMessageId === item.id ? 'বন্ধ' : 'শুনুন'}</Text>
+                </Pressable>
+              ) : null}
               <Pressable onPress={() => { void shareMessage(item); }} accessibilityRole="button" accessibilityLabel="উত্তর শেয়ার করুন" style={[styles.messageAction, { borderColor: colors.border }]}>
                 <Feather name="share-2" size={13} color={colors.mutedForeground} />
                 <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>শেয়ার</Text>
