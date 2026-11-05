@@ -38,6 +38,7 @@ import {
   getVoiceLanguageLabel,
   isDictationAvailable,
   speak,
+  stopSpeaking,
   shouldStopVoiceRecordingForSilence,
   VOICE_SILENCE_THRESHOLD_DBFS,
 } from '@/lib/assistant/voice';
@@ -90,6 +91,8 @@ export default function ChatScreen() {
   const [busy, setBusy] = useState(false);
   const [improving, setImproving] = useState(false);
   const [listening, setListening] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [wakeDetected, setWakeDetected] = useState(false);
   const [selectedLang, setSelectedLang] = useState<string>('bn-BD');
   const [error, setError] = useState<string | null>(null);
@@ -267,9 +270,22 @@ export default function ChatScreen() {
       if (voiceSessionActiveRef.current) {
         await speakVoiceReply(answer.content);
         await resumeWakeWord();
+      } else if (voiceMode && answer.content.trim()) {
+        await new Promise<void>((resolve) => {
+          setSpeakingMessageId(answer.id);
+          const started = speak(answer.content, selectedLang, {
+            onDone: () => { setSpeakingMessageId(null); resolve(); },
+            onError: () => {
+              setSpeakingMessageId(null);
+              setError('উত্তরটি শোনানো যায়নি। আবার চেষ্টা করুন।');
+              resolve();
+            },
+          });
+          if (!started) { setSpeakingMessageId(null); resolve(); }
+        });
       }
     }
-  }, [awaitingSongName, busy, messages, resumeWakeWord, selectedLang, setError, setMessages, settings, speakVoiceReply]);
+  }, [awaitingSongName, busy, messages, resumeWakeWord, selectedLang, setError, setMessages, settings, speakVoiceReply, voiceMode]);
 
   const requestImprovement = useCallback(async () => {
     const lastUserMessage = [...messages].reverse().find((item) => item.role === 'user');
@@ -585,6 +601,24 @@ export default function ChatScreen() {
     }
   }, [busy, messages, setMessages, settings]);
 
+  const playMessage = useCallback((message: ChatMessage) => {
+    if (speakingMessageId === message.id) {
+      stopSpeaking();
+      setSpeakingMessageId(null);
+      return;
+    }
+    setError(null);
+    setSpeakingMessageId(message.id);
+    const started = speak(message.content, selectedLang, {
+      onDone: () => setSpeakingMessageId(null),
+      onError: () => {
+        setSpeakingMessageId(null);
+        setError('উত্তরটি শোনানো যায়নি। আবার চেষ্টা করুন।');
+      },
+    });
+    if (!started) setSpeakingMessageId(null);
+  }, [selectedLang, setError, speakingMessageId]);
+
   const shareMessage = async (message: ChatMessage) => {
     try {
       await Share.share({ message: message.content, title: 'Badboy AI উত্তর' });
@@ -672,6 +706,10 @@ export default function ChatScreen() {
           ) : null}
           {!isUser && item.content.trim() ? (
             <View style={styles.messageActions}>
+              <Pressable onPress={() => playMessage(item)} accessibilityRole="button" accessibilityLabel={speakingMessageId === item.id ? 'পড়া বন্ধ করুন' : 'উত্তর পড়ে শুনুন'} style={[styles.messageAction, { borderColor: colors.border }]}>
+                <Feather name={speakingMessageId === item.id ? 'volume-x' : 'volume-2'} size={13} color={colors.mutedForeground} />
+                <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>{speakingMessageId === item.id ? 'বন্ধ' : 'শুনুন'}</Text>
+              </Pressable>
               <Pressable onPress={() => { void shareMessage(item); }} accessibilityRole="button" accessibilityLabel="উত্তর শেয়ার করুন" style={[styles.messageAction, { borderColor: colors.border }]}>
                 <Feather name="share-2" size={13} color={colors.mutedForeground} />
                 <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>শেয়ার</Text>
@@ -957,6 +995,14 @@ export default function ChatScreen() {
           {listening
             ? <ActivityIndicator size="small" color={colors.primaryForeground} />
             : <Feather name="mic" size={18} color={listening ? colors.primaryForeground : colors.foreground} />}
+        </Pressable>
+        <Pressable
+          onPress={() => setVoiceMode((enabled) => !enabled)}
+          accessibilityRole="button"
+          accessibilityLabel={voiceMode ? 'স্বয়ংক্রিয় ভয়েস উত্তর বন্ধ করুন' : 'স্বয়ংক্রিয় ভয়েস উত্তর চালু করুন'}
+          style={[styles.roundButton, { backgroundColor: voiceMode ? colors.primary : colors.secondary }]}
+        >
+          <Feather name="headphones" size={18} color={voiceMode ? colors.primaryForeground : colors.foreground} />
         </Pressable>
         <Pressable
           onPress={() => void sendMessage(draft)}
