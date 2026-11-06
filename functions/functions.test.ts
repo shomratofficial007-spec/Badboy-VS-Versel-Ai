@@ -630,13 +630,13 @@ test("developer analysis streams Native output with task metadata and safe conte
     assert.ok(response.headers.get("X-Badboy-Task-Id"));
     assert.strictEqual(sentMessages[0].role, "system");
     assert.match(sentMessages[0].content, /analysis-only/);
-    assert.match(sentMessages[1].content, /Expo \\+ Cloudflare/);
+    assert.ok(sentMessages[1].content.includes("Expo + Cloudflare"));
     assert.match(sentMessages[1].content, /Add a safe repository inspector/);
     const stream = await response.text();
     assert.match(stream, /"status":"started"/);
     assert.match(stream, /"content":"পরিকল্পনা প্রস্তুত"/);
     assert.match(stream, /"status":"completed"/);
-    assert.match(stream, /data: \\[DONE\\]/);
+    assert.ok(stream.includes("data: [DONE]"));
   } finally {
     globalThis.fetch = originalFetch;
   }
