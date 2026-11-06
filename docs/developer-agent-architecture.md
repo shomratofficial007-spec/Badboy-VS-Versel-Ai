@@ -1,112 +1,133 @@
-# Badboy Developer Agent — Cloudflare-first architecture
+# Badboy Developer Agent — Cloudflare-first, multi-engine architecture
 
 ## Goal
 
-Add two complementary coding-agent capabilities to Badboy without replacing the existing assistant:
+Add a Developer Agent to Badboy without replacing or regressing the existing assistant. The Developer Agent will expose three selectable engine modes:
 
-1. **Badboy Developer Agent** — first-party agent using the existing AI-provider strategy (OpenRouter and configured providers) for project-aware planning, code review, and controlled GitHub changes.
-2. **GitHub Copilot** — optional integration path. Repository Copilot instructions and the Badboy Maintainer custom agent remain available in supported GitHub/IDE clients. In-app Copilot SDK execution is deferred until a supported runtime/authentication path is validated.
+1. **Badboy Native** — the first-party engine using the existing Cloudflare Worker orchestration and configured AI providers (OpenRouter/Groq and supported fallbacks).
+2. **GitHub Copilot SDK** — an optional coding-agent engine using the official Copilot SDK, subject to supported runtime and authentication validation.
+3. **Auto / Hybrid** — select an available engine by task capability and health; fall back to another configured engine after a recoverable failure, while preserving task context and showing the engine switch to the user.
 
-The initial implementation must stay on the existing Cloudflare platform. Do not introduce a separate paid Node.js host.
+The user can manually switch engines and retry a task with another engine. Engine selection is scoped to Developer Agent tasks only; it must not silently change the existing Chat or Voice model routing.
 
-## Existing architecture inspected
+Keep the public API and orchestration on the existing Cloudflare platform. Do not introduce a separate paid always-on host.
+
+## Non-negotiable preservation baseline (through PR #59)
+
+All features and behavior delivered through PR #59 must remain intact. This includes, but is not limited to:
+
+- Existing Chat, chat history, streaming, composer, keyboard behavior, and message actions.
+- Voice input/dictation, Whisper Large-V3 transcription, Groq/OpenRouter fallback, voice output/TTS, Auto Speak, language selection, and voice consent/permissions.
+- Hey Badboy wake-word model assets and current wake-word service/bridge, wake-word settings, and existing voice handoff behavior.
+- Hands-free voice conversation start/stop and automatic listen/respond cycle.
+- Memory, stored user preferences, Project Brain/context, and existing privacy controls.
+- Settings / Control Center, Developer Mode, Expert Handoff & Code Review, Telegram-related functionality, integrations, provider settings, UI theme, navigation, and all other existing functions.
+- Existing Cloudflare API routes, provider fallback order, environment bindings, workflows, and deployment protections.
+- Existing files, model assets, dependencies, permissions, and user data.
+
+Do not rebuild from scratch, remove, rename, replace, or refactor unrelated files. Before implementation, inspect the current main branch and PR #59 merge history, establish a baseline, and identify exact files required. Add regression tests around affected boundaries. If a proposed change risks an existing feature, stop and report the conflict instead of weakening that feature.
+
+## Existing architecture
 
 - Mobile client: `artifacts/mobile` (Expo / React Native).
-- Current API runtime: `functions/api/[[path]].ts`, deployed as a Cloudflare Worker/Pages Function.
-- Existing chat and model routing: OpenRouter free-model fallback chain.
-- Existing voice transcription: Groq Whisper Large-V3 with OpenRouter fallback.
-- Existing Developer Mode is currently a prompt-level capability in `systemInstruction()`; it is not yet a repository-editing agent.
+- API runtime: `functions/api/[[path]].ts`, deployed on Cloudflare.
+- Existing chat/model routing: configured OpenRouter provider/fallback chain.
+- Existing transcription: Groq Whisper Large-V3 with OpenRouter fallback.
+- Existing TTS, wake-word and memory flows must be reused, not replaced.
 - Root workspace uses pnpm 10.8.1 and a 1440-minute minimum package release age. Preserve both.
 
 ## Cloudflare-first runtime boundary
 
-Keep the public API gateway and agent orchestration on Cloudflare Workers. The Worker can call model APIs and GitHub APIs over HTTPS, stream task events to the mobile app, and persist task metadata using Cloudflare storage products only when needed.
+Cloudflare Worker remains the public API gateway, authentication boundary, task orchestrator, event streamer, and engine selector. It can call model/GitHub APIs over HTTPS and use Cloudflare storage only when justified.
 
-Do not try to spawn a Copilot CLI child process or run arbitrary shell commands inside a Worker request. Cloudflare Workers are not a general-purpose Node.js process host. The Copilot SDK's default runtime supervises a Copilot CLI process, so it is not directly embeddable in the current Worker handler.
+Do not spawn Copilot CLI child processes or run arbitrary shell commands inside a Worker request. The Copilot SDK's default runtime supervises a Copilot CLI process; therefore direct execution inside the current Worker is not assumed to be supported.
 
-For repository commands and tests, use a separate, short-lived GitHub Actions workflow runner triggered through GitHub's API, with tightly scoped permissions and no production secrets. This keeps the app/API hosted on Cloudflare and avoids adding another hosting provider. The workflow runner is not a persistent agent server.
+For SDK feasibility and approved repository commands, use a short-lived, isolated GitHub Actions runner with a narrowly scoped workflow. Validate the SDK's current supported authentication, licensing/subscription or BYOK requirements, CLI lifecycle, and Actions-runner compatibility before claiming it works. Do not add a separate paid persistent server.
+
+## Engine selector behavior
+
+### Badboy Native
+- Works independently of Copilot.
+- Uses the existing Cloudflare Worker and configured AI providers/fallbacks.
+- Must not alter the normal chat/voice provider configuration.
+
+### GitHub Copilot SDK
+- Runs only through a validated supported runtime (initial feasibility target: ephemeral GitHub Actions runner).
+- Copilot authentication/entitlement must be explicit and securely configured; never assume a subscription or expose credentials to the mobile app or model.
+- If unavailable, report why and offer Native or Auto mode; do not silently pretend Copilot handled the task.
+
+### Auto / Hybrid
+- Select an eligible healthy engine based on task type and configured availability.
+- On recoverable failure, offer or perform policy-approved fallback to another enabled engine.
+- Preserve task ID, user instructions, relevant conversation/task context, and completed work when switching.
+- Never repeat non-idempotent repository writes automatically. Require renewed approval before any write/command/PR action.
+- Show selected engine, fallback reason, attempt history, and final result.
+
+### Manual switch and retry
+- User can switch engine for a task and retry without losing its plan/context.
+- Engine choice applies only to Developer Agent.
+- Clearly distinguish engine failure, provider quota/authentication failure, runner failure, and task/code failure.
 
 ## Proposed request flow
 
 ```text
-Badboy mobile Developer Agent screen
+Badboy Developer Agent UI
           |
           v
-Cloudflare Worker (auth, orchestration, streaming)
+Cloudflare Worker (auth, engine selector, orchestration, streaming)
           |
-          +--> Existing AI providers (Badboy planning/review)
+          +--> Badboy Native: existing AI providers
           |
-          +--> GitHub REST API (read repo, create branch/PR after approval)
+          +--> Copilot SDK: validated isolated Actions runner
           |
-          +--> GitHub Actions workflow_dispatch (isolated tests/commands)
-          |
-          v
-Diff + test report + explicit user approval
+          +--> GitHub REST API: approved repository read/write
           |
           v
-GitHub branch / draft PR
+Plan + diff + test report + explicit approval
+          |
+          v
+Dedicated branch / Draft PR
 ```
 
-## Agent capabilities
+## GitHub authorization and safety
 
-### Badboy Developer Agent — first implementation
-- Explain repository structure and relevant source files.
-- Convert requests into a proposed plan and show affected files before editing.
-- Review code and propose minimal patches.
-- Use GitHub API to read files and create a branch/commit only after approval.
-- Trigger an allowlisted GitHub Actions workflow for tests in an ephemeral runner.
-- Stream progress and results back to the Badboy app.
-- Work without a Copilot subscription.
-
-### GitHub Copilot path
-- Keep repository-wide Copilot instructions and the custom Badboy Maintainer agent for supported GitHub/IDE experiences.
-- Do not represent this configuration as an in-app Copilot runtime.
-- Revisit the official Copilot SDK for in-app use only after its supported hosting, CLI lifecycle, and authentication requirements are verified for a Cloudflare-triggered ephemeral GitHub Actions runner.
-- Copilot remains optional; the first-party Badboy agent must work independently.
-
-## GitHub authorization
-
-Use a GitHub App or OAuth flow with least-privilege permissions. Prefer repository-scoped access. Request only the permissions required for the selected feature, such as:
-- Contents: read; write only when the user approves a patch/branch.
-- Pull requests: read; write only when the user approves PR creation.
-- Actions: write only to dispatch the specific allowlisted workflow.
+Use a GitHub App or OAuth flow with least-privilege, preferably repository-scoped permissions:
 - Metadata: read.
+- Contents: read by default; write only after explicit approval.
+- Pull requests: read by default; write only after explicit approval.
+- Actions: dispatch only the allowlisted workflow when authorized.
 
-Never ask users to paste tokens into chat. Store credentials only in encrypted server-side secrets. Never expose installation tokens or OAuth tokens to the mobile client, model prompt, logs, or PR content.
+Never ask the user to paste tokens into chat. Keep credentials server-side, encrypted, short-lived where possible, and out of mobile payloads, model prompts, logs, diffs, artifacts, and PR text.
 
-## Approval and safety model
-
-- Repository analysis is read-only by default.
-- File edits, command execution, branch creation, and PR creation each require explicit approval.
-- Only allowlisted GitHub Actions workflows and commands may run; use ephemeral runners and least-privilege job permissions.
-- Do not mount production credentials into test jobs.
-- Never merge PRs, push to `main`, deploy production, publish releases, or build/distribute APKs without separate explicit approval.
-- Show a diff and test output before asking to create a PR.
-- Redact secrets and user data from logs; enforce task timeouts and output limits.
+Read-only inspection is the default. File edits, commands, branch creation, PR creation, merge, production deployment, release publication, and APK builds each require their own explicit approval. No production secrets in test runners. Use ephemeral runners, job permissions, timeouts, output limits, and secret redaction.
 
 ## Delivery stages
 
-1. **Architecture and repository guardrails** — this document and the GitHub/Codespaces/Dependabot setup in this PR.
-2. **Cloudflare API foundation** — authenticated agent-session endpoints, provider/engine interface, task status, streaming, audit events, and tests.
-3. **GitHub connection** — OAuth/GitHub App authorization, repository picker, read-only inspection, branch and draft-PR actions behind approval.
-4. **Isolated task runner** — a narrowly scoped GitHub Actions workflow dispatched by Cloudflare for approved tests/commands.
-5. **Mobile UI** — Developer Agent screen, Badboy engine first, optional Copilot connection status, task plan, permission prompts, diff and test review.
-6. **Copilot SDK feasibility** — validate whether a supported Copilot SDK CLI runtime can be safely launched by an ephemeral GitHub Actions job with the user's eligible Copilot authentication. Do not block the Badboy agent on this.
-7. **Preview validation** — test with a non-production branch and repository; no automatic merge or production deployment.
+1. **Current PR — guardrails and architecture:** GitHub Copilot instructions, Badboy Maintainer agent, Codespaces, Dependabot, three engine modes, and the preservation contract.
+2. **Cloudflare API foundation:** authenticated agent sessions, engine/provider interface, task state, streaming, audit events, tests; Native engine first.
+3. **GitHub connection:** repository-scoped authorization and read-only inspection, then approved branch/PR operations.
+4. **Isolated runner:** allowlisted GitHub Actions workflow for approved tests/commands.
+5. **Copilot SDK feasibility:** prove SDK runtime/authentication works in the isolated runner; implement Copilot adapter only after proof.
+6. **Mobile UI:** engine selector (Native / Copilot SDK / Auto-Hybrid), task plan, permission prompts, switch/retry, diff and test review.
+7. **Preview and regression validation:** compare behavior against the PR #59 baseline and verify all existing functions before any merge.
 
 ## Acceptance criteria
 
-- Existing chat, voice, wake-word, memory, and settings behavior remains unchanged.
-- Badboy agent works independently of Copilot availability.
-- Initial API/orchestration remains on Cloudflare; no separate paid host is added.
-- No arbitrary shell execution occurs inside a Worker request.
-- GitHub credentials never reach the mobile app or model.
+- All PR #59 and earlier functionality remains intact; no existing files/features are removed or replaced.
+- Developer Agent exposes all three modes: Badboy Native, GitHub Copilot SDK, and Auto/Hybrid.
+- User can manually switch engines and retry a task with context retained.
+- Automatic fallback is transparent and does not repeat non-idempotent writes.
+- Native engine works without Copilot.
+- Normal Chat, Voice, Wake Word, Memory, settings, and provider routing are unaffected by Developer Agent engine selection.
+- Cloudflare remains the API/orchestration host; no new paid persistent host.
+- Copilot SDK runtime and authentication are proven before being described as operational.
+- No arbitrary shell execution inside a Worker.
 - Repository writes and commands are approval-gated and auditable.
-- All changes are covered by focused tests and reviewed in a draft PR.
-- No production deploy, merge, or APK build is triggered as part of implementation.
+- Regression tests cover affected existing behavior; Preview is tested before merge.
+- No merge, production deploy, release, or APK build without separate explicit approval.
 
 ## References
 
 - GitHub Copilot SDK: https://github.com/github/copilot-sdk
-- Cloudflare Workers documentation: https://developers.cloudflare.com/workers/
+- Cloudflare Workers: https://developers.cloudflare.com/workers/
 - GitHub Actions workflow dispatch: https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event
