@@ -21,6 +21,9 @@ interface AssistantContextValue {
   updateMemory: (id: string, title: string, content: string) => Promise<void>;
   deleteMemory: (id: string) => Promise<void>;
   clearChat: () => Promise<void>;
+  expertReviewDraft: string;
+  setExpertReviewDraft: (value: string) => void;
+  clearExpertReviewDraft: () => void;
 }
 
 const AssistantContext = createContext<AssistantContextValue | null>(null);
@@ -43,6 +46,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
   const [memories, setMemories] = useState<MemoryNote[]>([]);
   const [settings, setSettings] = useState<AssistantSettings>(DEFAULT_SETTINGS);
   const [storageError, setStorageError] = useState<string | null>(null);
+  const [expertReviewDraft, setExpertReviewDraftState] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -132,6 +136,14 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
     await persistMessages([]);
   }, []);
 
+  const setExpertReviewDraft = useCallback((value: string) => {
+    setExpertReviewDraftState(value);
+  }, []);
+
+  const clearExpertReviewDraft = useCallback(() => {
+    setExpertReviewDraftState('');
+  }, []);
+
   const value = useMemo(
     () => ({
       ready,
@@ -145,8 +157,11 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       updateMemory,
       deleteMemory,
       clearChat,
+      expertReviewDraft,
+      setExpertReviewDraft,
+      clearExpertReviewDraft,
     }),
-    [ready, messages, memories, settings, storageError, setMessages, updateSettings, saveMemory, updateMemory, deleteMemory, clearChat],
+    [ready, messages, memories, settings, storageError, setMessages, updateSettings, saveMemory, updateMemory, deleteMemory, clearChat, expertReviewDraft, setExpertReviewDraft, clearExpertReviewDraft],
   );
 
   return <AssistantContext.Provider value={value}>{children}</AssistantContext.Provider>;
