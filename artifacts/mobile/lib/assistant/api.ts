@@ -81,6 +81,77 @@ export async function streamReply(
   }
 }
 
+
+export type DeveloperEngineRequest = 'native' | 'copilot' | 'auto';
+
+export interface DeveloperAnalysisStreamResult {
+  taskId?: string;
+  engine?: string;
+}
+
+/** Stream a read-only Developer Agent analysis through the Cloudflare orchestration API. */
+export async function streamDeveloperAnalysis(
+  prompt: string,
+  projectContext: string,
+  requestedEngine: DeveloperEngineRequest,
+  onChunk: (chunk: string) => void,
+): Promise<DeveloperAnalysisStreamResult> {
+  const response = await expoFetch(apiUrl('/developer/analyze'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+    },
+    body: JSON.stringify({ prompt, projectContext, requestedEngine }),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      code?: string;
+    };
+    throw new Error(
+      body.error ?? `Developer Agent request failed (HTTP ${response.status}).`,
+    );
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('Developer Agent response stream is unavailable.');
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let complete = false;
+  let taskId: string | undefined;
+  let engine: string | undefined;
+
+  while (!complete) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const payload = line.slice(6);
+      if (payload === '[DONE]') {
+        complete = true;
+        break;
+      }
+      const event = JSON.parse(payload) as {
+        content?: string;
+        error?: string;
+        taskId?: string;
+        engine?: string;
+      };
+      if (event.taskId) taskId = event.taskId;
+      if (event.engine) engine = event.engine;
+      if (event.error) throw new Error(event.error);
+      if (event.content) onChunk(event.content);
+    }
+  }
+
+  return { taskId, engine };
+}
+
 export async function transcribeAudio(
   audioBase64: string,
   format: string,
