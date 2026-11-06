@@ -44,6 +44,8 @@ import {
   runAutoQASuite,
   saveGitHubToken,
 } from '@/lib/assistant/developer';
+import { resolveDeveloperEngine } from '@/lib/assistant/developerEngine';
+import type { DeveloperEngineMode } from '@/lib/assistant/types';
 
 interface LocalTelegramMessage {
   id: number;
@@ -92,6 +94,12 @@ export default function SettingsScreen() {
   const [expertReviewEvidence, setExpertReviewEvidence] = useState<RepositoryEvidence | null>(null);
   const [expertReviewBusy, setExpertReviewBusy] = useState(false);
   const [expertReviewError, setExpertReviewError] = useState<string | null>(null);
+  const [developerAnalysisPrompt, setDeveloperAnalysisPrompt] = useState('');
+  const [developerAnalysisReport, setDeveloperAnalysisReport] = useState('');
+  const [developerAnalysisError, setDeveloperAnalysisError] = useState<string | null>(null);
+  const [developerAnalysisBusy, setDeveloperAnalysisBusy] = useState(false);
+  const [developerAnalysisEngine, setDeveloperAnalysisEngine] = useState('');
+  const [developerAnalysisFallback, setDeveloperAnalysisFallback] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -145,6 +153,60 @@ export default function SettingsScreen() {
       setExpertReviewError(cause instanceof Error ? cause.message : 'Expert Review সম্পন্ন করা যায়নি।');
     } finally {
       setExpertReviewBusy(false);
+    }
+  };
+
+  const handleDeveloperAnalysis = async (engineOverride?: DeveloperEngineMode) => {
+    const prompt = developerAnalysisPrompt.trim();
+    if (!prompt || developerAnalysisBusy || !settings.onlineAI) return;
+
+    const requestedEngine = engineOverride ?? settings.developerEngine;
+    // Copilot SDK is intentionally unavailable until its isolated runtime and
+    // authentication are proven. Auto mode transparently uses Native for now.
+    const resolution = resolveDeveloperEngine(requestedEngine, false);
+    setDeveloperAnalysisError(null);
+    setDeveloperAnalysisReport('');
+    setDeveloperAnalysisFallback(resolution.reason ?? '');
+    setDeveloperAnalysisEngine(
+      resolution.status === 'unavailable'
+        ? 'GitHub Copilot SDK · not configured'
+        : resolution.activeEngine === 'native'
+          ? 'Badboy Native'
+          : 'GitHub Copilot SDK',
+    );
+
+    if (resolution.status === 'unavailable') {
+      setDeveloperAnalysisError(resolution.reason ?? 'Copilot SDK runtime এখনো প্রস্তুত নয়।');
+      return;
+    }
+
+    setDeveloperAnalysisBusy(true);
+    try {
+      const brain = getProjectBrainSummary();
+      const context = [
+        'You are Badboy Developer Agent, an expert project analysis copilot.',
+        'Analyze only; do not claim to read private GitHub files, modify files, run commands, create branches, or create pull requests.',
+        'The user has not enabled GitHub repository connection for this phase.',
+        'Preserve all existing features through PR #59: Chat, Voice, Wake Word, Memory, Project Brain, Settings, integrations, and provider routing.',
+        'Return: (1) understanding, (2) step-by-step plan, (3) likely files/modules, (4) risks and regression checks, (5) permissions or tools needed.',
+        'Project Brain context:',
+        JSON.stringify(brain, null, 2),
+        'User task:',
+        prompt,
+      ].join('\n\n');
+
+      let report = '';
+      await streamReply(context, settings, (chunk) => {
+        report += chunk;
+        setDeveloperAnalysisReport(report);
+      });
+      if (!report.trim()) throw new Error('বিশ্লেষণ থেকে কোনো রিপোর্ট পাওয়া যায়নি।');
+    } catch (cause) {
+      setDeveloperAnalysisError(
+        cause instanceof Error ? cause.message : 'Developer Agent analysis সম্পন্ন করা যায়নি।',
+      );
+    } finally {
+      setDeveloperAnalysisBusy(false);
     }
   };
 
@@ -541,6 +603,103 @@ export default function SettingsScreen() {
 
         {settings.developerMode ? (
           <View style={{ marginTop: 12, gap: 10 }}>
+            {/* Multi-engine Developer Agent Analysis */}
+            <View style={[styles.infoCard, { borderColor: colors.border, backgroundColor: colors.background }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Feather name="cpu" size={16} color={colors.primary} />
+                <Text style={[styles.label, { color: colors.foreground }]}>Developer Agent · Analysis Copilot</Text>
+              </View>
+              <Text style={[styles.smallNote, { color: colors.mutedForeground, marginTop: 4 }]}>
+                কাজের নির্দেশনা দিলে Badboy পরিকল্পনা, ঝুঁকি, প্রয়োজনীয় ফাইল ও regression test বিশ্লেষণ করবে। এই ধাপে GitHub-এ কোনো ফাইল পড়া বা পরিবর্তন করা হবে না।
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10 }}>
+                {([
+                  { id: 'native', label: 'Badboy Native', icon: 'cpu' },
+                  { id: 'copilot', label: 'Copilot SDK', icon: 'github' },
+                  { id: 'auto', label: 'Auto / Hybrid', icon: 'shuffle' },
+                ] as const).map((engine) => {
+                  const selected = settings.developerEngine === engine.id;
+                  return (
+                    <Pressable
+                      key={engine.id}
+                      onPress={() => {
+                        updateSettings({ developerEngine: engine.id });
+                        setDeveloperAnalysisError(null);
+                        setDeveloperAnalysisFallback('');
+                        setDeveloperAnalysisEngine('');
+                      }}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      style={{
+                        flexGrow: 1,
+                        minWidth: 105,
+                        borderWidth: selected ? 2 : 1,
+                        borderColor: selected ? colors.primary : colors.border,
+                        borderRadius: 12,
+                        paddingHorizontal: 10,
+                        paddingVertical: 9,
+                        backgroundColor: selected ? colors.secondary : colors.card,
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      <Feather name={engine.icon as any} size={15} color={selected ? colors.primary : colors.mutedForeground} />
+                      <Text style={{ color: selected ? colors.foreground : colors.mutedForeground, fontSize: 11, fontWeight: '700' }}>{engine.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <TextInput
+                value={developerAnalysisPrompt}
+                onChangeText={setDeveloperAnalysisPrompt}
+                placeholder="যেমন: Developer Mode-এর পরবর্তী কাজগুলো বিশ্লেষণ করে নিরাপদ implementation plan তৈরি করো…"
+                placeholderTextColor={colors.mutedForeground}
+                multiline
+                style={[styles.telegramInput, { color: colors.foreground, borderColor: colors.input, minHeight: 76, textAlignVertical: 'top', marginTop: 10 }]}
+              />
+              <Pressable
+                onPress={() => void handleDeveloperAnalysis()}
+                disabled={!developerAnalysisPrompt.trim() || developerAnalysisBusy || !settings.onlineAI}
+                style={[styles.primaryButton, { backgroundColor: colors.primary, opacity: !developerAnalysisPrompt.trim() || developerAnalysisBusy || !settings.onlineAI ? 0.5 : 1 }]}
+              >
+                {developerAnalysisBusy ? <ActivityIndicator size="small" color={colors.primaryForeground} /> : <Feather name="search" size={15} color={colors.primaryForeground} />}
+                <Text style={{ color: colors.primaryForeground, fontWeight: '700' }}>Analyze with selected engine</Text>
+              </Pressable>
+              {!settings.onlineAI ? <Text style={[styles.smallNote, { color: colors.destructive }]}>Analysis চালাতে Online AI চালু করতে হবে।</Text> : null}
+              {developerAnalysisEngine ? <Text style={[styles.smallNote, { color: colors.primary }]}>Selected execution: {developerAnalysisEngine}</Text> : null}
+              {developerAnalysisFallback ? <Text style={[styles.smallNote, { color: colors.mutedForeground }]}>{developerAnalysisFallback}</Text> : null}
+              {developerAnalysisError ? (
+                <View style={{ gap: 7 }}>
+                  <Text style={[styles.smallNote, { color: colors.destructive }]}>{developerAnalysisError}</Text>
+                  {settings.developerEngine === 'copilot' ? (
+                    <Pressable
+                      onPress={() => {
+                        updateSettings({ developerEngine: 'native' });
+                        void handleDeveloperAnalysis('native');
+                      }}
+                      style={[styles.secondaryButton, { backgroundColor: colors.secondary }]}
+                    >
+                      <Feather name="refresh-cw" size={14} color={colors.secondaryForeground} />
+                      <Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>একই Task Native দিয়ে Retry করুন</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ) : null}
+              {developerAnalysisReport ? (
+                <View style={[styles.planCard, { borderColor: colors.border, backgroundColor: colors.card, marginTop: 8 }]}>
+                  <Text style={[styles.label, { color: colors.foreground }]}>Analysis Report</Text>
+                  <Text selectable style={[styles.body, { color: colors.foreground, marginTop: 6, lineHeight: 21 }]}>{developerAnalysisReport}</Text>
+                  <Pressable
+                    onPress={() => Share.share({ title: 'Badboy Developer Analysis', message: developerAnalysisReport }).catch(() => setDeveloperAnalysisError('রিপোর্ট শেয়ার করা যায়নি।'))}
+                    style={[styles.secondaryButton, { backgroundColor: colors.secondary, marginTop: 8 }]}
+                  >
+                    <Feather name="share-2" size={14} color={colors.secondaryForeground} />
+                    <Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>রিপোর্ট শেয়ার করুন</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
+
             {/* Navigation Modules Tabs */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 4 }}>
               {[
