@@ -16,6 +16,8 @@ export interface MemoryNote {
   content: string;
 }
 
+export type DeveloperEngineMode = 'native' | 'copilot' | 'auto';
+
 export type ThemeName = 'badboy' | 'neon' | 'ocean' | 'purple' | 'emerald' | 'sunset' | 'light';
 
 export interface AssistantSettings {
@@ -24,6 +26,7 @@ export interface AssistantSettings {
   personality: string;
   autoImprove: boolean;
   developerMode: boolean;
+  developerEngine: DeveloperEngineMode;
   voiceProcessingConsent: boolean;
   voiceInputEnabled: boolean;
   voiceOutputEnabled: boolean;
@@ -53,6 +56,7 @@ export const DEFAULT_SETTINGS: AssistantSettings = {
   personality: 'Warm, thoughtful, clear, and practical. Always reply in Bangla (Bengali).',
   autoImprove: true,
   developerMode: false,
+  developerEngine: 'native',
   voiceProcessingConsent: false,
   voiceInputEnabled: true,
   voiceOutputEnabled: true,
