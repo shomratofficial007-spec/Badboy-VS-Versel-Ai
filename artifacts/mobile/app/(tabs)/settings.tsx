@@ -663,6 +663,7 @@ export default function SettingsScreen() {
               </Pressable>
               {!settings.onlineAI ? <Text style={[styles.smallNote, { color: colors.destructive }]}>Analysis চালাতে Online AI চালু করতে হবে।</Text> : null}
               {developerAnalysisEngine ? <Text style={[styles.smallNote, { color: colors.primary }]}>Selected execution: {developerAnalysisEngine}</Text> : null}
+              {developerAnalysisTaskId ? <Text selectable style={[styles.smallNote, { color: colors.mutedForeground }]}>Task ID: {developerAnalysisTaskId}</Text> : null}
               {developerAnalysisFallback ? <Text style={[styles.smallNote, { color: colors.mutedForeground }]}>{developerAnalysisFallback}</Text> : null}
               {developerAnalysisError ? (
                 <View style={{ gap: 7 }}>
