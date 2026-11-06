@@ -68,6 +68,15 @@ For SDK feasibility and approved repository commands, use a short-lived, isolate
 - Engine choice applies only to Developer Agent.
 - Clearly distinguish engine failure, provider quota/authentication failure, runner failure, and task/code failure.
 
+## Current implementation status (this delivery)
+
+- The existing mobile app already contains Developer Mode, Project Brain, Auto QA reporting, Expert Review, and a local task planner. This delivery extends that existing surface rather than creating a parallel Developer Mode.
+- The in-app Analysis Copilot uses the existing Cloudflare chat endpoint through the Badboy Native engine. It produces an analysis/plan only; it does not claim repository access, edit files, execute commands, or create PRs.
+- The mobile engine selector exposes Badboy Native, GitHub Copilot SDK, and Auto / Hybrid. Auto currently falls back transparently to Native.
+- The Copilot SDK option is deliberately marked unavailable until the SDK's CLI process lifecycle, supported Node runtime, authentication/entitlement, and isolated-runner behavior are proven. The official SDK communicates with and manages the Copilot CLI process; it is not a React Native library and must not be run inside a Cloudflare Worker.
+- GitHub repository connection, repository inspection, GitHub Actions dispatch, code writes, diff generation, and Draft PR creation are deferred to the later GitHub integration phase. Existing GitHub-related code is preserved but is not expanded in this delivery.
+- No Copilot SDK package is added to the mobile bundle or Cloudflare Worker, and no new paid persistent host is introduced.
+
 ## Proposed request flow
 
 ```text
