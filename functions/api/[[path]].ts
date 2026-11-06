@@ -1,3 +1,4 @@
+import { buildDeveloperAnalysisMessages, resolveDeveloperAnalysisEngine, validateDeveloperAnalysisPayload } from "./developerAgent.js";
 // Cloudflare Pages Function: /api/* routes backed by OpenRouter.
 // Directs /api/assistant/chat requests to OpenRouter with streaming SSE.
 
@@ -91,6 +92,7 @@ function jsonResponse(data: unknown, status = 200) {
 }
 
 const MAX_CHAT_REQUEST_BYTES = 64 * 1024;
+const MAX_DEVELOPER_REQUEST_BYTES = 16 * 1024;
 const MAX_SPEECH_REQUEST_BYTES = 64 * 1024;
 // Base64 expands audio by roughly 4/3. Keep the existing 6 MB encoded-audio
 // contract plus a small allowance for JSON metadata.
@@ -640,6 +642,181 @@ async function handleSpeechRequest(request: Request, env: Env): Promise<Response
   }, 503);
 }
 
+async function handleDeveloperAnalysisRequest(request: Request, env: Env): Promise<Response> {
+  const parsedBody = await readJsonBody(request, MAX_DEVELOPER_REQUEST_BYTES);
+  if ("response" in parsedBody) return parsedBody.response;
+
+  const validation = validateDeveloperAnalysisPayload(parsedBody.body);
+  if (!validation.ok) {
+    return jsonResponse(
+      { code: validation.code, error: validation.error },
+      400,
+    );
+  }
+
+  const resolution = resolveDeveloperAnalysisEngine(validation.value.requestedEngine);
+  if (resolution.status === "unavailable") {
+    return jsonResponse(
+      {
+        code: "COPILOT_RUNTIME_UNAVAILABLE",
+        error: resolution.reason,
+        requestedEngine: validation.value.requestedEngine,
+      },
+      409,
+    );
+  }
+
+  const apiKey = env.OPENROUTER_API_KEY?.trim() || "";
+  if (!apiKey) {
+    return jsonResponse(
+      {
+        code: "AI_NOT_CONFIGURED",
+        error: "Developer Agent Native engine requires OPENROUTER_API_KEY.",
+      },
+      503,
+    );
+  }
+
+  const taskId = crypto.randomUUID();
+  const engine = resolution.activeEngine ?? "native";
+  console.info(JSON.stringify({
+    component: "badboy-developer-agent",
+    event: "task_started",
+    taskId,
+    engine,
+    requestedEngine: validation.value.requestedEngine,
+  }));
+
+  let upstream: Response;
+  try {
+    const routed = await fetchChatWithFreeFallbacks(
+      apiKey,
+      buildDeveloperAnalysisMessages(validation.value),
+    );
+    upstream = routed.response;
+  } catch {
+    console.info(JSON.stringify({
+      component: "badboy-developer-agent",
+      event: "task_failed",
+      taskId,
+      engine,
+      reason: "upstream_network_error",
+    }));
+    return jsonResponse(
+      {
+        code: "DEVELOPER_AGENT_UPSTREAM_FAILED",
+        error: "Developer Agent could not reach an available AI provider.",
+        taskId,
+      },
+      502,
+    );
+  }
+
+  if (!upstream.ok || !upstream.body) {
+    const status = upstream.status === 429 ? 429 : 502;
+    console.info(JSON.stringify({
+      component: "badboy-developer-agent",
+      event: "task_failed",
+      taskId,
+      engine,
+      upstreamStatus: upstream.status,
+    }));
+    return jsonResponse(
+      {
+        code: upstream.status === 429 ? "OPENROUTER_RATE_LIMIT" : "DEVELOPER_AGENT_UPSTREAM_FAILED",
+        error: upstream.status === 429
+          ? "AI provider rate limit reached. Please try again shortly."
+          : `Developer Agent provider returned HTTP ${upstream.status}.`,
+        taskId,
+      },
+      status,
+    );
+  }
+
+  const encoder = new TextEncoder();
+  const reader = upstream.body.getReader();
+  const decoder = new TextDecoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (payload: string) =>
+        controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+      send(JSON.stringify({ taskId, engine, status: "started" }));
+      try {
+        let pending = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          pending += decoder.decode(value, { stream: true });
+          pending = pending.replace(/\r\n/g, "\n");
+          let boundary = pending.indexOf("\n\n");
+          while (boundary >= 0) {
+            const event = pending.slice(0, boundary);
+            pending = pending.slice(boundary + 2);
+            const parsed = extractDeltas(event);
+            for (const content of parsed.texts) {
+              send(JSON.stringify({ content, taskId, engine }));
+            }
+            if (parsed.done) {
+              send(JSON.stringify({ taskId, engine, status: "completed" }));
+              send("[DONE]");
+              controller.close();
+              return;
+            }
+            boundary = pending.indexOf("\\n\\n");
+          }
+        }
+        pending += decoder.decode();
+        if (pending.trim()) {
+          const parsed = extractDeltas(pending);
+          for (const content of parsed.texts) {
+            send(JSON.stringify({ content, taskId, engine }));
+          }
+        }
+        send(JSON.stringify({ taskId, engine, status: "completed" }));
+        send("[DONE]");
+        console.info(JSON.stringify({
+          component: "badboy-developer-agent",
+          event: "task_completed",
+          taskId,
+          engine,
+        }));
+        controller.close();
+      } catch {
+        console.info(JSON.stringify({
+          component: "badboy-developer-agent",
+          event: "task_failed",
+          taskId,
+          engine,
+          reason: "stream_interrupted",
+        }));
+        send(JSON.stringify({
+          error: "Developer Agent stream was interrupted.",
+          taskId,
+          engine,
+        }));
+        controller.close();
+      } finally {
+        try {
+          reader.releaseLock();
+        } catch {
+          // The stream reader may already be released.
+        }
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Badboy-Task-Id": taskId,
+      "X-Badboy-Engine": engine,
+      "X-Badboy-Task-Status": "running",
+      ...CORS_HEADERS,
+    },
+  });
+}
+
 export async function handleApiRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const rawPathname = url.pathname.replace(/\/+$/, "");
@@ -652,6 +829,26 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   }
 
   if (request.method === "GET") {
+    if (pathname === "/api/developer/health") {
+      const nativeAvailable = Boolean(env.OPENROUTER_API_KEY?.trim());
+      return jsonResponse({
+        status: nativeAvailable ? "ready" : "degraded",
+        engines: {
+          native: { available: nativeAvailable },
+          copilot: {
+            available: false,
+            reason: "Isolated Copilot CLI runtime and authentication are not yet validated.",
+          },
+          auto: { available: nativeAvailable, selectedEngine: nativeAvailable ? "native" : null },
+        },
+        capabilities: {
+          analysis: nativeAvailable,
+          repositoryRead: false,
+          repositoryWrite: false,
+          workflowDispatch: false,
+        },
+      }, nativeAvailable ? 200 : 503);
+    }
     if (pathname === "/api/healthz" || pathname === "/api/health") {
       const chatConfigured = Boolean(env.OPENROUTER_API_KEY?.trim());
       const transcriptionConfigured = Boolean(
@@ -679,6 +876,10 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
       );
     }
     return jsonResponse({ error: "Endpoint not found." }, 404);
+  }
+
+  if (request.method === "POST" && pathname === "/api/developer/analyze") {
+    return handleDeveloperAnalysisRequest(request, env);
   }
 
   if (request.method === "POST" && pathname === "/api/assistant/transcribe") {

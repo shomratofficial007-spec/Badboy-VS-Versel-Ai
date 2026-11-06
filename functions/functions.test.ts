@@ -528,3 +528,116 @@ test("onRequestPost - rejects malformed JSON with a consistent error envelope", 
   const json = (await response.json()) as any;
   assert.strictEqual(json.code, "INVALID_JSON_BODY");
 });
+
+
+test("developer health reports Native capability and unavailable Copilot runtime", async () => {
+  const context = {
+    request: new Request("https://example.com/api/developer/health"),
+    env: { OPENROUTER_API_KEY: "test-key" },
+  } as any;
+  const response = await onRequestGet(context);
+  assert.strictEqual(response.status, 200);
+  const json = (await response.json()) as any;
+  assert.strictEqual(json.engines.native.available, true);
+  assert.strictEqual(json.engines.copilot.available, false);
+  assert.strictEqual(json.engines.auto.selectedEngine, "native");
+  assert.strictEqual(json.capabilities.repositoryRead, false);
+  assert.strictEqual(json.capabilities.repositoryWrite, false);
+});
+
+test("developer analysis rejects invalid payloads before contacting providers", async () => {
+  const originalFetch = globalThis.fetch;
+  let providerCalled = false;
+  globalThis.fetch = (async () => {
+    providerCalled = true;
+    throw new Error("Provider must not be called for invalid payloads.");
+  }) as typeof globalThis.fetch;
+  try {
+    const context = {
+      request: new Request("https://example.com/api/developer/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: " " }),
+      }),
+      env: { OPENROUTER_API_KEY: "test-key" },
+    } as any;
+    const response = await onRequestPost(context);
+    assert.strictEqual(response.status, 400);
+    const json = (await response.json()) as any;
+    assert.strictEqual(json.code, "INVALID_DEVELOPER_PROMPT");
+    assert.strictEqual(providerCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("developer analysis keeps Copilot unavailable without calling an AI provider", async () => {
+  const originalFetch = globalThis.fetch;
+  let providerCalled = false;
+  globalThis.fetch = (async () => {
+    providerCalled = true;
+    throw new Error("Copilot-unavailable requests must not call Native providers.");
+  }) as typeof globalThis.fetch;
+  try {
+    const context = {
+      request: new Request("https://example.com/api/developer/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: "Inspect the repo", requestedEngine: "copilot" }),
+      }),
+      env: { OPENROUTER_API_KEY: "test-key" },
+    } as any;
+    const response = await onRequestPost(context);
+    assert.strictEqual(response.status, 409);
+    const json = (await response.json()) as any;
+    assert.strictEqual(json.code, "COPILOT_RUNTIME_UNAVAILABLE");
+    assert.strictEqual(providerCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("developer analysis streams Native output with task metadata and safe context", async () => {
+  const originalFetch = globalThis.fetch;
+  let sentMessages: any[] = [];
+  globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body || "{}"));
+    sentMessages = body.messages;
+    const mockSSE =
+      'data: {"choices":[{"delta":{"content":"পরিকল্পনা প্রস্তুত"}}]}\n\n' +
+      "data: [DONE]\n\n";
+    return new Response(mockSSE, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    });
+  }) as typeof globalThis.fetch;
+  try {
+    const context = {
+      request: new Request("https://example.com/api/developer/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: "Add a safe repository inspector",
+          projectContext: "Expo + Cloudflare",
+          requestedEngine: "auto",
+        }),
+      }),
+      env: { OPENROUTER_API_KEY: "test-key" },
+    } as any;
+    const response = await onRequestPost(context);
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(response.headers.get("X-Badboy-Engine"), "native");
+    assert.ok(response.headers.get("X-Badboy-Task-Id"));
+    assert.strictEqual(sentMessages[0].role, "system");
+    assert.match(sentMessages[0].content, /analysis-only/);
+    assert.ok(sentMessages[1].content.includes("Expo + Cloudflare"));
+    assert.match(sentMessages[1].content, /Add a safe repository inspector/);
+    const stream = await response.text();
+    assert.match(stream, /"status":"started"/);
+    assert.match(stream, /"content":"পরিকল্পনা প্রস্তুত"/);
+    assert.match(stream, /"status":"completed"/);
+    assert.ok(stream.includes("data: [DONE]"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
