@@ -739,7 +739,7 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env): Promi
   const stream = new ReadableStream({
     async start(controller) {
       const send = (payload: string) =>
-        controller.enqueue(encoder.encode(`data: ${payload}\\n\\n`));
+        controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
       send(JSON.stringify({ taskId, engine, status: "started" }));
       try {
         let pending = "";
@@ -747,8 +747,8 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env): Promi
           const { done, value } = await reader.read();
           if (done) break;
           pending += decoder.decode(value, { stream: true });
-          pending = pending.replace(/\\r\\n/g, "\\n");
-          let boundary = pending.indexOf("\\n\\n");
+          pending = pending.replace(/\r\n/g, "\n");
+          let boundary = pending.indexOf("\n\n");
           while (boundary >= 0) {
             const event = pending.slice(0, boundary);
             pending = pending.slice(boundary + 2);
