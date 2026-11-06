@@ -16,7 +16,7 @@ import {
   View,
 } from 'react-native';
 import { useAssistant } from '@/context/AssistantContext';
-import { streamReply } from '@/lib/assistant/api';
+import { streamDeveloperAnalysis, streamReply } from '@/lib/assistant/api';
 import { buildExpertReviewPrompt, inspectBadboyRepository, type RepositoryEvidence } from '@/lib/assistant/expertReview';
 import { useColors } from '@/hooks/useColors';
 import {
@@ -100,6 +100,7 @@ export default function SettingsScreen() {
   const [developerAnalysisBusy, setDeveloperAnalysisBusy] = useState(false);
   const [developerAnalysisEngine, setDeveloperAnalysisEngine] = useState('');
   const [developerAnalysisFallback, setDeveloperAnalysisFallback] = useState('');
+  const [developerAnalysisTaskId, setDeveloperAnalysisTaskId] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -166,6 +167,7 @@ export default function SettingsScreen() {
     const resolution = resolveDeveloperEngine(requestedEngine, false);
     setDeveloperAnalysisError(null);
     setDeveloperAnalysisReport('');
+    setDeveloperAnalysisTaskId('');
     setDeveloperAnalysisFallback(resolution.reason ?? '');
     setDeveloperAnalysisEngine(
       resolution.status === 'unavailable'
@@ -183,23 +185,17 @@ export default function SettingsScreen() {
     setDeveloperAnalysisBusy(true);
     try {
       const brain = getProjectBrainSummary();
-      const context = [
-        'You are Badboy Developer Agent, an expert project analysis copilot.',
-        'Analyze only; do not claim to read private GitHub files, modify files, run commands, create branches, or create pull requests.',
-        'The user has not enabled GitHub repository connection for this phase.',
-        'Preserve all existing features through PR #59: Chat, Voice, Wake Word, Memory, Project Brain, Settings, integrations, and provider routing.',
-        'Return: (1) understanding, (2) step-by-step plan, (3) likely files/modules, (4) risks and regression checks, (5) permissions or tools needed.',
-        'Project Brain context:',
-        JSON.stringify(brain, null, 2),
-        'User task:',
-        prompt,
-      ].join('\n\n');
-
       let report = '';
-      await streamReply(context, settings, (chunk) => {
-        report += chunk;
-        setDeveloperAnalysisReport(report);
-      });
+      const result = await streamDeveloperAnalysis(
+        prompt,
+        JSON.stringify(brain, null, 2),
+        requestedEngine,
+        (chunk) => {
+          report += chunk;
+          setDeveloperAnalysisReport(report);
+        },
+      );
+      setDeveloperAnalysisTaskId(result.taskId ?? '');
       if (!report.trim()) throw new Error('বিশ্লেষণ থেকে কোনো রিপোর্ট পাওয়া যায়নি।');
     } catch (cause) {
       setDeveloperAnalysisError(
