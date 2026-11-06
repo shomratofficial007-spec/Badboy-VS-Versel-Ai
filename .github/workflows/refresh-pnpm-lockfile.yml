@@ -27,7 +27,7 @@ jobs:
         with:
           node-version: 22
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10.8.1
       - name: Regenerate lockfile from workspace manifests
