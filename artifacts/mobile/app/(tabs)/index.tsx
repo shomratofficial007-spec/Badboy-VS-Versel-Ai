@@ -980,7 +980,7 @@ export default function ChatScreen() {
                 {improving ? <ActivityIndicator size="small" color={colors.primary} /> : <Feather name="sliders" size={14} color={colors.primary} />}
                 <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '600' }}>শৈলী সংশোধন</Text>
               </Pressable>
-            ) : null
+            ) : undefined
           }
         />
       )}
