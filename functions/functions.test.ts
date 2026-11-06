@@ -604,8 +604,8 @@ test("developer analysis streams Native output with task metadata and safe conte
     const body = JSON.parse(String(init?.body || "{}"));
     sentMessages = body.messages;
     const mockSSE =
-      'data: {"choices":[{"delta":{"content":"পরিকল্পনা প্রস্তুত"}}]}\\n\\n' +
-      "data: [DONE]\\n\\n";
+      'data: {"choices":[{"delta":{"content":"পরিকল্পনা প্রস্তুত"}}]}\n\n' +
+      "data: [DONE]\n\n";
     return new Response(mockSSE, {
       status: 200,
       headers: { "Content-Type": "text/event-stream" },
