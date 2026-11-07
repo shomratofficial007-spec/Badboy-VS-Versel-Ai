@@ -861,28 +861,38 @@ test("requires owner authentication for private API and Developer Agent routes",
     OPENROUTER_API_KEY: "test-openrouter-key",
     AGENT_DB: {},
   };
-  const unauthorizedChat = await rawOnRequestPost({
-    request: new Request("https://example.com/api/assistant/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "Hello" }),
-    }),
-    env,
-  } as any);
-  assert.equal(unauthorizedChat.status, 401);
-  assert.equal((await unauthorizedChat.json() as any).code, "PERSONAL_AUTH_REQUIRED");
+  const protectedPostPaths = [
+    "/api/assistant/chat",
+    "/api/assistant/transcribe",
+    "/api/assistant/speech",
+    "/api/assistant/speak",
+    "/api/developer/analyze",
+  ];
+  for (const path of protectedPostPaths) {
+    const response = await rawOnRequestPost({
+      request: new Request(`https://example.com${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "Hello" }),
+      }),
+      env,
+    } as any);
+    assert.equal(response.status, 401, `${path} must require the owner token`);
+  }
 
-  const unauthorizedDeveloperHealth = await rawOnRequestGet({
-    request: new Request("https://example.com/api/developer/health"),
-    env,
-  } as any);
-  assert.equal(unauthorizedDeveloperHealth.status, 401);
-
-  const unauthorizedD1 = await rawOnRequestGet({
-    request: new Request("https://example.com/api/developer/tasks"),
-    env,
-  } as any);
-  assert.equal(unauthorizedD1.status, 401);
+  const protectedGetPaths = [
+    "/api/developer/health",
+    "/api/developer/tasks",
+    "/api/developer/projects",
+    "/api/developer/project-memory",
+  ];
+  for (const path of protectedGetPaths) {
+    const response = await rawOnRequestGet({
+      request: new Request(`https://example.com${path}`),
+      env,
+    } as any);
+    assert.equal(response.status, 401, `${path} must require the owner token`);
+  }
 
   const publicHealth = await rawOnRequestGet({
     request: new Request("https://example.com/api/healthz"),
