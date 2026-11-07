@@ -641,3 +641,68 @@ test("developer analysis streams Native output with task metadata and safe conte
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("developer analysis forwards multiple buffered SSE events before the upstream stream finishes", async () => {
+  const originalFetch = globalThis.fetch;
+  let releaseUpstream!: () => void;
+  const upstreamGate = new Promise<void>((resolve) => { releaseUpstream = resolve; });
+  const encoder = new TextEncoder();
+
+  globalThis.fetch = (async () => new Response(new ReadableStream<Uint8Array>({
+    async start(controller) {
+      controller.enqueue(encoder.encode(
+        'data: {"choices":[{"delta":{"content":"প্রথম অংশ"}}]}\n\n' +
+        'data: {"choices":[{"delta":{"content":"দ্বিতীয় অংশ"}}]}\n\n',
+      ));
+      await upstreamGate;
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      controller.close();
+    },
+  }), { status: 200, headers: { "Content-Type": "text/event-stream" } })) as typeof globalThis.fetch;
+
+  try {
+    const context = {
+      request: new Request("https://example.com/api/developer/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: "Stream safely" }),
+      }),
+      env: { OPENROUTER_API_KEY: "test-key" },
+    } as any;
+
+    const response = await onRequestPost(context);
+    assert.strictEqual(response.status, 200);
+    const reader = response.body!.getReader();
+    const started = await reader.read();
+    assert.match(new TextDecoder().decode(started.value), /"status":"started"/);
+
+    const firstRead = reader.read();
+    const first = await Promise.race([
+      firstRead.then((value) => ({ kind: "chunk" as const, value })),
+      new Promise<{ kind: "timeout" }>((resolve) =>
+        setTimeout(() => resolve({ kind: "timeout" }), 500),
+      ),
+    ]);
+    assert.strictEqual(first.kind, "chunk", "first content event should not wait for upstream EOF");
+    const firstChunk = first.kind === "chunk" ? first.value : await firstRead;
+    assert.match(new TextDecoder().decode(firstChunk.value), /প্রথম অংশ/);
+
+    const secondRead = reader.read();
+    const second = await Promise.race([
+      secondRead.then((value) => ({ kind: "chunk" as const, value })),
+      new Promise<{ kind: "timeout" }>((resolve) =>
+        setTimeout(() => resolve({ kind: "timeout" }), 500),
+      ),
+    ]);
+    assert.strictEqual(second.kind, "chunk", "the next event in the same upstream chunk should also be forwarded before EOF");
+    const secondChunk = second.kind === "chunk" ? second.value : await secondRead;
+    assert.match(new TextDecoder().decode(secondChunk.value), /দ্বিতীয় অংশ/);
+
+    releaseUpstream();
+    await reader.cancel();
+  } finally {
+    releaseUpstream();
+    globalThis.fetch = originalFetch;
+  }
+});;

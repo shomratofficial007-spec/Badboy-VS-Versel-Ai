@@ -39,6 +39,19 @@ if (!isReplitEnvironment) {
       return projectRoot;
     })(projectRoot);
 
+    // Expo export does not include Cloudflare's special _headers file in dist.
+    // Copy it explicitly so Workers Static Assets can apply the security headers.
+    const headersSource = path.join(projectRoot, 'public', '_headers');
+    const headersTarget = path.join(projectRoot, 'dist', '_headers');
+    if (fs.existsSync(headersSource)) {
+      fs.copyFileSync(headersSource, headersTarget);
+      console.log('Copied Cloudflare static asset headers to dist/_headers');
+    } else {
+      console.warn('Cloudflare static asset headers file is missing:', headersSource);
+      process.exitCode = 1;
+      return;
+    }
+
     const tempDir = path.join(workspaceRoot, 'dist-worker-temp');
     if (fs.existsSync(tempDir)) {
       fs.rmSync(tempDir, { recursive: true, force: true });

@@ -44,7 +44,7 @@ import {
 } from '@/lib/assistant/voice';
 import type { ChatMessage } from '@/lib/assistant/types';
 import { useColors } from '@/hooks/useColors';
-import { startOfflineWakeWord, stopOfflineWakeWord, subscribeToWakeWord } from '@/lib/assistant/wakeWord';
+import { startOfflineWakeWord, stopOfflineWakeWord, subscribeToWakeWord, subscribeToWakeWordStatus } from '@/lib/assistant/wakeWord';
 
 const VOICE_RECORDING_OPTIONS = {
   ...RecordingPresets.HIGH_QUALITY,
@@ -106,6 +106,8 @@ export default function ChatScreen() {
   const speechDetectedRef = useRef(false);
   const lastVoiceActivityAtRef = useRef(0);
   const voiceSessionActiveRef = useRef(false);
+  const wakeWordAllowedRef = useRef(false);
+  wakeWordAllowedRef.current = Platform.OS === 'android' && settings.voiceProcessingConsent && settings.wakeWordEnabled && settings.voiceInputEnabled;
 
   useEffect(() => { setSelectedLang(settings.voiceLanguage); }, [settings.voiceLanguage]);
   useEffect(() => {
@@ -173,14 +175,20 @@ export default function ChatScreen() {
   const resumeWakeWord = useCallback(async () => {
     if (!voiceSessionActiveRef.current) return;
     voiceSessionActiveRef.current = false;
-    if (Platform.OS !== 'android' || !settings.voiceProcessingConsent || !settings.wakeWordEnabled) return;
+    // Stop is authoritative: stale AI/TTS callbacks must never restart the listener.
+    if (!wakeWordAllowedRef.current) return;
     try {
       const status = await startOfflineWakeWord();
+      // Settings may change while native startup is in flight. Fail closed.
+      if (!wakeWordAllowedRef.current) {
+        await stopOfflineWakeWord().catch(() => undefined);
+        return;
+      }
       if (status.state === 'error') setError(status.message ?? 'Hey Badboy পুনরায় চালু করা যায়নি।');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Hey Badboy পুনরায় চালু করা যায়নি।');
     }
-  }, [settings.voiceProcessingConsent, settings.wakeWordEnabled]);
+  }, []);
 
   const sendMessage = useCallback(async (rawText: string) => {
     const text = rawText.trim();
@@ -457,6 +465,9 @@ export default function ChatScreen() {
             ? cause.message
             : 'মাইক্রোফোন চালু করা যায়নি। অনুমতি ও ডিভাইস সেটিংস পরীক্ষা করুন।',
         );
+        // Wake detection already handed off microphone ownership. If recorder
+        // startup fails, restore wake listening unless the user has pressed Stop.
+        if (voiceSessionActiveRef.current) await resumeWakeWord();
       }
       return;
     }
@@ -499,6 +510,7 @@ export default function ChatScreen() {
     settings.voiceProcessingConsent,
     settings.voiceInputEnabled,
     settings.autoSubmitVoice,
+    resumeWakeWord,
   ]);
 
   // Android foreground microphone service is started only after voice consent and permission.
@@ -508,6 +520,7 @@ export default function ChatScreen() {
   useEffect(() => {
     if (Platform.OS !== 'android' || !settings.voiceProcessingConsent || !settings.wakeWordEnabled || !settings.voiceInputEnabled) return;
     let active = true;
+    wakeWordAllowedRef.current = true;
     const subscription = subscribeToWakeWord(() => {
       if (!active || wakeHandoffRef.current) return;
       wakeHandoffRef.current = true;
@@ -518,6 +531,12 @@ export default function ChatScreen() {
         setTimeout(() => { wakeHandoffRef.current = false; }, 1800);
       });
     });
+    const statusSubscription = subscribeToWakeWordStatus((status) => {
+      if (!active || !wakeWordAllowedRef.current) return;
+      if (status.state === 'error') {
+        setError(status.message ?? 'Hey Badboy-এর wake listener বন্ধ হয়ে গেছে।');
+      }
+    });
     void requestRecordingPermissionsAsync().then((permission) => {
       if (!active || !permission.granted) return;
       return startOfflineWakeWord().then((status) => {
@@ -526,7 +545,13 @@ export default function ChatScreen() {
     }).catch((cause) => {
       if (active) setError(cause instanceof Error ? cause.message : 'Hey Badboy চালু করা যায়নি।');
     });
-    return () => { active = false; subscription.remove(); void stopOfflineWakeWord().catch(() => undefined); };
+    return () => {
+      active = false;
+      wakeWordAllowedRef.current = false;
+      subscription.remove();
+      statusSubscription.remove();
+      void stopOfflineWakeWord().catch(() => undefined);
+    };
   }, [settings.voiceProcessingConsent, settings.wakeWordEnabled, settings.voiceInputEnabled]);
 
   const startNewChat = () => {
@@ -980,7 +1005,7 @@ export default function ChatScreen() {
                 {improving ? <ActivityIndicator size="small" color={colors.primary} /> : <Feather name="sliders" size={14} color={colors.primary} />}
                 <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '600' }}>শৈলী সংশোধন</Text>
               </Pressable>
-            ) : null
+            ) : undefined
           }
         />
       )}

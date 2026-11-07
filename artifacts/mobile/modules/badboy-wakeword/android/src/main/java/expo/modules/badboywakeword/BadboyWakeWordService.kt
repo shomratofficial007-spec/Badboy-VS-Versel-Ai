@@ -14,6 +14,8 @@ import kotlin.math.*
 class BadboyWakeWordService : Service() {
  @Volatile private var running=false
  private var audio:AudioRecord?=null
+ private var wakeLock:PowerManager.WakeLock?=null
+ private var workerThread:Thread?=null
  private var model:Interpreter?=null
  private var threshold=0.696f
  private val rate=16000; private val size=16000; private val hop=1600
@@ -25,7 +27,26 @@ class BadboyWakeWordService : Service() {
   threshold=(intent?.getDoubleExtra("threshold",0.696)?:0.696).toFloat()
   val n=NotificationCompat.Builder(this,"badboy_wake").setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Hey Badboy সক্রিয়").setContentText("বলুন: Hey Badboy").setOngoing(true).build()
   if(Build.VERSION.SDK_INT>=29)startForeground(7401,n,ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE) else startForeground(7401,n)
-  Thread({detect()},"BadboyWakeWord").start();return START_NOT_STICKY
+  synchronized(this){
+   if(workerThread?.isAlive==true)return START_STICKY
+   acquireWakeLock()
+   workerThread=Thread({detect()},"BadboyWakeWord").also{it.start()}
+  }
+  return START_STICKY
+ }
+ @Synchronized private fun acquireWakeLock(){
+  val pm=getSystemService(POWER_SERVICE) as PowerManager
+  if(wakeLock?.isHeld!=true){
+   wakeLock=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"$packageName:BadboyWakeWord").apply{
+    setReferenceCounted(false)
+    acquire()
+   }
+  }
+ }
+ @Synchronized private fun releaseWakeLock(){
+  val lock=wakeLock
+  if(lock?.isHeld==true)lock.release()
+  wakeLock=null
  }
  private fun modelBuffer():MappedByteBuffer{val fd=assets.openFd("wake.tflite");return FileInputStream(fd.fileDescriptor).channel.map(FileChannel.MapMode.READ_ONLY,fd.startOffset,fd.length)}
  private fun detect(){
@@ -36,22 +57,28 @@ class BadboyWakeWordService : Service() {
    require(model!!.getOutputTensor(0).shape().contentEquals(intArrayOf(1,1))){"TFLite output shape mismatch"}
    listOf(0.5098,0.6013,0.8999,2.5629).forEach{filters.add(Biquad.hp(100.0,it,rate.toDouble()))}
    filters.add(Biquad.notch(50.0,30.0,rate.toDouble()));filters.add(Biquad.notch(60.0,30.0,rate.toDouble()))
+   // Match wake.json's 100–7000 Hz voice-band gate before log-mel extraction.
+   filters.add(Biquad.lp(7000.0,0.707,rate.toDouble()))
    val min=AudioRecord.getMinBufferSize(rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT);require(min>0)
    val rec=AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION,rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,max(min,hop*4))
    require(rec.state==AudioRecord.STATE_INITIALIZED);audio=rec;rec.startRecording();running=true;BadboyWakeWordBridge.update("listening",true)
    val pcm=ShortArray(hop)
    while(running){val n=rec.read(pcm,0,hop,AudioRecord.READ_BLOCKING);if(n<=0)error("AudioRecord read failed: $n")
-    for(i in 0 until n){var v=pcm[i]/32768f;filters.forEach{v=it.run(v)};ring[pos]=v;pos=(pos+1)%size};filled=min(size,filled+n)
+    var inputEnergy=0.0;var voiceBandEnergy=0.0
+    for(i in 0 until n){var v=pcm[i]/32768f;inputEnergy+=v.toDouble()*v;filters.forEach{v=it.run(v)};voiceBandEnergy+=v.toDouble()*v;ring[pos]=v;pos=(pos+1)%size}
+    filled=min(size,filled+n)
+    val voiceBandFraction=voiceBandEnergy/inputEnergy.coerceAtLeast(1e-12)
+    if(voiceBandFraction<0.15){streak=0;continue}
     if(filled==size)infer()
    }
   }catch(e:Exception){BadboyWakeWordBridge.update("error",false,e.message?: "Wake word service failed");stopSelf()}
-  finally{running=false;try{audio?.stop()}catch(_:Exception){};audio?.release();audio=null;model?.close();model=null}
+  finally{running=false;try{audio?.stop()}catch(_:Exception){};audio?.release();audio=null;model?.close();model=null;releaseWakeLock()}
  }
  private fun infer(){
   val x=FloatArray(size);var peak=0f;var energy=0.0
   for(i in 0 until size){val v=ring[(pos+i)%size];x[i]=v;peak=max(peak,abs(v));energy+=v.toDouble()*v}
   if(20*log10(sqrt(energy/size).coerceAtLeast(1e-10)) < -55 || peak<1e-5f){streak=0;return}
-  val gain=min(1.0,0.707/peak).toFloat();for(i in x.indices)x[i]*=gain
+  val gain=0.707f/peak;for(i in x.indices)x[i]*=gain
   val out=arrayOf(FloatArray(1));model!!.run(arrayOf(features(x)),out)
   val p=(1/(1+exp(-out[0][0].toDouble()))).toFloat();ema=.5*p+.5*ema
   if(ema>=threshold)streak++ else streak=0
@@ -79,7 +106,7 @@ class BadboyWakeWordService : Service() {
   var len=2;while(len<=n){val a=-2*PI/len;val wr0=cos(a);val wi0=sin(a);var s=0
    while(s<n){var wr=1.0;var wi=0.0;for(k in 0 until len/2){val u=s+k;val q=u+len/2;val tr=r[q]*wr-v[q]*wi;val ti=r[q]*wi+v[q]*wr;r[q]=r[u]-tr;v[q]=v[u]-ti;r[u]+=tr;v[u]+=ti;val nw=wr*wr0-wi*wi0;wi=wr*wi0+wi*wr0;wr=nw};s+=len};len=len shl 1}
  }
- override fun onDestroy(){running=false;try{audio?.stop()}catch(_:Exception){};super.onDestroy();BadboyWakeWordBridge.stopped()}
+ override fun onDestroy(){running=false;try{audio?.stop()}catch(_:Exception){};releaseWakeLock();workerThread=null;super.onDestroy();BadboyWakeWordBridge.stopped()}
  override fun onBind(intent:Intent?):IBinder?=null
 }
 private class Biquad(val b0:Double,val b1:Double,val b2:Double,val a1:Double,val a2:Double){
@@ -88,5 +115,6 @@ private class Biquad(val b0:Double,val b1:Double,val b2:Double,val a1:Double,val
  companion object{
   fun hp(fc:Double,q:Double,fs:Double):Biquad{val w=2*PI*fc/fs;val c=cos(w);val a=sin(w)/(2*q);val d=1+a;return Biquad((1+c)/2/d,-(1+c)/d,(1+c)/2/d,-2*c/d,(1-a)/d)}
   fun notch(fc:Double,q:Double,fs:Double):Biquad{val w=2*PI*fc/fs;val c=cos(w);val a=sin(w)/(2*q);val d=1+a;return Biquad(1/d,-2*c/d,1/d,-2*c/d,(1-a)/d)}
+  fun lp(fc:Double,q:Double,fs:Double):Biquad{val w=2*PI*fc/fs;val c=cos(w);val a=sin(w)/(2*q);val d=1+a;return Biquad((1-c)/2/d,(1-c)/d,(1-c)/2/d,-2*c/d,(1-a)/d)}
  }
 }
