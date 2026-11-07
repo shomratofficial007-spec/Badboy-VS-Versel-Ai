@@ -250,3 +250,14 @@ test("rejects creating a task when its parent is not owned by the verified ident
   assert.match(db.calls[0].sql, /WHERE \? IS NULL OR EXISTS[\s\S]*WHERE task_id = \? AND owner_id = \?/);
   assert.equal(db.calls[0].values.at(-1), "owner-a");
 });
+
+
+test("does not delete another owner's project memory", async () => {
+  const db = new RecordingD1();
+  db.changes = 0;
+  const storage = createAgentStorage(db);
+  const deleted = await storage.deleteProjectMemory("memory-owned-by-owner-b", "owner-a");
+  assert.equal(deleted, false);
+  assert.match(db.calls[0].sql, /WHERE memory_id = \? AND owner_id = \?/);
+  assert.deepEqual(db.calls[0].values, ["memory-owned-by-owner-b", "owner-a"]);
+});
