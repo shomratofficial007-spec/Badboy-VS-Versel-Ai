@@ -16,6 +16,7 @@ import {
   View,
 } from 'react-native';
 import { useAssistant } from '@/context/AssistantContext';
+import { VOICE_LANGUAGES, getAvailableSpeechVoices, speak, stopSpeaking, type AvailableSpeechVoice } from '@/lib/assistant/voice';
 import { streamDeveloperAnalysis, streamReply } from '@/lib/assistant/api';
 import { buildExpertReviewPrompt, inspectBadboyRepository, type RepositoryEvidence } from '@/lib/assistant/expertReview';
 import { useColors } from '@/hooks/useColors';
@@ -67,6 +68,9 @@ export default function SettingsScreen() {
   const [telegramItems, setTelegramItems] = useState<LocalTelegramMessage[]>([]);
   const [telegramBusy, setTelegramBusy] = useState(false);
   const [telegramError, setTelegramError] = useState<string | null>(null);
+  const [languageSearch, setLanguageSearch] = useState('');
+  const [availableVoices, setAvailableVoices] = useState<AvailableSpeechVoice[]>([]);
+  const [voiceListLoading, setVoiceListLoading] = useState(false);
 
   // Agent Execution System States
   const [agentPrompt, setAgentPrompt] = useState('');
@@ -104,6 +108,8 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     let active = true;
+    setVoiceListLoading(true);
+    getAvailableSpeechVoices().then((voices) => { if (active) setAvailableVoices(voices); }).finally(() => { if (active) setVoiceListLoading(false); });
     hasTelegramBot().then((connected) => {
       if (active) setTelegramConnected(connected);
     }).catch(() => {
@@ -984,14 +990,41 @@ export default function SettingsScreen() {
         <SettingSwitch colors={colors} title="Auto Submit Voice Input" subtitle="কথা শেষ হলে transcription স্বয়ংক্রিয়ভাবে AI-তে পাঠাবে। বন্ধ থাকলে লেখা draft-এ থাকবে।" value={settings.autoSubmitVoice} onValueChange={(value) => updateSettings({ autoSubmitVoice: value })} />
         <SettingSwitch colors={colors} title="Hey Badboy Wake Word" subtitle="সম্মতি ও microphone permission থাকলে Android-এ wake-word listener চালু রাখবে।" value={settings.wakeWordEnabled} onValueChange={(value) => updateSettings({ wakeWordEnabled: value })} />
         <View style={[styles.rule, { backgroundColor: colors.border }]} />
-        <Text style={[styles.label, { color: colors.foreground, marginBottom: 8 }]}>Voice Language</Text>
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          {([{ id: 'bn-BD', label: 'বাংলা (Bangladesh)' }, { id: 'en-US', label: 'English (US)' }] as const).map((item) => (
-            <Pressable key={item.id} onPress={() => updateSettings({ voiceLanguage: item.id })} accessibilityRole="button" accessibilityState={{ selected: settings.voiceLanguage === item.id }} style={{ flex: 1, minHeight: 42, borderWidth: 1, borderRadius: 11, borderColor: settings.voiceLanguage === item.id ? colors.primary : colors.border, backgroundColor: settings.voiceLanguage === item.id ? colors.secondary : colors.background, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 }}>
-              <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: settings.voiceLanguage === item.id ? '800' : '600' }}>{item.label}</Text>
-            </Pressable>
-          ))}
-        </View>
+        <Text style={[styles.label, { color: colors.foreground, marginBottom: 8 }]}>ভাষা নির্বাচন · Language</Text>
+        <TextInput value={languageSearch} onChangeText={setLanguageSearch} placeholder="ভাষা খুঁজুন / Search language..." placeholderTextColor={colors.mutedForeground} style={[styles.telegramInput, { color: colors.foreground, borderColor: colors.input, marginTop: 0, marginBottom: 8 }]} accessibilityLabel="ভাষা খুঁজুন" />
+        <ScrollView nestedScrollEnabled style={{ maxHeight: 220, borderWidth: 1, borderColor: colors.border, borderRadius: 12 }} contentContainerStyle={{ padding: 6, gap: 5 }}>
+          {VOICE_LANGUAGES.filter((item) => !languageSearch.trim() || item.label.toLocaleLowerCase().includes(languageSearch.trim().toLocaleLowerCase()) || item.code.toLocaleLowerCase().includes(languageSearch.trim().toLocaleLowerCase())).map((item) => {
+            const selected = settings.voiceLanguage === item.code;
+            return <Pressable key={item.code} onPress={() => { updateSettings({ voiceLanguage: item.code, voiceIdentifier: null }); setLanguageSearch(''); }} accessibilityRole="button" accessibilityState={{ selected }} style={{ minHeight: 42, borderRadius: 9, borderWidth: selected ? 1.5 : 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.secondary : colors.background, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flex: 1 }}><Text style={{ color: colors.foreground, fontSize: 13, fontWeight: selected ? '800' : '500' }}>{item.label}</Text><Text style={{ color: colors.mutedForeground, fontSize: 10 }}>{item.code}</Text></View>
+              {selected ? <Feather name="check-circle" size={16} color={colors.primary} /> : null}
+            </Pressable>;
+          })}
+        </ScrollView>
+        <View style={[styles.rule, { backgroundColor: colors.border }]} />
+        <Text style={[styles.label, { color: colors.foreground, marginBottom: 4 }]}>পছন্দের কণ্ঠস্বর · Voice</Text>
+        <Text style={[styles.smallNote, { color: colors.mutedForeground, marginTop: 0, marginBottom: 8 }]}>ফোনে ইনস্টল করা TTS voice-গুলো এখানে দেখাবে। ভাষা অনুযায়ী উপলভ্য কণ্ঠস্বর আলাদা হতে পারে।</Text>
+        {voiceListLoading ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+        <ScrollView nestedScrollEnabled style={{ maxHeight: 190, borderWidth: 1, borderColor: colors.border, borderRadius: 12 }} contentContainerStyle={{ padding: 6, gap: 5 }}>
+          <Pressable onPress={() => updateSettings({ voiceIdentifier: null })} style={{ minHeight: 42, borderRadius: 9, borderWidth: 1, borderColor: settings.voiceIdentifier ? colors.border : colors.primary, backgroundColor: settings.voiceIdentifier ? colors.background : colors.secondary, paddingHorizontal: 10, justifyContent: 'center' }}>
+            <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: settings.voiceIdentifier ? '500' : '800' }}>ডিফল্ট / Cloud voice</Text>
+          </Pressable>
+          {availableVoices.filter((voice) => voice.language.toLowerCase().split(/[-_]/)[0] === settings.voiceLanguage.toLowerCase().split(/[-_]/)[0]).map((voice) => {
+            const selected = settings.voiceIdentifier === voice.identifier;
+            return <View key={voice.identifier} style={{ minHeight: 48, borderRadius: 9, borderWidth: selected ? 1.5 : 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.secondary : colors.background, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Pressable onPress={() => updateSettings({ voiceIdentifier: voice.identifier })} style={{ flex: 1, justifyContent: 'center', minHeight: 42 }}>
+                <Text numberOfLines={1} style={{ color: colors.foreground, fontSize: 12, fontWeight: selected ? '800' : '500' }}>{voice.name}</Text><Text style={{ color: colors.mutedForeground, fontSize: 10 }}>{voice.language}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel={`নমুনা শুনুন: ${voice.name}`} onPress={() => { updateSettings({ voiceIdentifier: voice.identifier }); speak(settings.voiceLanguage.startsWith('bn') ? 'হ্যালো, আমি ব্যাডবয়। তোমার কেমন লাগছে?' : 'Hello, I am Badboy. How do you like this voice?', settings.voiceLanguage, {}, voice.identifier); }} style={{ paddingHorizontal: 9, paddingVertical: 7, borderRadius: 8, backgroundColor: colors.primary }}>
+                <Feather name="play" size={14} color={colors.primaryForeground} />
+              </Pressable>
+            </View>;
+          })}
+          {!voiceListLoading && availableVoices.filter((voice) => voice.language.toLowerCase().split(/[-_]/)[0] === settings.voiceLanguage.toLowerCase().split(/[-_]/)[0]).length === 0 ? <Text style={{ color: colors.mutedForeground, fontSize: 12, padding: 10 }}>এই ভাষার কোনো installed voice পাওয়া যায়নি। ডিফল্ট voice ব্যবহার হবে। Android-এর Text-to-Speech settings থেকে voice install করতে পারো।</Text> : null}
+        </ScrollView>
+        <Pressable onPress={() => stopSpeaking()} style={[styles.secondaryButton, { backgroundColor: colors.secondary, marginTop: 8 }]}>
+          <Feather name="square" size={13} color={colors.secondaryForeground} /><Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>নমুনা বন্ধ করুন</Text>
+        </Pressable>
         <View style={[styles.wakeCard, { backgroundColor: colors.accent }]}>
           <Feather name="shield" size={16} color={colors.accentForeground} />
           <Text style={[styles.wakeText, { color: colors.accentForeground }]}>
