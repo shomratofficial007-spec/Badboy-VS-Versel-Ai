@@ -161,6 +161,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
           await Promise.all([persistMessages([]), persistSettings(DEFAULT_SETTINGS)]);
         }
 
+        if (!active) return;
         await setLocalFirebaseOwner(uid);
         if (active) setCloudSyncReadyUid(uid);
       } catch (error) {
