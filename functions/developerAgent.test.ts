@@ -4,7 +4,7 @@ import {
   buildDeveloperAnalysisMessages,
   resolveDeveloperAnalysisEngine,
   validateDeveloperAnalysisPayload,
-} from "./api/developerAgent.js";
+} from "./api/developerAgent.ts";
 
 test("validates a native developer analysis request", () => {
   const result = validateDeveloperAnalysisPayload({
