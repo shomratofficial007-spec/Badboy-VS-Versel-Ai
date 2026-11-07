@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import test from "node:test";
 // Node ESM imports require .js extension when pointing to typescript files
-import { onRequestGet, onRequestPost } from "./api/[[path]].js";
+import { onRequestGet, onRequestPost } from "./api/[[path]].ts";
 
 test("onRequestGet - health check endpoint returns status ok", async () => {
   const context = {
