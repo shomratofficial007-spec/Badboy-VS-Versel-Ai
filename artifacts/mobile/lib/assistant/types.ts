@@ -33,7 +33,9 @@ export interface AssistantSettings {
   autoSpeakReplies: boolean;
   wakeWordEnabled: boolean;
   autoSubmitVoice: boolean;
-  voiceLanguage: 'bn-BD' | 'en-US';
+  voiceLanguage: string;
+  /** Installed device/browser TTS voice; null uses the default/cloud voice. */
+  voiceIdentifier?: string | null;
   roadmap: {
     webDevelopment: boolean;
     appDevelopment: boolean;
@@ -64,6 +66,7 @@ export const DEFAULT_SETTINGS: AssistantSettings = {
   wakeWordEnabled: true,
   autoSubmitVoice: true,
   voiceLanguage: 'bn-BD',
+  voiceIdentifier: null,
   roadmap: {
     webDevelopment: true,
     appDevelopment: true,

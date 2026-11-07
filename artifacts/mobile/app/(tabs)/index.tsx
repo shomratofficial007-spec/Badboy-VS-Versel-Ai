@@ -167,10 +167,10 @@ export default function ChatScreen() {
       const started = speak(text, selectedLang, {
         onDone: () => resolve(),
         onError: () => resolve(),
-      });
+      }, settings.voiceIdentifier);
       if (!started) resolve();
     });
-  }, [selectedLang, settings.voiceOutputEnabled]);
+  }, [selectedLang, settings.voiceIdentifier, settings.voiceOutputEnabled]);
 
   const resumeWakeWord = useCallback(async () => {
     if (!voiceSessionActiveRef.current) return;
@@ -296,7 +296,7 @@ export default function ChatScreen() {
               setError('উত্তরটি শোনানো যায়নি। আবার চেষ্টা করুন।');
               resolve();
             },
-          });
+          }, settings.voiceIdentifier);
           if (!started) { setSpeakingMessageId(null); resolve(); }
         });
       }
@@ -655,9 +655,9 @@ export default function ChatScreen() {
         setSpeakingMessageId(null);
         setError('উত্তরটি শোনানো যায়নি। আবার চেষ্টা করুন।');
       },
-    });
+    }, settings.voiceIdentifier);
     if (!started) setSpeakingMessageId(null);
-  }, [selectedLang, setError, speakingMessageId, settings.voiceOutputEnabled]);
+  }, [selectedLang, setError, speakingMessageId, settings.voiceIdentifier, settings.voiceOutputEnabled]);
 
   const shareMessage = async (message: ChatMessage) => {
     try {
