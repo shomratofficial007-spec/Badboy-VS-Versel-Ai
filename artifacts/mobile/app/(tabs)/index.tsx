@@ -510,6 +510,7 @@ export default function ChatScreen() {
     settings.voiceProcessingConsent,
     settings.voiceInputEnabled,
     settings.autoSubmitVoice,
+    resumeWakeWord,
   ]);
 
   // Android foreground microphone service is started only after voice consent and permission.
