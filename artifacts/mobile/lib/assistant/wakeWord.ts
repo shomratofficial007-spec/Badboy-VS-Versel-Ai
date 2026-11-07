@@ -53,13 +53,22 @@ export async function stopOfflineWakeWord(): Promise<WakeWordStatus> {
     message: 'Offline wake word is not installed in this app build.',
   };
 }
+type NativeWakeWordEventMap = {
+  onWakeWordDetected(event: WakeWordEvent): void;
+  onWakeWordStatus(status: WakeWordStatus): void;
+};
+
+export function subscribeToWakeWordStatus(listener: (status: WakeWordStatus) => void): { remove(): void } {
+  const native = nativeModule();
+  if (!native) return { remove() {} };
+  const emitter = new EventEmitter<NativeWakeWordEventMap>(native as never);
+  return emitter.addListener('onWakeWordStatus', listener);
+}
+
 export function subscribeToWakeWord(listener: (event: WakeWordEvent) => void): { remove(): void } {
   const native = nativeModule();
   if (!native) return { remove() {} };
-  type WakeWordEventMap = {
-    onWakeWordDetected(event: WakeWordEvent): void;
-  };
-  const emitter = new EventEmitter<WakeWordEventMap>(native as never);
+  const emitter = new EventEmitter<NativeWakeWordEventMap>(native as never);
   return emitter.addListener('onWakeWordDetected', (event) => {
     if (event.phrase === 'hey-badboy') listener(event);
   });

@@ -44,7 +44,7 @@ import {
 } from '@/lib/assistant/voice';
 import type { ChatMessage } from '@/lib/assistant/types';
 import { useColors } from '@/hooks/useColors';
-import { startOfflineWakeWord, stopOfflineWakeWord, subscribeToWakeWord } from '@/lib/assistant/wakeWord';
+import { startOfflineWakeWord, stopOfflineWakeWord, subscribeToWakeWord, subscribeToWakeWordStatus } from '@/lib/assistant/wakeWord';
 
 const VOICE_RECORDING_OPTIONS = {
   ...RecordingPresets.HIGH_QUALITY,
@@ -531,6 +531,12 @@ export default function ChatScreen() {
         setTimeout(() => { wakeHandoffRef.current = false; }, 1800);
       });
     });
+    const statusSubscription = subscribeToWakeWordStatus((status) => {
+      if (!active || !wakeWordAllowedRef.current) return;
+      if (status.state === 'error') {
+        setError(status.message ?? 'Hey Badboy-এর wake listener বন্ধ হয়ে গেছে।');
+      }
+    });
     void requestRecordingPermissionsAsync().then((permission) => {
       if (!active || !permission.granted) return;
       return startOfflineWakeWord().then((status) => {
@@ -543,6 +549,7 @@ export default function ChatScreen() {
       active = false;
       wakeWordAllowedRef.current = false;
       subscription.remove();
+      statusSubscription.remove();
       void stopOfflineWakeWord().catch(() => undefined);
     };
   }, [settings.voiceProcessingConsent, settings.wakeWordEnabled, settings.voiceInputEnabled]);
