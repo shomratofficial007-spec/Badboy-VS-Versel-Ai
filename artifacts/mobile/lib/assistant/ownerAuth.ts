@@ -41,7 +41,7 @@ export async function saveOwnerToken(token: string): Promise<void> {
 export async function clearOwnerToken(): Promise<void> {
   activeToken = null;
   if (Platform.OS !== 'web') {
-    await SecureStore.deleteItemAsync(OWNER_TOKEN_KEY).catch(() => undefined);
+    await SecureStore.deleteItemAsync(OWNER_TOKEN_KEY);
   }
 }
 
