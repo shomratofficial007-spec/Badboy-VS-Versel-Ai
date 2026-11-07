@@ -6,8 +6,11 @@ import android.media.*
 import android.os.*
 import androidx.core.app.NotificationCompat
 import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.DataType
 import java.io.FileInputStream
 import java.nio.MappedByteBuffer
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 import kotlin.math.*
 
@@ -53,8 +56,20 @@ class BadboyWakeWordService : Service() {
   Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
   try{
    model=Interpreter(modelBuffer(),Interpreter.Options().setNumThreads(2))
-   require(model!!.getInputTensor(0).shape().contentEquals(intArrayOf(1,40,101))){"TFLite input shape mismatch"}
-   require(model!!.getOutputTensor(0).shape().contentEquals(intArrayOf(1,1))){"TFLite output shape mismatch"}
+   model!!.allocateTensors()
+   val inputTensor=model!!.getInputTensor(0)
+   val inputShape=inputTensor.shape()
+   require(inputShape.contentEquals(intArrayOf(1,40,101))){
+    "TFLite input shape mismatch: expected [1, 40, 101], got ${inputShape.contentToString()}"
+   }
+   require(inputTensor.dataType()==DataType.FLOAT32){
+    "TFLite input type mismatch: expected FLOAT32, got ${inputTensor.dataType()}"
+   }
+   val outputTensor=model!!.getOutputTensor(0)
+   val outputShape=outputTensor.shape()
+   require(outputTensor.numElements() in 1..2 && outputTensor.dataType()==DataType.FLOAT32){
+    "Unsupported TFLite output: shape=${outputShape.contentToString()}, type=${outputTensor.dataType()}, elements=${outputTensor.numElements()}"
+   }
    listOf(0.5098,0.6013,0.8999,2.5629).forEach{filters.add(Biquad.hp(100.0,it,rate.toDouble()))}
    filters.add(Biquad.notch(50.0,30.0,rate.toDouble()));filters.add(Biquad.notch(60.0,30.0,rate.toDouble()))
    // Match wake.json's 100–7000 Hz voice-band gate before log-mel extraction.
@@ -71,7 +86,7 @@ class BadboyWakeWordService : Service() {
     if(voiceBandFraction<0.15){streak=0;continue}
     if(filled==size)infer()
    }
-  }catch(e:Exception){BadboyWakeWordBridge.update("error",false,e.message?: "Wake word service failed");stopSelf()}
+  }catch(e:Exception){if(running){BadboyWakeWordBridge.update("error",false,e.message?: "Wake word service failed");stopSelf()}}
   finally{running=false;try{audio?.stop()}catch(_:Exception){};audio?.release();audio=null;model?.close();model=null;releaseWakeLock()}
  }
  private fun infer(){
@@ -79,11 +94,36 @@ class BadboyWakeWordService : Service() {
   for(i in 0 until size){val v=ring[(pos+i)%size];x[i]=v;peak=max(peak,abs(v));energy+=v.toDouble()*v}
   if(20*log10(sqrt(energy/size).coerceAtLeast(1e-10)) < -55 || peak<1e-5f){streak=0;return}
   val gain=0.707f/peak;for(i in x.indices)x[i]*=gain
-  val out=arrayOf(FloatArray(1));model!!.run(arrayOf(features(x)),out)
-  val p=(1/(1+exp(-out[0][0].toDouble()))).toFloat();ema=.5*p+.5*ema
+  val outputTensor=model!!.getOutputTensor(0)
+  val output=ByteBuffer.allocateDirect(outputTensor.numBytes()).order(ByteOrder.nativeOrder())
+  model!!.run(arrayOf(features(x)),output)
+  output.rewind()
+  val values=FloatArray(outputTensor.numElements()){output.float}
+  val p=when(values.size){
+   1->{val value=values[0];if(value in 0f..1f)value else (1/(1+exp(-value.toDouble()))).toFloat()}
+   2->{
+    val sum=values.sum()
+    if(values.all{it in 0f..1f} && abs(sum-1f)<0.05f)values[1]
+    else{
+     val high=max(values[0],values[1]).toDouble()
+     (exp(values[1].toDouble()-high)/(exp(values[0].toDouble()-high)+exp(values[1].toDouble()-high))).toFloat()
+    }
+   }
+   else->0f
+  }
+  ema=.5*p+.5*ema
   if(ema>=threshold)streak++ else streak=0
   val now=System.currentTimeMillis()
-  if(streak>=2 && now-last>=700){last=now;streak=0;BadboyWakeWordBridge.update("triggered",true);BadboyWakeWordBridge.detected(ema.toFloat());running=false;stopSelf()}
+  if(streak>=2 && now-last>=700){
+   last=now;streak=0;running=false
+   // Release microphone ownership before notifying JavaScript to start command recording.
+   try{audio?.stop()}catch(_:Exception){}
+   try{audio?.release()}catch(_:Exception){}
+   audio=null
+   BadboyWakeWordBridge.update("triggered",true)
+   BadboyWakeWordBridge.detected(ema.toFloat())
+   stopSelf()
+  }
  }
  private fun features(x:FloatArray):Array<FloatArray>{
   val out=Array(40){FloatArray(101)};val win=FloatArray(400){i->(.5-.5*cos(2*PI*i/399)).toFloat()};val bank=melBank()
@@ -106,7 +146,18 @@ class BadboyWakeWordService : Service() {
   var len=2;while(len<=n){val a=-2*PI/len;val wr0=cos(a);val wi0=sin(a);var s=0
    while(s<n){var wr=1.0;var wi=0.0;for(k in 0 until len/2){val u=s+k;val q=u+len/2;val tr=r[q]*wr-v[q]*wi;val ti=r[q]*wi+v[q]*wr;r[q]=r[u]-tr;v[q]=v[u]-ti;r[u]+=tr;v[u]+=ti;val nw=wr*wr0-wi*wi0;wi=wr*wi0+wi*wr0;wr=nw};s+=len};len=len shl 1}
  }
- override fun onDestroy(){running=false;try{audio?.stop()}catch(_:Exception){};releaseWakeLock();workerThread=null;super.onDestroy();BadboyWakeWordBridge.stopped()}
+ override fun onDestroy(){
+  running=false
+  try{audio?.stop()}catch(_:Exception){}
+  val worker=workerThread
+  if(worker!=null && worker!==Thread.currentThread()){
+   try{worker.join(1500)}catch(_:InterruptedException){Thread.currentThread().interrupt()}
+  }
+  releaseWakeLock()
+  workerThread=null
+  super.onDestroy()
+  BadboyWakeWordBridge.stopped()
+ }
  override fun onBind(intent:Intent?):IBinder?=null
 }
 private class Biquad(val b0:Double,val b1:Double,val b2:Double,val a1:Double,val a2:Double){
