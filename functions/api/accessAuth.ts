@@ -177,7 +177,7 @@ export async function authenticateCloudflareAccess(
       false,
       ["verify"],
     );
-    const signature = decodeBase64Url(segments[2]);
+    const signature = Uint8Array.from(decodeBase64Url(segments[2]));
     const signedData = new TextEncoder().encode(`${segments[0]}.${segments[1]}`);
     const signatureValid = await crypto.subtle.verify(
       "RSASSA-PKCS1-v1_5",
