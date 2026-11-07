@@ -7,11 +7,13 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { AssistantProvider } from '@/context/AssistantContext';
 import { OwnerAuthProvider, useOwnerAuth } from '@/context/OwnerAuthContext';
-import { setBaseUrl } from '@workspace/api-client-react';
+import { setAuthTokenGetter, setBaseUrl } from '@workspace/api-client-react';
+import { getOwnerToken } from '@/lib/assistant/ownerAuth';
 import { Stack } from 'expo-router';
 
 const domain = process.env.EXPO_PUBLIC_DOMAIN;
 setBaseUrl(domain ? `https://${domain}` : null);
+setAuthTokenGetter(getOwnerToken);
 
 const queryClient = new QueryClient();
 
