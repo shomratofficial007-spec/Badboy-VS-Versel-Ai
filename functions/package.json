@@ -4,13 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "tsx --test functions.test.ts developerAgent.test.ts agentStorage.test.ts accessAuth.test.ts personalAuth.test.ts",
+    "test": "node --experimental-strip-types --test functions.test.ts developerAgent.test.ts agentStorage.test.ts accessAuth.test.ts personalAuth.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250216.0",
     "@types/node": "^22.0.0",
-    "tsx": "catalog:",
     "typescript": "~5.9.3"
   }
 }
