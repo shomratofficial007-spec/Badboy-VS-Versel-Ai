@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import {
   getAuth,
+  // @ts-expect-error Firebase 12's React Native runtime exports this helper, but its shared TS declarations omit it.
   getReactNativePersistence,
   initializeAuth,
 } from 'firebase/auth';
