@@ -1,0 +1,37 @@
+# Initial advisory ruleset. Findings are reported to GitHub code scanning;
+# the issue threshold can be tightened after the existing Kotlin code is baselined.
+config:
+  validation: true
+  warningsAsErrors: false
+
+build:
+  maxIssues: 1000
+  excludeCorrectable: false
+
+complexity:
+  active: true
+  LongMethod:
+    active: true
+    threshold: 100
+  LongParameterList:
+    active: true
+    functionThreshold: 8
+    constructorThreshold: 8
+  TooManyFunctions:
+    active: false
+
+formatting:
+  active: false
+
+naming:
+  active: true
+
+style:
+  active: true
+  MagicNumber:
+    active: false
+  WildcardImport:
+    active: false
+  ReturnCount:
+    active: true
+    max: 4
