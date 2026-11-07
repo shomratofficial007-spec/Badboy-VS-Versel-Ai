@@ -88,6 +88,16 @@ jobs:
           EOF
           chmod +x gradlew
 
+          # CodeQL's Java autobuilder expects Gradle metadata at the checkout root.
+          # These temporary markers make it discover the root wrapper; that wrapper
+          # delegates the actual build to Expo's generated Android project.
+          cat > settings.gradle <<'EOF'
+          rootProject.name = 'badboy-codeql-autobuild'
+          EOF
+          cat > build.gradle <<'EOF'
+          // Build is delegated by the root gradlew wrapper to artifacts/mobile/android.
+          EOF
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
