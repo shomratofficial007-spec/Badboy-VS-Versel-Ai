@@ -87,7 +87,7 @@ export async function authenticatePersonalOwner(
     if (!(await tokensMatch(match[1], expected))) {
       return {
         ok: false,
-      response: jsonError(
+        response: jsonError(
           "PERSONAL_AUTH_INVALID",
           "Personal access key is invalid.",
           401,
