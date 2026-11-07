@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createAgentStorage, type D1Database, type D1PreparedStatement } from "./api/agentStorage.js";
+import { createAgentStorage, type D1Database, type D1PreparedStatement } from "./api/agentStorage.ts";
 
 class RecordingD1 implements D1Database {
   calls: Array<{ sql: string; values: unknown[] }> = [];
