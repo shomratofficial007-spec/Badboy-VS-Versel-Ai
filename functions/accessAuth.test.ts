@@ -60,7 +60,8 @@ test("rejects requests without the Cloudflare Access assertion", async () => {
 test("returns a safe service error when Access configuration is missing", async () => {
   const result = await authenticateCloudflareAccess(new Request("https://example.com/private"), {}, NOW);
   assert.equal(result.response?.status, 503);
-  assert.equal((await result.response!.json()).code, "ACCESS_AUTH_NOT_CONFIGURED");
+  const payload = await result.response!.json() as { code?: string };
+  assert.equal(payload.code, "ACCESS_AUTH_NOT_CONFIGURED");
 });
 
 test("validates signature, issuer, audience and expiry, then derives owner from sub", async () => {
