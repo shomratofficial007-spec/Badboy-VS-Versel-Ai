@@ -64,15 +64,8 @@ export async function verifyOwnerToken(token: string): Promise<void> {
 }
 
 export async function restoreOwnerSession(): Promise<boolean> {
-  const token = await getOwnerToken();
-  if (!token) return false;
-  try {
-    await verifyOwnerToken(token);
-    return true;
-  } catch (error) {
-    if ((error as { status?: number } | null)?.status === 401) {
-      await clearOwnerToken();
-    }
-    return false;
-  }
+  // A token that was verified before and saved in SecureStore keeps the local
+  // app available offline. Every server request still revalidates it, so a
+  // revoked/rotated token cannot access private server data.
+  return Boolean(await getOwnerToken());
 }
