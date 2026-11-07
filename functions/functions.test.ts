@@ -743,3 +743,31 @@ test("developer analysis forwards multiple buffered SSE events before the upstre
     globalThis.fetch = originalFetch;
   }
 });;
+
+
+test("keeps D1 task and project persistence routes unavailable until authentication is wired", async () => {
+  const paths = [
+    "/api/developer/tasks",
+    "/api/developer/projects",
+    "/api/developer/project-memory",
+  ];
+  for (const path of paths) {
+    const getContext = {
+      request: new Request(`https://example.com${path}`),
+      env: { AGENT_DB: {} },
+    } as any;
+    const getResponse = await onRequestGet(getContext);
+    assert.equal(getResponse.status, 404);
+
+    const postContext = {
+      request: new Request(`https://example.com${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ownerId: "attacker-controlled-owner" }),
+      }),
+      env: { AGENT_DB: {} },
+    } as any;
+    const postResponse = await onRequestPost(postContext);
+    assert.equal(postResponse.status, 404);
+  }
+});
