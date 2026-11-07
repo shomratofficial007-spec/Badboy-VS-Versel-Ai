@@ -88,6 +88,7 @@ function jsonResponse(data: unknown, status = 200) {
     status,
     headers: {
       "Content-Type": "application/json",
+      "Cache-Control": "no-store",
       ...CORS_HEADERS,
     },
   });
@@ -832,11 +833,19 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
 
-  // Validate the personal key only; all D1-backed routes remain closed until a later integration.
+  // Keep only service health and the credential verifier public. Every other
+  // API route, including Developer Agent and future D1 routes, requires the owner key.
   if (request.method === "POST" && pathname === "/api/auth/verify") {
     const auth = await authenticatePersonalOwner(request, env);
     if (!auth.ok) return auth.response;
     return jsonResponse({ authenticated: true }, 200);
+  }
+
+  const isPublicHealthCheck = request.method === "GET" &&
+    (pathname === "/api/healthz" || pathname === "/api/health");
+  if (!isPublicHealthCheck) {
+    const auth = await authenticatePersonalOwner(request, env);
+    if (!auth.ok) return auth.response;
   }
 
   if (request.method === "GET") {
