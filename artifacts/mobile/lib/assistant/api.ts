@@ -39,7 +39,7 @@ export async function streamReply(
     },
     body: JSON.stringify({
       message,
-      personality: settings.personality,
+      personality: `${settings.personality}\n\nLanguage preference: Reply in the language selected for voice input/output (locale: ${settings.voiceLanguage}). Keep the response in that language unless the user explicitly asks for another language.`,
       developerMode: settings.developerMode,
     }),
   });
