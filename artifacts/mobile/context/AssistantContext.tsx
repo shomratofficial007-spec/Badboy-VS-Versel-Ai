@@ -6,7 +6,7 @@ import React, {
   useMemo,
   useState,
 } from 'react';
-import { readLocalState, persistMessages, persistSettings, removeMemoryNote, storeMemoryNote, updateMemoryNote } from '@/lib/assistant/storage';
+import { readLocalState, persistMessages, persistSettings, removeMemoryNote, storeMemoryNote, updateMemoryNote, clearLocalAssistantData, getLocalFirebaseOwner, setLocalFirebaseOwner } from '@/lib/assistant/storage';
 import { DEFAULT_SETTINGS, type AssistantSettings, type ChatMessage, type MemoryNote } from '@/lib/assistant/types';
 import { subscribeToFirebaseAccount, loadCloudAssistantSnapshot, syncCloudAssistantSnapshot, type FirebaseAccount } from '@/lib/assistant/firebaseAccount';
 
@@ -109,63 +109,72 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
     }
   }, [settings, ready]);
 
-  // On sign-in, restore the user's cloud snapshot and merge it with existing local data.
-  // Firebase is only a storage/account service; the assistant engine remains local/Worker-backed.
+  // On sign-in, restore this account's cloud snapshot. Never merge another account's
+  // device data into the newly signed-in account.
   useEffect(() => {
     if (!ready || !authReady || !accountUser) return;
     let active = true;
     const uid = accountUser.uid;
     setCloudSyncReadyUid(null);
-    loadCloudAssistantSnapshot(uid)
-      .then(async (remote) => {
+    (async () => {
+      const localOwner = await getLocalFirebaseOwner();
+      const canMergeLocal = !localOwner || localOwner === uid;
+      try {
+        const remote = await loadCloudAssistantSnapshot(uid);
         if (!active) return;
+
         if (remote) {
+          const localMessages = canMergeLocal ? messages : [];
+          const localMemories = canMergeLocal ? memories : [];
+          const localSettings = canMergeLocal ? settings : DEFAULT_SETTINGS;
           const mergedMessages = new Map<string, ChatMessage>();
-          [...remote.messages, ...messages].forEach((item) => mergedMessages.set(item.id, item));
+          [...remote.messages, ...localMessages].forEach((item) => mergedMessages.set(item.id, item));
           const nextMessages = [...mergedMessages.values()]
             .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
             .slice(-100);
           const mergedMemories = new Map<string, MemoryNote>();
-          [...remote.memories, ...memories].forEach((item) => mergedMemories.set(item.id, item));
+          [...remote.memories, ...localMemories].forEach((item) => mergedMemories.set(item.id, item));
           const nextMemories = [...mergedMemories.values()];
-          setMessagesState(nextMessages);
-          setMemories(nextMemories);
-          setSettings({
+          const nextSettings = {
             ...DEFAULT_SETTINGS,
-            ...settings,
+            ...localSettings,
             ...remote.settings,
             roadmap: {
               ...DEFAULT_SETTINGS.roadmap,
-              ...settings.roadmap,
+              ...localSettings.roadmap,
               ...(remote.settings.roadmap ?? {}),
             },
-          });
+          };
+          setMessagesState(nextMessages);
+          setMemories(nextMemories);
+          setSettings(nextSettings);
           await Promise.all([
             persistMessages(nextMessages),
-            persistSettings({
-              ...DEFAULT_SETTINGS,
-              ...settings,
-              ...remote.settings,
-              roadmap: {
-                ...DEFAULT_SETTINGS.roadmap,
-                ...settings.roadmap,
-                ...(remote.settings.roadmap ?? {}),
-              },
-            }),
+            persistSettings(nextSettings),
           ]);
+        } else if (!canMergeLocal) {
+          // A different account has no backup yet: clear the previous account's local data.
+          await clearLocalAssistantData();
+          setMessagesState([]);
+          setMemories([]);
+          setSettings(DEFAULT_SETTINGS);
+          await Promise.all([persistMessages([]), persistSettings(DEFAULT_SETTINGS)]);
         }
+
+        await setLocalFirebaseOwner(uid);
         if (active) setCloudSyncReadyUid(uid);
-      })
-      .catch((error) => {
+      } catch (error) {
         if (!active) return;
         setCloudSyncError(
           error instanceof Error
             ? `Cloud Data পড়া যায়নি: ${error.message}`
             : 'Cloud Data পড়া যায়নি। Firestore Rules পরীক্ষা করুন।',
         );
-        // Keep the app fully usable locally; future writes will retry after rules/network are fixed.
-        setCloudSyncReadyUid(uid);
-      });
+        // Do not upload local data to a different account if its cloud snapshot
+        // could not be read. The user can retry after Firestore access is fixed.
+        if (canMergeLocal) setCloudSyncReadyUid(uid);
+      }
+    })();
     return () => { active = false; };
   }, [ready, authReady, accountUser?.uid]);
 
