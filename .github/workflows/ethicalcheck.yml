@@ -20,6 +20,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - name: Wait for Cloudflare preview security headers
+        if: github.event_name == 'pull_request'
+        env:
+          TARGET_URL: https://fix-pr-67-list-footer-null-type-badboy-vs-versel-ai.shomratofficial007.workers.dev
+        shell: bash
+        run: |
+          for attempt in $(seq 1 30); do
+            headers="$(curl -fsS -D - -o /dev/null "$TARGET_URL/" || true)"
+            if printf '%s\n' "$headers" | grep -qi '^content-security-policy:' \
+              && printf '%s\n' "$headers" | grep -qi '^x-frame-options:' \
+              && printf '%s\n' "$headers" | grep -qi '^strict-transport-security:' \
+              && printf '%s\n' "$headers" | grep -qi '^x-content-type-options:'; then
+              echo "Cloudflare preview is serving the expected security headers."
+              exit 0
+            fi
+            echo "Preview deployment not ready yet (attempt $attempt/30); waiting 10 seconds."
+            sleep 10
+          done
+          echo "Cloudflare preview did not expose the expected security headers."
+          exit 1
+
       - name: Scan Badboy Cloudflare Preview
         uses: zaproxy/action-baseline@v0.15.0
         with:
