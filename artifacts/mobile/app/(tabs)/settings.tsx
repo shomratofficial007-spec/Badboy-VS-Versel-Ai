@@ -1161,7 +1161,7 @@ export default function SettingsScreen() {
       <Pressable
         onPress={() => Alert.alert('Owner Login থেকে বের হবেন?', 'আবার Badboy ব্যবহার করতে Owner Token দিতে হবে। ফোনের Chat History ও Memory মুছবে না।', [
           { text: 'বাতিল', style: 'cancel' },
-          { text: 'Sign Out', style: 'destructive', onPress: () => void signOut() },
+          { text: 'Sign Out', style: 'destructive', onPress: () => void signOut().catch((cause) => Alert.alert('Sign Out ব্যর্থ', cause instanceof Error ? cause.message : 'SecureStore থেকে Token মুছতে সমস্যা হয়েছে।')) },
         ])}
         style={[styles.dangerButton, { borderColor: colors.border }]}
       >
