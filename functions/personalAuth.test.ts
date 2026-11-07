@@ -10,8 +10,11 @@ test("fails closed when the Worker secret is missing", async () => {
     new Request("https://example.com/api/auth/verify", { method: "POST" }),
     {},
   );
-  assert.equal(result.response?.status, 503);
-  assert.equal((await result.response!.json()).code, "PERSONAL_AUTH_NOT_CONFIGURED");
+  assert.equal(result.ok, false);
+  if (result.ok) throw new Error("Expected missing configuration to fail closed.");
+  assert.equal(result.response.status, 503);
+  const payload = await result.response.json() as { code?: string };
+  assert.equal(payload.code, "PERSONAL_AUTH_NOT_CONFIGURED");
 });
 
 test("rejects missing, malformed, and non-Bearer credentials", async () => {
@@ -22,7 +25,9 @@ test("rejects missing, malformed, and non-Bearer credentials", async () => {
       new Request("https://example.com/api/auth/verify", { method: "POST", headers }),
       authEnv,
     );
-    assert.equal(result.response?.status, 401);
+      assert.equal(result.ok, false);
+    if (result.ok) throw new Error("Expected malformed credentials to be rejected.");
+    assert.equal(result.response.status, 401);
   }
 });
 
@@ -34,7 +39,9 @@ test("accepts the configured key and assigns a server-owned identity", async () 
     }),
     authEnv,
   );
-  assert.equal(result.response, undefined);
+  assert.equal(result.ok, true);
+  if (!result.ok) throw new Error("Expected the configured owner token to authenticate.");
+  if (!result.ok) throw new Error("Expected the configured owner token to authenticate.");
   assert.deepEqual(result.identity, { ownerId: "badboy-personal-owner-v1" });
 });
 
@@ -46,8 +53,11 @@ test("rejects a different well-formed key", async () => {
     }),
     authEnv,
   );
-  assert.equal(result.response?.status, 401);
-  assert.equal((await result.response!.json()).code, "PERSONAL_AUTH_INVALID");
+  assert.equal(result.ok, false);
+  if (result.ok) throw new Error("Expected an incorrect token to be rejected.");
+  assert.equal(result.response.status, 401);
+  const payload = await result.response.json() as { code?: string };
+  assert.equal(payload.code, "PERSONAL_AUTH_INVALID");
 });
 
 test("does not trust owner identity supplied in query or request body", async () => {
