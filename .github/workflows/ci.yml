@@ -41,3 +41,6 @@ jobs:
 
       - name: Run workspace tests
         run: pnpm -r --if-present run test
+
+      - name: Apply D1 migrations to an isolated local database
+        run: pnpm exec wrangler d1 migrations apply badboy-agent-db --local --config wrangler.json

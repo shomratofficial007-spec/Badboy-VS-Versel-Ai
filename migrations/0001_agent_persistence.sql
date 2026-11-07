@@ -13,7 +13,10 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
   parent_task_id TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  FOREIGN KEY (parent_task_id) REFERENCES agent_tasks(task_id) ON DELETE SET NULL
+  UNIQUE(task_id, owner_id),
+  -- Composite ownership prevents a task from referencing another owner's parent.
+  FOREIGN KEY (parent_task_id, owner_id)
+    REFERENCES agent_tasks(task_id, owner_id) ON DELETE RESTRICT
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_tasks_owner_updated
@@ -28,7 +31,8 @@ CREATE TABLE IF NOT EXISTS agent_task_events (
   event_type TEXT NOT NULL,
   payload_json TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL,
-  FOREIGN KEY (task_id) REFERENCES agent_tasks(task_id) ON DELETE CASCADE
+  FOREIGN KEY (task_id, owner_id)
+    REFERENCES agent_tasks(task_id, owner_id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_task_events_owner_task_created
@@ -42,7 +46,8 @@ CREATE TABLE IF NOT EXISTS agent_projects (
   summary TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  UNIQUE(owner_id, project_key)
+  UNIQUE(owner_id, project_key),
+  UNIQUE(project_id, owner_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_projects_owner_updated
@@ -60,7 +65,8 @@ CREATE TABLE IF NOT EXISTS agent_project_memory (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   deleted_at TEXT,
-  FOREIGN KEY (project_id) REFERENCES agent_projects(project_id) ON DELETE CASCADE
+  FOREIGN KEY (project_id, owner_id)
+    REFERENCES agent_projects(project_id, owner_id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_memory_owner_project_updated

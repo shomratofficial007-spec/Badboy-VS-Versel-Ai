@@ -123,6 +123,7 @@ test("normalizes task text, stores optional fields, and rejects oversized summar
   assert.deepEqual(db.calls[0].values, [
     "task-2", "owner-a", "running", "native", "Review code", null,
     "parent-1", "2026-11-07T00:00:00.000Z", "2026-11-07T00:00:00.000Z",
+    "parent-1", "parent-1", "owner-a",
   ]);
   await assert.rejects(
     () => storage.createTask({
@@ -228,4 +229,35 @@ test("reports false when a memory deletion affects no rows", async () => {
   db.changes = 0;
   const storage = createAgentStorage(db);
   assert.equal(await storage.deleteProjectMemory("memory-missing", "owner-a"), false);
+});
+
+
+test("rejects creating a task when its parent is not owned by the verified identity", async () => {
+  const db = new RecordingD1();
+  db.changes = 0;
+  const storage = createAgentStorage(db);
+  await assert.rejects(
+    () => storage.createTask({
+      taskId: "child-task",
+      ownerId: "owner-a",
+      status: "queued",
+      engine: "native",
+      title: "Child task",
+      parentTaskId: "task-owned-by-owner-b",
+    }),
+    /Parent task must belong to the verified owner/,
+  );
+  assert.match(db.calls[0].sql, /WHERE \? IS NULL OR EXISTS[\s\S]*WHERE task_id = \? AND owner_id = \?/);
+  assert.equal(db.calls[0].values.at(-1), "owner-a");
+});
+
+
+test("does not delete another owner's project memory", async () => {
+  const db = new RecordingD1();
+  db.changes = 0;
+  const storage = createAgentStorage(db);
+  const deleted = await storage.deleteProjectMemory("memory-owned-by-owner-b", "owner-a");
+  assert.equal(deleted, false);
+  assert.match(db.calls[0].sql, /WHERE memory_id = \? AND owner_id = \?/);
+  assert.deepEqual(db.calls[0].values, ["memory-owned-by-owner-b", "owner-a"]);
 });

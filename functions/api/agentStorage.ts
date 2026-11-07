@@ -66,15 +66,22 @@ export function createAgentStorage(db: D1Database) {
       const taskId = requiredText(input.taskId, "Task ID", 128);
       const title = requiredText(input.title, "Task title", 200);
       const summary = input.summary?.trim() || null;
+      const parentTaskId = input.parentTaskId
+        ? requiredText(input.parentTaskId, "Parent task ID", 128)
+        : null;
       if (summary && summary.length > 4000) {
         throw new Error("Task summary must not exceed 4000 characters.");
       }
       const now = input.now ?? new Date().toISOString();
 
-      await db.prepare(
+      const result = await db.prepare(
         `INSERT INTO agent_tasks
           (task_id, owner_id, status, engine, title, summary, parent_task_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+         WHERE ? IS NULL OR EXISTS (
+           SELECT 1 FROM agent_tasks
+           WHERE task_id = ? AND owner_id = ?
+         )`,
       ).bind(
         taskId,
         ownerId,
@@ -82,10 +89,16 @@ export function createAgentStorage(db: D1Database) {
         input.engine,
         title,
         summary,
-        input.parentTaskId ?? null,
+        parentTaskId,
         now,
         now,
+        parentTaskId,
+        parentTaskId,
+        ownerId,
       ).run();
+      if ((result.meta?.changes ?? 0) !== 1) {
+        throw new Error("Parent task must belong to the verified owner.");
+      }
     },
 
     async appendTaskEvent(input: {
