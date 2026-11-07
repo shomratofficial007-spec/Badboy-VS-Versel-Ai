@@ -25,7 +25,7 @@ test("rejects missing, malformed, and non-Bearer credentials", async () => {
       new Request("https://example.com/api/auth/verify", { method: "POST", headers }),
       authEnv,
     );
-      assert.equal(result.ok, false);
+    assert.equal(result.ok, false);
     if (result.ok) throw new Error("Expected malformed credentials to be rejected.");
     assert.equal(result.response.status, 401);
   }
@@ -40,7 +40,6 @@ test("accepts the configured key and assigns a server-owned identity", async () 
     authEnv,
   );
   assert.equal(result.ok, true);
-  if (!result.ok) throw new Error("Expected the configured owner token to authenticate.");
   if (!result.ok) throw new Error("Expected the configured owner token to authenticate.");
   assert.deepEqual(result.identity, { ownerId: "badboy-personal-owner-v1" });
 });
@@ -73,5 +72,6 @@ test("does not trust owner identity supplied in query or request body", async ()
     },
   );
   const result = await authenticatePersonalOwner(request, authEnv);
+  if (!result.ok) throw new Error("Expected the configured owner token to authenticate.");
   assert.deepEqual(result.identity, { ownerId: "badboy-personal-owner-v1" });
 });
