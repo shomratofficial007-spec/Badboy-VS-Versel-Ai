@@ -5,6 +5,7 @@ const CHAT_KEY = 'oi-assistant-chat-v1';
 const SETTINGS_KEY = 'oi-assistant-settings-v1';
 const MEMORY_INDEX_KEY = 'oi-assistant-memory-index-v1';
 const MEMORY_PREFIX = 'oi-assistant-memory-';
+const FIREBASE_OWNER_KEY = 'badboy-firebase-local-owner-v1';
 
 type MemoryIndexItem = Pick<MemoryNote, 'id' | 'title' | 'createdAt'>;
 
@@ -112,4 +113,13 @@ export async function clearLocalAssistantData() {
     index.map((item) => deleteSecureOrFallback(`${MEMORY_PREFIX}${item.id}`)),
   );
   await AsyncStorage.multiRemove([CHAT_KEY, SETTINGS_KEY, MEMORY_INDEX_KEY]);
+}
+
+/** Keeps local app data from being uploaded to a different signed-in account. */
+export function getLocalFirebaseOwner() {
+  return AsyncStorage.getItem(FIREBASE_OWNER_KEY);
+}
+
+export function setLocalFirebaseOwner(uid: string) {
+  return AsyncStorage.setItem(FIREBASE_OWNER_KEY, uid);
 }
