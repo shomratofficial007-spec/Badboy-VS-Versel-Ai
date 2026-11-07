@@ -12,20 +12,22 @@ This is a card-free, single-owner authentication foundation for a personal Badbo
 3. Add a **Secret** named `BADBOY_OWNER_TOKEN` and paste the generated value directly into the Cloudflare secret field.
 4. Do not paste the key into GitHub, source code, chat, screenshots, or logs.
 
-The same key will later be entered into Badboy's sign-in screen and stored only with Android SecureStore. That mobile sign-in UI is intentionally a separate follow-up; this PR does not request or store the key in the app yet.
+Enter the same key in Badboy's Owner Login screen. On Android/iOS it is stored with Expo SecureStore; it is never written to AsyncStorage, source code, or logs. On web, the key remains in memory for the current page session because SecureStore is not available there.
 
 ## Current API contract
 
 - `POST /api/auth/verify` with `Authorization: Bearer <key>` returns `{ "authenticated": true }`.
-- Missing Worker configuration returns 503 (fail closed).
-- Missing or invalid credentials return 401.
+- Every other API route requires the same bearer token, including Chat, Developer Analysis, Transcription, Speech, and Developer Agent health.
+- Only `GET /api/health`, `GET /api/healthz`, CORS preflight, and the token verifier are public.
+- Missing Worker configuration returns 503 (fail closed); missing or invalid credentials return 401.
 - The verifier assigns the fixed server-side owner key `badboy-personal-owner-v1`; client-supplied owner IDs are ignored.
-- The endpoint never returns the owner key or credential and never logs either.
+- Authentication errors include no-store and CORS headers. The endpoint never returns the owner key or credential and never logs either.
 
 ## Security and rollout boundaries
 
-- The key is a long-lived bearer credential. Anyone who obtains it can act as the personal owner until it is rotated. Keep it private and store it in Android SecureStore when mobile integration is added.
-- Rotate/revoke it by replacing the Worker secret. Re-enter the new value on trusted devices after the mobile sign-in flow exists.
+- The key is a long-lived bearer credential. Anyone who obtains it can act as the personal owner until it is rotated. Keep it private.
+- Rotate/revoke it by replacing the Worker secret, then sign in again on trusted devices.
 - Send it only over HTTPS. Do not put it in URL parameters.
-- This PR only establishes and tests the verifier. Developer Agent D1 persistence routes remain 404/disabled; no D1 migration is applied remotely, no personal data route is enabled, and no production deployment or APK build is performed.
-- Before D1 routes are enabled, a later change must require this verifier on every private route, pass only the returned server-owned `ownerId` into storage, and add route-level cross-owner/unauthenticated tests.
+- Chat History and personal Memory remain on-device in their existing storage; owner login does not migrate or clear them.
+- The Developer Agent D1 persistence routes remain 404/disabled. Their storage primitives are not exposed through a route yet; authenticated requests still receive 404. No D1 migration is applied remotely.
+- No production deployment, merge, or APK build is performed.
