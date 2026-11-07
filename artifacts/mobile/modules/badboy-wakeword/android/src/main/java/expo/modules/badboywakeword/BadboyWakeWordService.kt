@@ -36,12 +36,18 @@ class BadboyWakeWordService : Service() {
    require(model!!.getOutputTensor(0).shape().contentEquals(intArrayOf(1,1))){"TFLite output shape mismatch"}
    listOf(0.5098,0.6013,0.8999,2.5629).forEach{filters.add(Biquad.hp(100.0,it,rate.toDouble()))}
    filters.add(Biquad.notch(50.0,30.0,rate.toDouble()));filters.add(Biquad.notch(60.0,30.0,rate.toDouble()))
+   // Match wake.json's 100–7000 Hz voice-band gate before log-mel extraction.
+   filters.add(Biquad.lp(7000.0,0.707,rate.toDouble()))
    val min=AudioRecord.getMinBufferSize(rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT);require(min>0)
    val rec=AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION,rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,max(min,hop*4))
    require(rec.state==AudioRecord.STATE_INITIALIZED);audio=rec;rec.startRecording();running=true;BadboyWakeWordBridge.update("listening",true)
    val pcm=ShortArray(hop)
    while(running){val n=rec.read(pcm,0,hop,AudioRecord.READ_BLOCKING);if(n<=0)error("AudioRecord read failed: $n")
-    for(i in 0 until n){var v=pcm[i]/32768f;filters.forEach{v=it.run(v)};ring[pos]=v;pos=(pos+1)%size};filled=min(size,filled+n)
+    var inputEnergy=0.0;var voiceBandEnergy=0.0
+    for(i in 0 until n){var v=pcm[i]/32768f;inputEnergy+=v.toDouble()*v;filters.forEach{v=it.run(v)};voiceBandEnergy+=v.toDouble()*v;ring[pos]=v;pos=(pos+1)%size}
+    filled=min(size,filled+n)
+    val voiceBandFraction=voiceBandEnergy/inputEnergy.coerceAtLeast(1e-12)
+    if(voiceBandFraction<0.15){streak=0;continue}
     if(filled==size)infer()
    }
   }catch(e:Exception){BadboyWakeWordBridge.update("error",false,e.message?: "Wake word service failed");stopSelf()}
@@ -88,5 +94,6 @@ private class Biquad(val b0:Double,val b1:Double,val b2:Double,val a1:Double,val
  companion object{
   fun hp(fc:Double,q:Double,fs:Double):Biquad{val w=2*PI*fc/fs;val c=cos(w);val a=sin(w)/(2*q);val d=1+a;return Biquad((1+c)/2/d,-(1+c)/d,(1+c)/2/d,-2*c/d,(1-a)/d)}
   fun notch(fc:Double,q:Double,fs:Double):Biquad{val w=2*PI*fc/fs;val c=cos(w);val a=sin(w)/(2*q);val d=1+a;return Biquad(1/d,-2*c/d,1/d,-2*c/d,(1-a)/d)}
+  fun lp(fc:Double,q:Double,fs:Double):Biquad{val w=2*PI*fc/fs;val c=cos(w);val a=sin(w)/(2*q);val d=1+a;return Biquad((1-c)/2/d,(1-c)/d,(1-c)/2/d,-2*c/d,(1-a)/d)}
  }
 }
