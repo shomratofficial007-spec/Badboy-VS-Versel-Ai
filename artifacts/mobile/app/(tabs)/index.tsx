@@ -44,7 +44,7 @@ import {
 } from '@/lib/assistant/voice';
 import type { ChatMessage } from '@/lib/assistant/types';
 import { useColors } from '@/hooks/useColors';
-import { startOfflineWakeWord, stopOfflineWakeWord, subscribeToWakeWord, subscribeToWakeWordStatus } from '@/lib/assistant/wakeWord';
+import { getOfflineWakeWordStatus, startOfflineWakeWord, stopOfflineWakeWord, subscribeToWakeWord, subscribeToWakeWordStatus } from '@/lib/assistant/wakeWord';
 
 const VOICE_RECORDING_OPTIONS = {
   ...RecordingPresets.HIGH_QUALITY,
@@ -106,6 +106,7 @@ export default function ChatScreen() {
   const speechDetectedRef = useRef(false);
   const lastVoiceActivityAtRef = useRef(0);
   const voiceSessionActiveRef = useRef(false);
+  const wakeResumePromiseRef = useRef<Promise<void> | null>(null);
   const wakeWordAllowedRef = useRef(false);
   wakeWordAllowedRef.current = Platform.OS === 'android' && settings.voiceProcessingConsent && settings.wakeWordEnabled && settings.voiceInputEnabled;
 
@@ -174,19 +175,67 @@ export default function ChatScreen() {
 
   const resumeWakeWord = useCallback(async () => {
     if (!voiceSessionActiveRef.current) return;
-    voiceSessionActiveRef.current = false;
-    // Stop is authoritative: stale AI/TTS callbacks must never restart the listener.
-    if (!wakeWordAllowedRef.current) return;
-    try {
-      const status = await startOfflineWakeWord();
-      // Settings may change while native startup is in flight. Fail closed.
+    // Recording completion and sendMessage can both request a resume. Share one
+    // in-flight operation so they cannot race two native service starts.
+    if (wakeResumePromiseRef.current) {
+      await wakeResumePromiseRef.current;
+      return;
+    }
+
+    const resumeTask = (async () => {
       if (!wakeWordAllowedRef.current) {
-        await stopOfflineWakeWord().catch(() => undefined);
+        voiceSessionActiveRef.current = false;
         return;
       }
-      if (status.state === 'error') setError(status.message ?? 'Hey Badboy পুনরায় চালু করা যায়নি।');
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Hey Badboy পুনরায় চালু করা যায়নি।');
+
+      let lastError = 'Hey Badboy পুনরায় চালু করা যায়নি।';
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          let status = await startOfflineWakeWord();
+          // Native start() initially reports "starting". Do not treat that as
+          // success until AudioRecord/model initialization reports "listening".
+          for (let check = 0; check < 24; check += 1) {
+            if (!wakeWordAllowedRef.current) {
+              await stopOfflineWakeWord().catch(() => undefined);
+              voiceSessionActiveRef.current = false;
+              return;
+            }
+            if (status.state === 'listening') {
+              voiceSessionActiveRef.current = false;
+              setWakeDetected(false);
+              return;
+            }
+            if (status.state === 'error') {
+              lastError = status.message ?? lastError;
+              break;
+            }
+            await new Promise<void>((resolve) => setTimeout(resolve, 150));
+            status = await getOfflineWakeWordStatus();
+          }
+          if (status.state === 'error') lastError = status.message ?? lastError;
+          else lastError = 'Android-এর Hey Badboy listener চালু হতে সময় নিচ্ছে।';
+        } catch (cause) {
+          lastError = cause instanceof Error ? cause.message : lastError;
+        }
+
+        if (!wakeWordAllowedRef.current) {
+          await stopOfflineWakeWord().catch(() => undefined);
+          voiceSessionActiveRef.current = false;
+          return;
+        }
+        await stopOfflineWakeWord().catch(() => undefined);
+        if (attempt < 2) await new Promise<void>((resolve) => setTimeout(resolve, 400));
+      }
+
+      voiceSessionActiveRef.current = false;
+      setError(lastError);
+    })();
+
+    wakeResumePromiseRef.current = resumeTask;
+    try {
+      await resumeTask;
+    } finally {
+      if (wakeResumePromiseRef.current === resumeTask) wakeResumePromiseRef.current = null;
     }
   }, []);
 
