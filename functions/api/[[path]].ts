@@ -287,9 +287,11 @@ async function handleTranscriptionRequest(request: Request, env: Env): Promise<R
   }
 
   const format = payload.format.toLowerCase();
-  const lang = typeof payload.language === "string" && payload.language.trim()
-    ? payload.language.trim().slice(0, 12)
-    : undefined;
+  // Whisper accepts ISO-639-1 language codes, not locale tags such as en-US or bn-BD.
+  const requestedLanguage = typeof payload.language === "string"
+    ? payload.language.trim().toLowerCase().split(/[-_]/, 1)[0]
+    : "";
+  const lang = /^[a-z]{2}$/.test(requestedLanguage) ? requestedLanguage : undefined;
   const isBengali = lang?.toLowerCase().split(/[-_]/, 1)[0] === "bn";
   // Keep Bengali speech in Bengali script and preserve the speaker's actual words.
   // This is a transcription-style hint only; no chat history or generated answer is supplied.
