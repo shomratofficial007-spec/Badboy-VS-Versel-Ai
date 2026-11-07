@@ -894,6 +894,18 @@ test("requires owner authentication for private API and Developer Agent routes",
     assert.equal(response.status, 401, `${path} must require the owner token`);
   }
 
+  for (const path of ["/api/developer/tasks", "/api/developer/projects", "/api/developer/project-memory"]) {
+    const response = await rawOnRequestPost({
+      request: new Request(`https://example.com${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ownerId: "untrusted-client-owner" }),
+      }),
+      env,
+    } as any);
+    assert.equal(response.status, 401, `${path} POST must require the owner token`);
+  }
+
   const publicHealth = await rawOnRequestGet({
     request: new Request("https://example.com/api/healthz"),
     env: { OPENROUTER_API_KEY: "test-openrouter-key" },
