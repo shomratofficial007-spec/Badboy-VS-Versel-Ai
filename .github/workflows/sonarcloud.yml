@@ -21,8 +21,8 @@ jobs:
     name: SonarCloud
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Fork PRs do not receive repository secrets; skip rather than fail or expose credentials.
-    if: ${{ secrets.SONAR_TOKEN != '' }}
+    # Secrets are unavailable to fork PRs. Repository PRs and main-branch pushes can use SONAR_TOKEN.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
