@@ -800,3 +800,34 @@ test("personal auth verify route accepts only the configured Worker secret", asy
   assert.equal(accepted.status, 200);
   assert.deepEqual(await accepted.json(), { authenticated: true });
 });
+
+test("onRequestPost - stops fallback when an upstream returns HTTP 200 without a response body", async () => {
+  const originalFetch = globalThis.fetch;
+  const attemptedModels: string[] = [];
+
+  globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body || "{}"));
+    attemptedModels.push(body.model);
+    return new Response(null, { status: 200 });
+  }) as typeof globalThis.fetch;
+
+  try {
+    const context = {
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "Missing upstream stream body" }),
+      }),
+      env: { OPENROUTER_API_KEY: "test-secret-key" },
+    } as any;
+
+    const response = await onRequestPost(context);
+    assert.strictEqual(response.status, 502);
+    const json = await response.json() as any;
+    assert.strictEqual(json.code, "OPENROUTER_REQUEST_FAILED");
+    assert.deepStrictEqual(attemptedModels, ["openrouter/free"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
