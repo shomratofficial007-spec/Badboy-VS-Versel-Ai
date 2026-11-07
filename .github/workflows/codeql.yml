@@ -77,6 +77,17 @@ jobs:
         if: matrix.language == 'java-kotlin'
         run: pnpm --dir artifacts/mobile exec expo prebuild --platform android --no-install
 
+      - name: Expose nested Android project to CodeQL Autobuild
+        if: matrix.language == 'java-kotlin'
+        shell: bash
+        run: |
+          cat > gradlew <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec "$GITHUB_WORKSPACE/artifacts/mobile/android/gradlew" -p "$GITHUB_WORKSPACE/artifacts/mobile/android" "$@"
+          EOF
+          chmod +x gradlew
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
