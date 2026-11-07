@@ -29,6 +29,10 @@ jobs:
           for attempt in $(seq 1 30); do
             headers="$(curl -fsS -D - -o /dev/null "$TARGET_URL/" || true)"
             if printf '%s\n' "$headers" | grep -qi '^content-security-policy:' \
+              && printf '%s\n' "$headers" | grep -qi '^cross-origin-embedder-policy: credentialless' \
+              && printf '%s\n' "$headers" | grep -qi '^cross-origin-opener-policy: same-origin' \
+              && printf '%s\n' "$headers" | grep -qi '^cross-origin-resource-policy: same-origin' \
+              && printf '%s\n' "$headers" | grep -qi '^permissions-policy:' \
               && printf '%s\n' "$headers" | grep -qi '^x-frame-options:' \
               && printf '%s\n' "$headers" | grep -qi '^strict-transport-security:' \
               && printf '%s\n' "$headers" | grep -qi '^x-content-type-options:'; then
