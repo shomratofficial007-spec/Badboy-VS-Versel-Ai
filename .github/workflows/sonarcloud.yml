@@ -58,6 +58,7 @@ jobs:
           --include='artifacts/mobile/**/*.ts'
           --include='artifacts/mobile/**/*.tsx'
           --exclude='**/*.test.ts'
+          --exclude='**/*.d.ts'
           --exclude='**/*.spec.ts'
           --
           node --experimental-strip-types --test
