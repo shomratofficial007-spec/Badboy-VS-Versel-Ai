@@ -853,3 +853,50 @@ test("onRequestPost - stops fallback when an upstream returns HTTP 200 without a
   }
 });
 
+
+
+test("requires owner authentication for private API and Developer Agent routes", async () => {
+  const env = {
+    BADBOY_OWNER_TOKEN: TEST_OWNER_TOKEN,
+    OPENROUTER_API_KEY: "test-openrouter-key",
+    AGENT_DB: {},
+  };
+  const unauthorizedChat = await rawOnRequestPost({
+    request: new Request("https://example.com/api/assistant/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Hello" }),
+    }),
+    env,
+  } as any);
+  assert.equal(unauthorizedChat.status, 401);
+  assert.equal((await unauthorizedChat.json() as any).code, "PERSONAL_AUTH_REQUIRED");
+
+  const unauthorizedDeveloperHealth = await rawOnRequestGet({
+    request: new Request("https://example.com/api/developer/health"),
+    env,
+  } as any);
+  assert.equal(unauthorizedDeveloperHealth.status, 401);
+
+  const unauthorizedD1 = await rawOnRequestGet({
+    request: new Request("https://example.com/api/developer/tasks"),
+    env,
+  } as any);
+  assert.equal(unauthorizedD1.status, 401);
+
+  const publicHealth = await rawOnRequestGet({
+    request: new Request("https://example.com/api/healthz"),
+    env: { OPENROUTER_API_KEY: "test-openrouter-key" },
+  } as any);
+  assert.equal(publicHealth.status, 200);
+});
+
+test("keeps D1 routes closed even after the owner is authenticated", async () => {
+  const response = await rawOnRequestGet({
+    request: new Request("https://example.com/api/developer/tasks", {
+      headers: { Authorization: `Bearer ${TEST_OWNER_TOKEN}` },
+    }),
+    env: { BADBOY_OWNER_TOKEN: TEST_OWNER_TOKEN, AGENT_DB: {} },
+  } as any);
+  assert.equal(response.status, 404);
+});
