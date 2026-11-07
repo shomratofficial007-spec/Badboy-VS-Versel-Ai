@@ -20,6 +20,7 @@ import { VOICE_LANGUAGES, getAvailableSpeechVoices, speak, stopSpeaking, type Av
 import { streamDeveloperAnalysis, streamReply } from '@/lib/assistant/api';
 import { buildExpertReviewPrompt, inspectBadboyRepository, type RepositoryEvidence } from '@/lib/assistant/expertReview';
 import { useColors } from '@/hooks/useColors';
+import { FirebaseAccountPanel } from '@/components/FirebaseAccountPanel';
 import {
   checkTelegramMessages,
   connectTelegramBot,
@@ -420,6 +421,8 @@ export default function SettingsScreen() {
       <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
         তোমার অভিজ্ঞতা, ভয়েস, গোপনীয়তা ও ডেভেলপার টুল—সব এক জায়গায়।
       </Text>
+
+      <FirebaseAccountPanel />
 
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}><Feather name="droplet" size={17} color={colors.primary} /><Text style={[styles.sectionTitle,{color:colors.foreground}]}>অ্যাপ থিম</Text></View>
