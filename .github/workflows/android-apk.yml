@@ -75,6 +75,25 @@ jobs:
           NODE_ENV: production
         run: ./gradlew --no-daemon assembleDebug
 
+      - name: Verify TFLite model is packaged uncompressed
+        working-directory: artifacts/mobile/android
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          python3 - <<'PY'
+          import zipfile
+
+          apk = "app/build/outputs/apk/debug/app-debug.apk"
+          with zipfile.ZipFile(apk) as archive:
+              name = "assets/wake.tflite"
+              try:
+                  model = archive.getinfo(name)
+              except KeyError as exc:
+                  raise SystemExit(f"Missing required wake-word model asset: {name}") from exc
+              if model.compress_type != zipfile.ZIP_STORED:
+                  raise SystemExit("wake.tflite must be uncompressed for AssetManager.openFd()")
+              print(f"Verified {name}: {model.file_size} bytes, stored without compression.")
+          PY
+
       - name: Verify APK contains the JavaScript bundle
         working-directory: artifacts/mobile/android
         run: |
