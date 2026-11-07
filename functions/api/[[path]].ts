@@ -762,7 +762,7 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env): Promi
               controller.close();
               return;
             }
-            boundary = pending.indexOf("\\n\\n");
+            boundary = pending.indexOf("\n\n");
           }
         }
         pending += decoder.decode();
