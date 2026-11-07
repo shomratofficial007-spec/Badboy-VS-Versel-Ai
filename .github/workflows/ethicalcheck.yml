@@ -3,8 +3,12 @@
 name: OWASP ZAP Baseline
 
 on:
+  push:
+    branches: ["main"]
   pull_request:
     branches: ["main"]
+  schedule:
+    - cron: "26 22 * * 4"
   workflow_dispatch:
 
 permissions:
@@ -19,7 +23,7 @@ jobs:
       - name: Scan Badboy Cloudflare Preview
         uses: zaproxy/action-baseline@v0.15.0
         with:
-          target: "https://fix-pr-67-list-footer-null-type-badboy-vs-versel-ai.shomratofficial007.workers.dev"
+          target: ${{ github.event_name == 'pull_request' && 'https://fix-pr-67-list-footer-null-type-badboy-vs-versel-ai.shomratofficial007.workers.dev' || 'https://badboy-vs-versel-ai.shomratofficial007.workers.dev' }}
           allow_issue_writing: false
           fail_action: false
           artifact_name: badboy-zap-baseline-report

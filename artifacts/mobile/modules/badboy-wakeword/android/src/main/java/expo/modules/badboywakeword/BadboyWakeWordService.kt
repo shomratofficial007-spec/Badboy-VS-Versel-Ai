@@ -57,7 +57,7 @@ class BadboyWakeWordService : Service() {
   val x=FloatArray(size);var peak=0f;var energy=0.0
   for(i in 0 until size){val v=ring[(pos+i)%size];x[i]=v;peak=max(peak,abs(v));energy+=v.toDouble()*v}
   if(20*log10(sqrt(energy/size).coerceAtLeast(1e-10)) < -55 || peak<1e-5f){streak=0;return}
-  val gain=min(1.0,0.707/peak).toFloat();for(i in x.indices)x[i]*=gain
+  val gain=0.707f/peak;for(i in x.indices)x[i]*=gain
   val out=arrayOf(FloatArray(1));model!!.run(arrayOf(features(x)),out)
   val p=(1/(1+exp(-out[0][0].toDouble()))).toFloat();ema=.5*p+.5*ema
   if(ema>=threshold)streak++ else streak=0

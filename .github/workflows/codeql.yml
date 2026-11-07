@@ -25,7 +25,7 @@ jobs:
           - language: actions
             build-mode: none
           - language: java-kotlin
-            build-mode: manual
+            build-mode: autobuild
           - language: javascript-typescript
             build-mode: none
 
@@ -82,11 +82,6 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-
-      - name: Compile Android Kotlin sources for CodeQL
-        if: matrix.language == 'java-kotlin'
-        working-directory: artifacts/mobile/android
-        run: ./gradlew :app:compileDebugKotlin --no-daemon
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
