@@ -56,6 +56,7 @@ class BadboyWakeWordService : Service() {
   Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
   try{
    model=Interpreter(modelBuffer(),Interpreter.Options().setNumThreads(2))
+   model!!.allocateTensors()
    val inputTensor=model!!.getInputTensor(0)
    val inputShape=inputTensor.shape()
    require(inputShape.contentEquals(intArrayOf(1,40,101))){
