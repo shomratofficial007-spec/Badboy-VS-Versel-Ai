@@ -29,7 +29,7 @@ jobs:
           - language: actions
             build-mode: none
           - language: java-kotlin
-            build-mode: autobuild
+            build-mode: manual
           - language: javascript-typescript
             build-mode: none
 
@@ -37,76 +37,51 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      # The Kotlin wake-word module is an Expo Android library, not a root Gradle
-      # project. Generate the Android host project before CodeQL initialization.
-      - name: Set up Java for Android
+      # CodeQL must observe the actual Gradle compilation of the Expo-generated
+      # Android host project; this repository has no Gradle project at its root.
+      - name: Set up Java
         if: matrix.language == 'java-kotlin'
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Install Android SDK platform
+      - name: Set up pnpm
         if: matrix.language == 'java-kotlin'
-        shell: bash
-        run: |
-          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
-          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
-          test -n "$SDKMANAGER"
-          set +o pipefail
-          yes | "$SDKMANAGER" --licenses >/dev/null
-          SDKMANAGER_STATUS=${PIPESTATUS[1]}
-          set -o pipefail
-          test "$SDKMANAGER_STATUS" -eq 0
-          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
-
-      - name: Enable pnpm
-        if: matrix.language == 'java-kotlin'
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10.8.1
 
-      - name: Set up Node for Expo prebuild
+      - name: Set up Node.js
         if: matrix.language == 'java-kotlin'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          node-version: 22
           cache: pnpm
 
       - name: Install workspace dependencies
         if: matrix.language == 'java-kotlin'
         run: pnpm install --frozen-lockfile
 
-      - name: Generate Android Gradle project
+      - name: Generate native Android project with Expo Prebuild
         if: matrix.language == 'java-kotlin'
-        run: pnpm --dir artifacts/mobile exec expo prebuild --platform android --no-install
-
-      - name: Expose nested Android project to CodeQL Autobuild
-        if: matrix.language == 'java-kotlin'
-        shell: bash
-        run: |
-          cat > gradlew <<'EOF'
-          #!/usr/bin/env bash
-          set -euo pipefail
-          exec "$GITHUB_WORKSPACE/artifacts/mobile/android/gradlew" -p "$GITHUB_WORKSPACE/artifacts/mobile/android" -PreactNativeArchitectures=arm64-v8a "$@"
-          EOF
-          chmod +x gradlew
-
-          # CodeQL's Java autobuilder expects Gradle metadata at the checkout root.
-          # These temporary markers make it discover the root wrapper; that wrapper
-          # delegates the actual build to Expo's generated Android project.
-          cat > settings.gradle <<'EOF'
-          rootProject.name = 'badboy-codeql-autobuild'
-          EOF
-          cat > build.gradle <<'EOF'
-          // Build is delegated by the root gradlew wrapper to artifacts/mobile/android.
-          EOF
+        run: pnpm --filter @workspace/mobile exec expo prebuild --platform android --no-install
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
+
+      # This is deliberately a real Gradle build, not a synthetic root wrapper.
+      # It compiles the app and included Kotlin Expo modules while CodeQL traces
+      # Java/Kotlin compiler activity.
+      - name: Build Android project for CodeQL
+        if: matrix.language == 'java-kotlin'
+        working-directory: artifacts/mobile/android
+        env:
+          NODE_ENV: production
+        run: ./gradlew --no-daemon -PreactNativeArchitectures=arm64-v8a assembleDebug
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
