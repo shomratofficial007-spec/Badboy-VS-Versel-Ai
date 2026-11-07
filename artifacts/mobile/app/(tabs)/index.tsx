@@ -296,7 +296,7 @@ export default function ChatScreen() {
               setError('উত্তরটি শোনানো যায়নি। আবার চেষ্টা করুন।');
               resolve();
             },
-          });
+          }, settings.voiceIdentifier);
           if (!started) { setSpeakingMessageId(null); resolve(); }
         });
       }
