@@ -652,10 +652,10 @@ test("developer analysis forwards each SSE event before the upstream stream fini
   globalThis.fetch = (async () => new Response(new ReadableStream<Uint8Array>({
     async start(controller) {
       controller.enqueue(encoder.encode(
-        'data: {"choices":[{"delta":{"content":"প্রথম অংশ"}}]}\\n\\n',
+        'data: {"choices":[{"delta":{"content":"প্রথম অংশ"}}]}\n\n',
       ));
       await upstreamGate;
-      controller.enqueue(encoder.encode("data: [DONE]\\n\\n"));
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       controller.close();
     },
   }), { status: 200, headers: { "Content-Type": "text/event-stream" } })) as typeof globalThis.fetch;
