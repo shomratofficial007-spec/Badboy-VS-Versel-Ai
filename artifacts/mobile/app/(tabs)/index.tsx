@@ -248,7 +248,7 @@ export default function ChatScreen() {
               stopDictationRef.current = null;
               if (voiceSessionActiveRef.current) void resumeWakeWord();
             },
-          }, settings.voiceIdentifier);
+          });
         }, 1200);
       } else {
         await resumeWakeWord();
