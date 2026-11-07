@@ -250,6 +250,43 @@ test("onRequestPost - transcribe uses Groq Whisper Large-V3 as primary when GROQ
   }
 });
 
+test("onRequestPost - transcribe normalizes English locale tags for Groq Whisper", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    if (!url.includes("api.groq.com/openai/v1/audio/transcriptions")) {
+      throw new Error(`Unexpected URL called: ${url}`);
+    }
+    const formData = init?.body as FormData;
+    assert.strictEqual(formData.get("language"), "en");
+    assert.strictEqual(formData.get("prompt"), null);
+    return new Response(JSON.stringify({ text: "English transcription verified" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof globalThis.fetch;
+
+  try {
+    const context = {
+      request: new Request("https://example.com/api/assistant/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          audioBase64: Buffer.from("test-audio-content").toString("base64"),
+          format: "m4a",
+          language: "en-US",
+        }),
+      }),
+      env: { GROQ_API_KEY: "test-groq-key" },
+    } as any;
+    const response = await onRequestPost(context);
+    assert.strictEqual(response.status, 200);
+    const json = (await response.json()) as any;
+    assert.strictEqual(json.text, "English transcription verified");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("onRequestPost - transcribe falls back to OpenRouter when Groq fails with 429", async () => {
   const originalFetch = globalThis.fetch;
   let groqAttempted = false;
