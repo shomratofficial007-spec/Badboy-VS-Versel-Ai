@@ -43,7 +43,10 @@ jobs:
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run workspace tests and generate LCOV coverage
+      # Run the Worker test files directly under c8. Wrapping pnpm's recursive
+      # multi-package runner caused V8 child-process coverage to be misattributed
+      # for native TypeScript modules, despite the tests executing successfully.
+      - name: Run Worker tests and generate LCOV coverage
         run: >-
           pnpm dlx c8@10.1.3
           --reporter=lcov
@@ -57,7 +60,16 @@ jobs:
           --include='artifacts/mobile/**/*.tsx'
           --exclude='**/*.test.ts'
           --exclude='**/*.spec.ts'
-          -- pnpm -r --if-present run test
+          --
+          node --experimental-strip-types --test
+          functions/functions.test.ts
+          functions/developerAgent.test.ts
+          functions/agentStorage.test.ts
+          functions/accessAuth.test.ts
+          functions/personalAuth.test.ts
+
+      - name: Run mobile tests
+        run: pnpm --filter @workspace/mobile test
 
       - name: Verify LCOV report exists
         run: test -s coverage/lcov.info
