@@ -651,6 +651,45 @@ export function getSpeechPlaybackTimeoutMs(textLength: number): number {
   return Math.max(45_000, Math.min(240_000, safeLength * 100));
 }
 
+/** Installed device/browser voices; availability depends on the platform and speech provider. */
+export interface AvailableSpeechVoice {
+  identifier: string;
+  name: string;
+  language: string;
+}
+
+export async function getAvailableSpeechVoices(): Promise<AvailableSpeechVoice[]> {
+  const os = getPlatformOS();
+  if (os !== 'web' && os !== 'node') {
+    const module = getSpeechModule();
+    if (typeof module?.getAvailableVoicesAsync === 'function') {
+      try {
+        const voices = await module.getAvailableVoicesAsync();
+        return (Array.isArray(voices) ? voices : [])
+          .filter((voice: any) => typeof voice?.identifier === 'string' && typeof voice?.language === 'string')
+          .map((voice: any) => ({
+            identifier: voice.identifier,
+            name: typeof voice.name === 'string' && voice.name.trim() ? voice.name : voice.identifier,
+            language: voice.language,
+          }))
+          .sort((a: AvailableSpeechVoice, b: AvailableSpeechVoice) => a.name.localeCompare(b.name));
+      } catch {
+        return [];
+      }
+    }
+  }
+  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    try {
+      return window.speechSynthesis.getVoices()
+        .map((voice) => ({ identifier: voice.voiceURI || voice.name, name: voice.name, language: voice.lang }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 /** Speak text through the device's native TTS engine or browser local voices. */
 let activeCloudPlayer: { pause: () => void; release: () => void } | null = null;
 let activeCloudSubscription: { remove: () => void } | null = null;
@@ -694,6 +733,7 @@ export function speak(
   text: string,
   lang = 'bn-BD',
   callbacks: SpeechLifecycleCallbacks = {},
+  voiceIdentifier?: string | null,
 ): boolean {
   const clean = text.trim().slice(0, 4000);
   if (!clean) {
@@ -751,6 +791,7 @@ export function speak(
       try {
         speechModule.speak(clean, {
           language: lang, pitch: 1, rate: 1,
+          ...(voiceIdentifier ? { voice: voiceIdentifier } : {}),
           onStart: () => { if (isCurrent()) callbacks.onStart?.(); },
           onDone: finish, onStopped: finish,
           onError: (error: unknown) => fail(error),
@@ -762,6 +803,10 @@ export function speak(
       try {
         const utterance = new SpeechSynthesisUtterance(clean);
         utterance.lang = lang;
+        if (voiceIdentifier) {
+          const selectedVoice = window.speechSynthesis.getVoices().find((voice) => voice.voiceURI === voiceIdentifier || voice.name === voiceIdentifier);
+          if (selectedVoice) utterance.voice = selectedVoice;
+        }
         utterance.onstart = () => { if (isCurrent()) callbacks.onStart?.(); };
         utterance.onend = finish;
         utterance.onerror = (event) => fail(new Error(event.error || 'Browser TTS failed.'));
@@ -774,6 +819,11 @@ export function speak(
 
   void (async () => {
     try {
+      // Selected installed voices must use local TTS; cloud TTS cannot guarantee that voice.
+      if (voiceIdentifier) {
+        speakLocally();
+        return;
+      }
       // Lazy-load Expo-only modules so Node-based voice unit tests can import this file.
       const { requestSpeech } = require('./api') as typeof import('./api');
       // A stalled free TTS provider must not leave the UI in a permanent speaking state.
