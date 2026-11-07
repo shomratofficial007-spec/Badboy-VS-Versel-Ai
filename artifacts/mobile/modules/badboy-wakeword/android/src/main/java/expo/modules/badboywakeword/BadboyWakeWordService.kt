@@ -34,7 +34,7 @@ class BadboyWakeWordService : Service() {
   }
   return START_STICKY
  }
- private fun acquireWakeLock(){
+ @Synchronized private fun acquireWakeLock(){
   val pm=getSystemService(POWER_SERVICE) as PowerManager
   if(wakeLock?.isHeld!=true){
    wakeLock=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"$packageName:BadboyWakeWord").apply{
@@ -43,7 +43,7 @@ class BadboyWakeWordService : Service() {
    }
   }
  }
- private fun releaseWakeLock(){
+ @Synchronized private fun releaseWakeLock(){
   val lock=wakeLock
   if(lock?.isHeld==true)lock.release()
   wakeLock=null
