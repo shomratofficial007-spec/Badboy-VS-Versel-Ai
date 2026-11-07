@@ -2,6 +2,7 @@ import { fetch as expoFetch } from 'expo/fetch';
 import * as FileSystem from 'expo-file-system/legacy';
 import type { AssistantSettings } from '@/lib/assistant/types';
 import { getTranscriptionLanguageCode } from './transcriptionLanguage';
+import { getOwnerToken } from './ownerAuth';
 
 // This repository deploys its own Worker; do not send native APK traffic to the
 // unrelated legacy Voice-Memory-Assistant Worker.
@@ -26,6 +27,14 @@ function apiUrl(path: string) {
   return `${baseUrl.replace(/\/$/, '')}/api${path}`;
 }
 
+async function ownerAuthorizationHeader(): Promise<string> {
+  const token = await getOwnerToken();
+  if (!token) {
+    throw new Error('Owner login is required. Enter your Badboy Owner Token to continue.');
+  }
+  return `Bearer ${token}`;
+}
+
 export async function streamReply(
   message: string,
   settings: AssistantSettings,
@@ -36,6 +45,7 @@ export async function streamReply(
     headers: {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
+      Authorization: await ownerAuthorizationHeader(),
     },
     body: JSON.stringify({
       message,
@@ -101,6 +111,7 @@ export async function streamDeveloperAnalysis(
     headers: {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
+      Authorization: await ownerAuthorizationHeader(),
     },
     body: JSON.stringify({ prompt, projectContext, requestedEngine }),
   });
@@ -159,7 +170,7 @@ export async function transcribeAudio(
 ): Promise<string> {
   const response = await expoFetch(apiUrl('/assistant/transcribe'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: await ownerAuthorizationHeader() },
     body: JSON.stringify({
       audioBase64,
       format,
@@ -197,7 +208,7 @@ export async function transcribeRecordedAudio(
 export async function requestSpeech(text: string, language: string): Promise<Uint8Array> {
   const response = await expoFetch(apiUrl('/assistant/speech'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
+    headers: { 'Content-Type': 'application/json', Accept: 'audio/mpeg', Authorization: await ownerAuthorizationHeader() },
     body: JSON.stringify({ text, language }),
   });
   if (!response.ok) {
