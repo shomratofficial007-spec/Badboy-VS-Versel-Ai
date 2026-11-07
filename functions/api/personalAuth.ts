@@ -15,8 +15,8 @@ export interface VerifiedPersonalOwner {
 }
 
 type AuthResult =
-  | { identity: VerifiedPersonalOwner; response?: never }
-  | { identity?: never; response: Response };
+  | { ok: true; identity: VerifiedPersonalOwner }
+  | { ok: false; response: Response };
 
 const OWNER_ID: VerifiedPersonalOwner["ownerId"] = "badboy-personal-owner-v1";
 const MIN_TOKEN_LENGTH = 43;
@@ -61,6 +61,7 @@ export async function authenticatePersonalOwner(
   const expected = env.BADBOY_OWNER_TOKEN;
   if (!expected || !isWellFormedToken(expected)) {
     return {
+      ok: false,
       response: jsonError(
         "PERSONAL_AUTH_NOT_CONFIGURED",
         "Personal authentication is not configured on this Worker.",
@@ -73,6 +74,7 @@ export async function authenticatePersonalOwner(
   const match = /^Bearer ([A-Za-z0-9_-]{43,128})$/.exec(authorization);
   if (!match) {
     return {
+      ok: false,
       response: jsonError(
         "PERSONAL_AUTH_REQUIRED",
         "A valid personal access key is required.",
@@ -84,7 +86,8 @@ export async function authenticatePersonalOwner(
   try {
     if (!(await tokensMatch(match[1], expected))) {
       return {
-        response: jsonError(
+        ok: false,
+      response: jsonError(
           "PERSONAL_AUTH_INVALID",
           "Personal access key is invalid.",
           401,
@@ -93,6 +96,7 @@ export async function authenticatePersonalOwner(
     }
   } catch {
     return {
+      ok: false,
       response: jsonError(
         "PERSONAL_AUTH_UNAVAILABLE",
         "Personal authentication could not be completed.",
@@ -101,5 +105,5 @@ export async function authenticatePersonalOwner(
     };
   }
 
-  return { identity: { ownerId: OWNER_ID } };
+  return { ok: true, identity: { ownerId: OWNER_ID } };
 }
