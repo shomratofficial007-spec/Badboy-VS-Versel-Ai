@@ -52,18 +52,18 @@ jobs:
           yes | sdkmanager --licenses >/dev/null
           sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
 
-      - name: Set up pnpm and Node for Expo prebuild
-        if: matrix.language == 'java-kotlin'
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: pnpm
-
       - name: Enable pnpm
         if: matrix.language == 'java-kotlin'
         uses: pnpm/action-setup@v4
         with:
           version: 10.8.1
+
+      - name: Set up Node for Expo prebuild
+        if: matrix.language == 'java-kotlin'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
 
       - name: Install workspace dependencies
         if: matrix.language == 'java-kotlin'
