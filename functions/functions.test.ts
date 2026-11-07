@@ -771,3 +771,32 @@ test("keeps D1 task and project persistence routes unavailable until authenticat
     assert.equal(postResponse.status, 404);
   }
 });
+
+
+test("personal auth verify route accepts only the configured Worker secret", async () => {
+  const token = "a".repeat(43);
+  const missing = await onRequestPost({
+    request: new Request("https://example.com/api/auth/verify", { method: "POST" }),
+    env: {},
+  } as any);
+  assert.equal(missing.status, 503);
+
+  const rejected = await onRequestPost({
+    request: new Request("https://example.com/api/auth/verify", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${"b".repeat(43)}` },
+    }),
+    env: { BADBOY_OWNER_TOKEN: token },
+  } as any);
+  assert.equal(rejected.status, 401);
+
+  const accepted = await onRequestPost({
+    request: new Request("https://example.com/api/auth/verify", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+    env: { BADBOY_OWNER_TOKEN: token },
+  } as any);
+  assert.equal(accepted.status, 200);
+  assert.deepEqual(await accepted.json(), { authenticated: true });
+});
