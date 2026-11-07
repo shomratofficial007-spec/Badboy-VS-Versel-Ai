@@ -55,7 +55,7 @@ Configure these Worker environment variables before any private route is enabled
 - `CF_ACCESS_AUD`: the exact audience tag for the protected Access application.
 - `CF_ACCESS_ALLOWED_EMAILS`: comma-separated, normalized email allowlist for this personal instance.
 
-The verifier fetches the public signing keys from `/.well-known`? No: it uses Cloudflare Access' documented `/cdn-cgi/access/certs` endpoint at the configured team origin. It accepts RS256 only and never logs or returns token contents. Missing configuration fails closed with HTTP 503; missing/invalid/expired tokens fail with HTTP 401; identities outside the allowlist fail with HTTP 403.
+The verifier fetches the public signing keys from Cloudflare Access' `/cdn-cgi/access/certs` endpoint at the configured team origin. It accepts RS256 only and never logs or returns token contents. Missing configuration fails closed with HTTP 503; missing/invalid/expired tokens fail with HTTP 401; identities outside the allowlist fail with HTTP 403.
 
 ## Safety boundaries
 
