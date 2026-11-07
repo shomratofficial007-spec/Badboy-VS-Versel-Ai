@@ -106,6 +106,8 @@ export default function ChatScreen() {
   const speechDetectedRef = useRef(false);
   const lastVoiceActivityAtRef = useRef(0);
   const voiceSessionActiveRef = useRef(false);
+  const wakeWordAllowedRef = useRef(false);
+  wakeWordAllowedRef.current = Platform.OS === 'android' && settings.voiceProcessingConsent && settings.wakeWordEnabled && settings.voiceInputEnabled;
 
   useEffect(() => { setSelectedLang(settings.voiceLanguage); }, [settings.voiceLanguage]);
   useEffect(() => {
@@ -173,14 +175,20 @@ export default function ChatScreen() {
   const resumeWakeWord = useCallback(async () => {
     if (!voiceSessionActiveRef.current) return;
     voiceSessionActiveRef.current = false;
-    if (Platform.OS !== 'android' || !settings.voiceProcessingConsent || !settings.wakeWordEnabled) return;
+    // Stop is authoritative: stale AI/TTS callbacks must never restart the listener.
+    if (!wakeWordAllowedRef.current) return;
     try {
       const status = await startOfflineWakeWord();
+      // Settings may change while native startup is in flight. Fail closed.
+      if (!wakeWordAllowedRef.current) {
+        await stopOfflineWakeWord().catch(() => undefined);
+        return;
+      }
       if (status.state === 'error') setError(status.message ?? 'Hey Badboy পুনরায় চালু করা যায়নি।');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Hey Badboy পুনরায় চালু করা যায়নি।');
     }
-  }, [settings.voiceProcessingConsent, settings.wakeWordEnabled]);
+  }, []);
 
   const sendMessage = useCallback(async (rawText: string) => {
     const text = rawText.trim();
@@ -457,6 +465,9 @@ export default function ChatScreen() {
             ? cause.message
             : 'মাইক্রোফোন চালু করা যায়নি। অনুমতি ও ডিভাইস সেটিংস পরীক্ষা করুন।',
         );
+        // Wake detection already handed off microphone ownership. If recorder
+        // startup fails, restore wake listening unless the user has pressed Stop.
+        if (voiceSessionActiveRef.current) await resumeWakeWord();
       }
       return;
     }
@@ -508,6 +519,7 @@ export default function ChatScreen() {
   useEffect(() => {
     if (Platform.OS !== 'android' || !settings.voiceProcessingConsent || !settings.wakeWordEnabled || !settings.voiceInputEnabled) return;
     let active = true;
+    wakeWordAllowedRef.current = true;
     const subscription = subscribeToWakeWord(() => {
       if (!active || wakeHandoffRef.current) return;
       wakeHandoffRef.current = true;
@@ -526,7 +538,12 @@ export default function ChatScreen() {
     }).catch((cause) => {
       if (active) setError(cause instanceof Error ? cause.message : 'Hey Badboy চালু করা যায়নি।');
     });
-    return () => { active = false; subscription.remove(); void stopOfflineWakeWord().catch(() => undefined); };
+    return () => {
+      active = false;
+      wakeWordAllowedRef.current = false;
+      subscription.remove();
+      void stopOfflineWakeWord().catch(() => undefined);
+    };
   }, [settings.voiceProcessingConsent, settings.wakeWordEnabled, settings.voiceInputEnabled]);
 
   const startNewChat = () => {
