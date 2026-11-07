@@ -1,7 +1,29 @@
 import assert from "node:assert";
 import test from "node:test";
 // Node ESM imports require .js extension when pointing to typescript files
-import { onRequestGet, onRequestPost } from "./api/[[path]].ts";
+import { onRequestGet as rawOnRequestGet, onRequestPost as rawOnRequestPost } from "./api/[[path]].ts";
+
+const TEST_OWNER_TOKEN = "a".repeat(43);
+
+function withTestOwner(context: any) {
+  const headers = new Headers(context.request.headers);
+  if (!headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${TEST_OWNER_TOKEN}`);
+  }
+  return {
+    ...context,
+    request: new Request(context.request, { headers }),
+    env: { ...context.env, BADBOY_OWNER_TOKEN: context.env.BADBOY_OWNER_TOKEN ?? TEST_OWNER_TOKEN },
+  };
+}
+
+// Existing endpoint tests exercise authenticated application behavior by default.
+// The dedicated /api/auth/verify tests below call the raw handlers to test credentials.
+const onRequestGet = (context: any) => rawOnRequestGet(withTestOwner(context));
+const onRequestPost = (context: any) =>
+  new URL(context.request.url).pathname.replace(/\/+$/, "") === "/api/auth/verify"
+    ? rawOnRequestPost(context)
+    : rawOnRequestPost(withTestOwner(context));
 
 test("onRequestGet - health check endpoint returns status ok", async () => {
   const context = {
