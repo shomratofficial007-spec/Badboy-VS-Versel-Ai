@@ -835,7 +835,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   // Validate the personal key only; all D1-backed routes remain closed until a later integration.
   if (request.method === "POST" && pathname === "/api/auth/verify") {
     const auth = await authenticatePersonalOwner(request, env);
-    if ("response" in auth) return auth.response;
+    if (!auth.ok) return auth.response;
     return jsonResponse({ authenticated: true }, 200);
   }
 
