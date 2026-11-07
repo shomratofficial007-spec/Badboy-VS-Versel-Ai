@@ -8,9 +8,14 @@ import React, {
 } from 'react';
 import { readLocalState, persistMessages, persistSettings, removeMemoryNote, storeMemoryNote, updateMemoryNote } from '@/lib/assistant/storage';
 import { DEFAULT_SETTINGS, type AssistantSettings, type ChatMessage, type MemoryNote } from '@/lib/assistant/types';
+import { subscribeToFirebaseAccount, loadCloudAssistantSnapshot, syncCloudAssistantSnapshot, type FirebaseAccount } from '@/lib/assistant/firebaseAccount';
 
 interface AssistantContextValue {
   ready: boolean;
+  accountUser: FirebaseAccount | null;
+  authReady: boolean;
+  cloudSyncing: boolean;
+  cloudSyncError: string | null;
   messages: ChatMessage[];
   memories: MemoryNote[];
   settings: AssistantSettings;
@@ -42,11 +47,31 @@ export function useAssistant() {
 
 export function AssistantProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
+  const [accountUser, setAccountUser] = useState<FirebaseAccount | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [cloudSyncing, setCloudSyncing] = useState(false);
+  const [cloudSyncError, setCloudSyncError] = useState<string | null>(null);
+  const [cloudSyncReadyUid, setCloudSyncReadyUid] = useState<string | null>(null);
   const [messages, setMessagesState] = useState<ChatMessage[]>([]);
   const [memories, setMemories] = useState<MemoryNote[]>([]);
   const [settings, setSettings] = useState<AssistantSettings>(DEFAULT_SETTINGS);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [expertReviewDraft, setExpertReviewDraftState] = useState('');
+
+  useEffect(() => {
+    return subscribeToFirebaseAccount(
+      (user) => {
+        setAccountUser(user);
+        setAuthReady(true);
+        setCloudSyncReadyUid(null);
+        setCloudSyncError(null);
+      },
+      () => {
+        setAuthReady(true);
+        setCloudSyncError('Firebase Account অবস্থা যাচাই করা যায়নি। ইন্টারনেট সংযোগ পরীক্ষা করুন।');
+      },
+    );
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -83,6 +108,86 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       );
     }
   }, [settings, ready]);
+
+  // On sign-in, restore the user's cloud snapshot and merge it with existing local data.
+  // Firebase is only a storage/account service; the assistant engine remains local/Worker-backed.
+  useEffect(() => {
+    if (!ready || !authReady || !accountUser) return;
+    let active = true;
+    const uid = accountUser.uid;
+    setCloudSyncReadyUid(null);
+    loadCloudAssistantSnapshot(uid)
+      .then(async (remote) => {
+        if (!active) return;
+        if (remote) {
+          const mergedMessages = new Map<string, ChatMessage>();
+          [...remote.messages, ...messages].forEach((item) => mergedMessages.set(item.id, item));
+          const nextMessages = [...mergedMessages.values()]
+            .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+            .slice(-100);
+          const mergedMemories = new Map<string, MemoryNote>();
+          [...remote.memories, ...memories].forEach((item) => mergedMemories.set(item.id, item));
+          const nextMemories = [...mergedMemories.values()];
+          setMessagesState(nextMessages);
+          setMemories(nextMemories);
+          setSettings({
+            ...DEFAULT_SETTINGS,
+            ...settings,
+            ...remote.settings,
+            roadmap: {
+              ...DEFAULT_SETTINGS.roadmap,
+              ...settings.roadmap,
+              ...(remote.settings.roadmap ?? {}),
+            },
+          });
+          await Promise.all([
+            persistMessages(nextMessages),
+            persistSettings({
+              ...DEFAULT_SETTINGS,
+              ...settings,
+              ...remote.settings,
+              roadmap: {
+                ...DEFAULT_SETTINGS.roadmap,
+                ...settings.roadmap,
+                ...(remote.settings.roadmap ?? {}),
+              },
+            }),
+          ]);
+        }
+        if (active) setCloudSyncReadyUid(uid);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setCloudSyncError(
+          error instanceof Error
+            ? `Cloud Data পড়া যায়নি: ${error.message}`
+            : 'Cloud Data পড়া যায়নি। Firestore Rules পরীক্ষা করুন।',
+        );
+        // Keep the app fully usable locally; future writes will retry after rules/network are fixed.
+        setCloudSyncReadyUid(uid);
+      });
+    return () => { active = false; };
+  }, [ready, authReady, accountUser?.uid]);
+
+  // Keep the signed-in user's backup up to date without routing app/AI requests through Firebase.
+  useEffect(() => {
+    if (!ready || !accountUser || cloudSyncReadyUid !== accountUser.uid) return;
+    const uid = accountUser.uid;
+    const timer = setTimeout(() => {
+      setCloudSyncing(true);
+      syncCloudAssistantSnapshot(uid, { messages, memories, settings })
+        .then(() => setCloudSyncError(null))
+        .catch((error) => {
+          setCloudSyncError(
+            error instanceof Error
+              ? `Cloud Sync ব্যর্থ: ${error.message}`
+              : 'Cloud Sync ব্যর্থ। Firestore Rules/Connection পরীক্ষা করুন।',
+          );
+        })
+        .finally(() => setCloudSyncing(false));
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [ready, accountUser?.uid, cloudSyncReadyUid, messages, memories, settings]);
 
   const setMessages = useCallback((next: ChatMessage[]) => {
     setMessagesState(next);
@@ -147,6 +252,10 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(
     () => ({
       ready,
+      accountUser,
+      authReady,
+      cloudSyncing,
+      cloudSyncError,
       messages,
       memories,
       settings,
@@ -161,7 +270,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       setExpertReviewDraft,
       clearExpertReviewDraft,
     }),
-    [ready, messages, memories, settings, storageError, setMessages, updateSettings, saveMemory, updateMemory, deleteMemory, clearChat, expertReviewDraft, setExpertReviewDraft, clearExpertReviewDraft],
+    [ready, accountUser, authReady, cloudSyncing, cloudSyncError, messages, memories, settings, storageError, setMessages, updateSettings, saveMemory, updateMemory, deleteMemory, clearChat, expertReviewDraft, setExpertReviewDraft, clearExpertReviewDraft],
   );
 
   return <AssistantContext.Provider value={value}>{children}</AssistantContext.Provider>;
