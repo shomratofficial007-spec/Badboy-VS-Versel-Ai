@@ -1,0 +1,33 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // A signed-in user can access only documents under their own UID.
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // Assistant settings and synced state:
+    // users/{uid}/assistantData/{documentId}
+    match /users/{uid}/assistantData/{documentId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // Chat history:
+    // users/{uid}/chatMessages/{messageId}
+    match /users/{uid}/chatMessages/{messageId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // User memories:
+    // users/{uid}/memories/{memoryId}
+    match /users/{uid}/memories/{memoryId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // Everything not explicitly listed above is denied.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
