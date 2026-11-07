@@ -641,3 +641,55 @@ test("developer analysis streams Native output with task metadata and safe conte
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("developer analysis forwards each SSE event before the upstream stream finishes", async () => {
+  const originalFetch = globalThis.fetch;
+  let releaseUpstream!: () => void;
+  const upstreamGate = new Promise<void>((resolve) => { releaseUpstream = resolve; });
+  const encoder = new TextEncoder();
+
+  globalThis.fetch = (async () => new Response(new ReadableStream<Uint8Array>({
+    async start(controller) {
+      controller.enqueue(encoder.encode(
+        'data: {"choices":[{"delta":{"content":"প্রথম অংশ"}}]}\\n\\n',
+      ));
+      await upstreamGate;
+      controller.enqueue(encoder.encode("data: [DONE]\\n\\n"));
+      controller.close();
+    },
+  }), { status: 200, headers: { "Content-Type": "text/event-stream" } })) as typeof globalThis.fetch;
+
+  try {
+    const context = {
+      request: new Request("https://example.com/api/developer/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: "Stream safely" }),
+      }),
+      env: { OPENROUTER_API_KEY: "test-key" },
+    } as any;
+
+    const response = await onRequestPost(context);
+    assert.strictEqual(response.status, 200);
+    const reader = response.body!.getReader();
+    const started = await reader.read();
+    assert.match(new TextDecoder().decode(started.value), /"status":"started"/);
+
+    const contentRead = reader.read();
+    const early = await Promise.race([
+      contentRead.then((value) => ({ kind: "chunk" as const, value })),
+      new Promise<{ kind: "timeout" }>((resolve) =>
+        setTimeout(() => resolve({ kind: "timeout" }), 100),
+      ),
+    ]);
+    releaseUpstream();
+    assert.strictEqual(early.kind, "chunk", "first content event should not wait for upstream EOF");
+    const contentChunk = early.kind === "chunk" ? early.value : await contentRead;
+    assert.match(new TextDecoder().decode(contentChunk.value), /প্রথম অংশ/);
+    await reader.cancel();
+  } finally {
+    releaseUpstream();
+    globalThis.fetch = originalFetch;
+  }
+});
