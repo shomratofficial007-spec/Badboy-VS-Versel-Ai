@@ -16,6 +16,7 @@ import {
   View,
 } from 'react-native';
 import { useAssistant } from '@/context/AssistantContext';
+import { useOwnerAuth } from '@/context/OwnerAuthContext';
 import { VOICE_LANGUAGES, getAvailableSpeechVoices, speak, stopSpeaking, type AvailableSpeechVoice } from '@/lib/assistant/voice';
 import { streamDeveloperAnalysis, streamReply } from '@/lib/assistant/api';
 import { buildExpertReviewPrompt, inspectBadboyRepository, type RepositoryEvidence } from '@/lib/assistant/expertReview';
@@ -60,6 +61,7 @@ export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { settings, updateSettings, clearChat, expertReviewDraft, clearExpertReviewDraft } = useAssistant();
+  const { signOut } = useOwnerAuth();
   const [personalityDraft, setPersonalityDraft] = useState(settings.personality);
   const [botTokenDraft, setBotTokenDraft] = useState('');
   const [telegramConnected, setTelegramConnected] = useState(false);
@@ -1154,6 +1156,17 @@ export default function SettingsScreen() {
       >
         <Feather name="trash-2" size={16} color={colors.destructive} />
         <Text style={{ color: colors.destructive, fontWeight: '700' }}>চ্যাট ইতিহাস মুছুন</Text>
+      </Pressable>
+
+      <Pressable
+        onPress={() => Alert.alert('Owner Login থেকে বের হবেন?', 'আবার Badboy ব্যবহার করতে Owner Token দিতে হবে। ফোনের Chat History ও Memory মুছবে না।', [
+          { text: 'বাতিল', style: 'cancel' },
+          { text: 'Sign Out', style: 'destructive', onPress: () => void signOut() },
+        ])}
+        style={[styles.dangerButton, { borderColor: colors.border }]}
+      >
+        <Feather name="log-out" size={16} color={colors.destructive} />
+        <Text style={{ color: colors.destructive, fontWeight: '700' }}>Owner Sign Out</Text>
       </Pressable>
     </ScrollView>
   );
