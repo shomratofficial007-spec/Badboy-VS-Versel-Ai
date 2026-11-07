@@ -1,4 +1,5 @@
 import { buildDeveloperAnalysisMessages, resolveDeveloperAnalysisEngine, validateDeveloperAnalysisPayload } from "./developerAgent.ts";
+import { authenticatePersonalOwner } from "./personalAuth.ts";
 // Cloudflare Pages Function: /api/* routes backed by OpenRouter.
 // Directs /api/assistant/chat requests to OpenRouter with streaming SSE.
 
@@ -16,6 +17,7 @@ const RETRYABLE_UPSTREAM_STATUSES = new Set([404, 408, 429, 500, 502, 503, 504])
 interface Env {
   OPENROUTER_API_KEY?: string;
   GROQ_API_KEY?: string;
+  BADBOY_OWNER_TOKEN?: string;
 }
 
 const CORS_HEADERS = {
@@ -828,6 +830,13 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
 
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+
+  // Validate the personal key only; all D1-backed routes remain closed until a later integration.
+  if (request.method === "POST" && pathname === "/api/auth/verify") {
+    const auth = await authenticatePersonalOwner(request, env);
+    if ("response" in auth) return auth.response;
+    return jsonResponse({ authenticated: true }, 200);
   }
 
   if (request.method === "GET") {
