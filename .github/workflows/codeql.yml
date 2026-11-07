@@ -1,6 +1,10 @@
 # CodeQL advanced setup for Java/Kotlin (Expo prebuild + Gradle), JavaScript/TypeScript, and Actions.
 name: "CodeQL Advanced"
 
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: ["main"]
@@ -84,7 +88,7 @@ jobs:
           cat > gradlew <<'EOF'
           #!/usr/bin/env bash
           set -euo pipefail
-          exec "$GITHUB_WORKSPACE/artifacts/mobile/android/gradlew" -p "$GITHUB_WORKSPACE/artifacts/mobile/android" "$@"
+          exec "$GITHUB_WORKSPACE/artifacts/mobile/android/gradlew" -p "$GITHUB_WORKSPACE/artifacts/mobile/android" -PreactNativeArchitectures=arm64-v8a "$@"
           EOF
           chmod +x gradlew
 
