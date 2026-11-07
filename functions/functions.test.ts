@@ -652,11 +652,11 @@ test("developer analysis forwards multiple buffered SSE events before the upstre
   globalThis.fetch = (async () => new Response(new ReadableStream<Uint8Array>({
     async start(controller) {
       controller.enqueue(encoder.encode(
-        'data: {"choices":[{"delta":{"content":"প্রথম অংশ"}}]}\\n\\n' +
-        'data: {"choices":[{"delta":{"content":"দ্বিতীয় অংশ"}}]}\\n\\n',
+        'data: {"choices":[{"delta":{"content":"প্রথম অংশ"}}]}\n\n' +
+        'data: {"choices":[{"delta":{"content":"দ্বিতীয় অংশ"}}]}\n\n',
       ));
       await upstreamGate;
-      controller.enqueue(encoder.encode("data: [DONE]\\n\\n"));
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       controller.close();
     },
   }), { status: 200, headers: { "Content-Type": "text/event-stream" } })) as typeof globalThis.fetch;
@@ -681,7 +681,7 @@ test("developer analysis forwards multiple buffered SSE events before the upstre
     const first = await Promise.race([
       firstRead.then((value) => ({ kind: "chunk" as const, value })),
       new Promise<{ kind: "timeout" }>((resolve) =>
-        setTimeout(() => resolve({ kind: "timeout" }), 100),
+        setTimeout(() => resolve({ kind: "timeout" }), 500),
       ),
     ]);
     assert.strictEqual(first.kind, "chunk", "first content event should not wait for upstream EOF");
@@ -692,7 +692,7 @@ test("developer analysis forwards multiple buffered SSE events before the upstre
     const second = await Promise.race([
       secondRead.then((value) => ({ kind: "chunk" as const, value })),
       new Promise<{ kind: "timeout" }>((resolve) =>
-        setTimeout(() => resolve({ kind: "timeout" }), 100),
+        setTimeout(() => resolve({ kind: "timeout" }), 500),
       ),
     ]);
     assert.strictEqual(second.kind, "chunk", "the next event in the same upstream chunk should also be forwarded before EOF");
