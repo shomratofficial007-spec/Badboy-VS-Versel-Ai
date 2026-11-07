@@ -231,7 +231,7 @@ test("onRequestPost - transcribe uses Groq Whisper Large-V3 as primary when GROQ
         body: JSON.stringify({
           audioBase64: Buffer.from("test-audio-content").toString("base64"),
           format: "mp3",
-          language: "bn",
+          language: "bn-BD",
         }),
       }),
       env: { GROQ_API_KEY: "test-groq-key", OPENROUTER_API_KEY: "test-openrouter-key" },
