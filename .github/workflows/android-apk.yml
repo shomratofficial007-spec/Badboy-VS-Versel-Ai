@@ -24,10 +24,11 @@ permissions:
 
 concurrency:
   group: android-apk-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   android-debug-apk:
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
     name: Validate and build Android debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 60
