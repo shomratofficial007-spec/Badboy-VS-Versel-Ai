@@ -58,3 +58,45 @@ test("analysis prompt never claims repository access or code execution", () => {
   assert.match(messages[0].content, /Do not claim to inspect private repository files/);
   assert.match(messages[1].content, /Review my feature/);
 });
+
+
+test("rejects non-object payloads, invalid field types, and malformed engines", () => {
+  for (const input of [null, [], "prompt", 42]) {
+    assert.equal(validateDeveloperAnalysisPayload(input).ok, false);
+  }
+  assert.equal(validateDeveloperAnalysisPayload({ prompt: 42 }).ok, false);
+  assert.equal(
+    validateDeveloperAnalysisPayload({ prompt: "Plan", projectContext: 42 }).ok,
+    false,
+  );
+  assert.equal(
+    validateDeveloperAnalysisPayload({ prompt: "Plan", requestedEngine: null }).ok,
+    true,
+  );
+});
+
+test("defaults to Native and trims prompt and optional project context", () => {
+  const result = validateDeveloperAnalysisPayload({
+    prompt: "  Inspect safely  ",
+    projectContext: "  Expo + D1  ",
+  });
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.deepEqual(result.value, {
+      prompt: "Inspect safely",
+      projectContext: "Expo + D1",
+      requestedEngine: "native",
+    });
+  }
+});
+
+test("builds a user-only context message when project context is absent", () => {
+  const result = validateDeveloperAnalysisPayload({ prompt: "Check tests" });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const messages = buildDeveloperAnalysisMessages(result.value);
+  assert.equal(messages.length, 2);
+  assert.match(messages[1].content, /^User task:/);
+  assert.doesNotMatch(messages[1].content, /Project context/);
+  assert.equal(resolveDeveloperAnalysisEngine("native").status, "ready");
+});
