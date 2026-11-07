@@ -17,6 +17,14 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
+  "d1_databases": [
+    {
+      "binding": "AGENT_DB",
+      "database_name": "badboy-agent-db",
+      "database_id": "be5648fd-cbb2-487c-8d99-6a0f8c72cf46",
+      "migrations_dir": "migrations"
+    }
+  ],
   "previews": {},
   "workers_dev": true,
   "preview_urls": true

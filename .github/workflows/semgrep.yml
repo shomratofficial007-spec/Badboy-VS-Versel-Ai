@@ -1,0 +1,49 @@
+name: Semgrep Security Scan
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: semgrep-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  semgrep:
+    name: Semgrep SAST and Secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Semgrep Community Edition
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary=:all: "semgrep==1.184.0"
+
+      - name: Scan for security issues and secrets
+        run: |
+          semgrep scan \
+            --config p/security-audit \
+            --config p/secrets \
+            --sarif \
+            --output semgrep.sarif
+
+      - name: Upload Semgrep findings to code scanning
+        if: always() && hashFiles('semgrep.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
