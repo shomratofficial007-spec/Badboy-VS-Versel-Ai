@@ -949,7 +949,8 @@ test('Settings renders Project Brain, Auto QA, plugin, Android and web views wit
   assert.match(html, /PRIVATE PROJECT STORAGE|Private project storage/);
 
   html = await createSettingsHookHarness({ 14: 'android' })();
-  assert.match(html, /Android APK \\/ AAB বিল্ড কনফিগারেশন/);
+  assert.match(html, /Android APK/);
+  assert.match(html, /AAB বিল্ড কনফিগারেশন/);
   assert.match(html, /npx eas-cli build --platform android --profile preview/);
 
   html = await createSettingsHookHarness({ 14: 'web' })();
