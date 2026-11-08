@@ -117,3 +117,12 @@ test('Settings screen renders existing voice, privacy, developer and account con
   assert.match(html, /Owner Sign Out/);
   assert.match(html, /চ্যাট ইতিহাস মুছুন/);
 });
+
+test('Settings reveals Developer Agent and Project Brain controls when developer mode is enabled', async () => {
+  settings.developerMode = true;
+  const { default: SettingsScreen } = await settingsScreenPromise;
+  const html = renderToStaticMarkup(React.createElement(SettingsScreen));
+  assert.match(html, /Developer Agent|Developer Analysis|বিশ্লেষণ/);
+  assert.match(html, /Project Brain|প্রজেক্ট ব্রেইন/);
+  assert.match(html, /Auto QA|স্বয়ংক্রিয় পরীক্ষা/);
+});
