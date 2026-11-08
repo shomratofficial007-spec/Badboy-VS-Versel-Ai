@@ -23,7 +23,7 @@ mock.module('react-native', {
     View: host('section'),
   },
 });
-mock.module('@/context/OwnerAuthContext', {
+mock.module('../context/OwnerAuthContext.tsx', {
   namedExports: { useOwnerAuth: () => ({ signIn: async () => {} }) },
 });
 
