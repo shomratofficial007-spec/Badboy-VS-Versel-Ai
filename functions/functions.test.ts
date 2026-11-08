@@ -25,18 +25,26 @@ const onRequestPost = (context: any) =>
     ? rawOnRequestPost(context)
     : rawOnRequestPost(withTestOwner(context));
 
-function testAgentDb() {
+function testAgentDb(options: {
+  changes?: number;
+  firstRow?: unknown;
+  rows?: unknown[];
+  throwOnPrepare?: boolean;
+} = {}) {
   const calls: Array<{ sql: string; values: unknown[] }> = [];
   return {
     calls,
     prepare(sql: string) {
+      if (options.throwOnPrepare) throw new Error("D1 connection unavailable.");
       const call = { sql, values: [] as unknown[] };
       calls.push(call);
       const statement: any = {
         bind(...values: unknown[]) { call.values = values; return statement; },
-        first: async () => ({ project_id: "test-project", name: "agent_tasks" }),
-        all: async () => ({ success: true, results: [] }),
-        run: async () => ({ success: true, meta: { changes: 1 } }),
+        first: async () => Object.prototype.hasOwnProperty.call(options, "firstRow")
+          ? options.firstRow
+          : ({ project_id: "test-project", name: "agent_tasks" }),
+        all: async () => ({ success: true, results: options.rows ?? [] }),
+        run: async () => ({ success: true, meta: { changes: options.changes ?? 1 } }),
       };
       return statement;
     },
@@ -1127,4 +1135,145 @@ test("authenticated Developer Data maps unsupported content, malformed JSON and 
   } as any);
   assert.equal(storageFailure.status, 500);
   assert.equal((await storageFailure.json() as any).code, "DEVELOPER_STORAGE_FAILED");
+});
+
+
+test("Developer Data clamps task limits and rejects invalid status, engine and overlong titles", async () => {
+  const db = testAgentDb();
+  for (const [limit, expected] of [["0", 1], ["999", 100], ["1.5", 25]] as const) {
+    const response = await onRequestGet({
+      request: new Request("https://example.com/api/developer/tasks?limit=" + limit),
+      env: { AGENT_DB: db },
+    } as any);
+    assert.equal(response.status, 200);
+    assert.equal(db.calls.at(-1)?.values[1], expected);
+  }
+
+  for (const body of [
+    { title: "Task", status: "unknown" },
+    { title: "Task", engine: "remote" },
+    { title: "x".repeat(201) },
+  ]) {
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/developer/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      env: { AGENT_DB: db },
+    } as any);
+    assert.equal(response.status, 400);
+  }
+});
+
+test("Developer Data defaults non-string optional task fields and validates project and memory fields", async () => {
+  const db = testAgentDb();
+  const created = await onRequestPost({
+    request: new Request("https://example.com/api/developer/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Task with optional values", summary: 42, parentTaskId: 123 }),
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(created.status, 201);
+  assert.equal(db.calls[0].values[2], "queued");
+  assert.equal(db.calls[0].values[3], "native");
+  assert.equal(db.calls[0].values[5], undefined);
+  assert.equal(db.calls[0].values[6], null);
+
+  const missingProjectKey = await onRequestPost({
+    request: new Request("https://example.com/api/developer/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Badboy AI" }),
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(missingProjectKey.status, 400);
+
+  const memoryDefaults = await onRequestPost({
+    request: new Request("https://example.com/api/developer/project-memory", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: "project-1", category: "note", content: "Private by default", source: 42 }),
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(memoryDefaults.status, 201);
+  assert.equal(db.calls.at(-1)?.values.includes("private"), true);
+  assert.equal(db.calls.at(-1)?.values.includes("user"), true);
+});
+
+test("Developer Data returns not-found for foreign projects and memories without mutating data", async () => {
+  const noProjectDb = testAgentDb({ firstRow: null });
+  const missingProject = await onRequestPost({
+    request: new Request("https://example.com/api/developer/project-memory", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: "foreign-project", category: "note", content: "Do not save" }),
+    }),
+    env: { AGENT_DB: noProjectDb },
+  } as any);
+  assert.equal(missingProject.status, 404);
+  assert.equal((await missingProject.json() as any).code, "PROJECT_NOT_FOUND");
+
+  const noMemoryDb = testAgentDb({ changes: 0 });
+  const missingMemory = await onRequestPost({
+    request: new Request("https://example.com/api/developer/project-memory?memoryId=foreign-memory", {
+      method: "DELETE",
+    }),
+    env: { AGENT_DB: noMemoryDb },
+  } as any);
+  assert.equal(missingMemory.status, 404);
+  assert.equal((await missingMemory.json() as any).code, "MEMORY_NOT_FOUND");
+});
+
+test("Developer Data rejects oversized, non-object and invalid-length request bodies", async () => {
+  const db = testAgentDb();
+  for (const body of ["[]", "null"]) {
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/developer/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      }),
+      env: { AGENT_DB: db },
+    } as any);
+    assert.equal(response.status, 400);
+    assert.equal((await response.json() as any).code, "INVALID_JSON_BODY");
+  }
+
+  const oversized = await onRequestPost({
+    request: new Request("https://example.com/api/developer/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Content-Length": "20001" },
+      body: JSON.stringify({ projectKey: "badboy", name: "Badboy AI" }),
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(oversized.status, 400);
+
+  const invalidLength = await onRequestPost({
+    request: new Request("https://example.com/api/developer/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Content-Length": "not-a-number" },
+      body: JSON.stringify({ projectKey: "badboy", name: "Badboy AI" }),
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(invalidLength.status, 400);
+});
+
+test("Developer Data maps storage preparation failures to a non-leaking server error", async () => {
+  const db = testAgentDb({ throwOnPrepare: true });
+  const response = await onRequestGet({
+    request: new Request("https://example.com/api/developer/projects"),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(response.status, 500);
+  assert.deepEqual(await response.json(), {
+    code: "DEVELOPER_STORAGE_FAILED",
+    error: "Developer Agent data could not be saved or loaded.",
+  });
 });
