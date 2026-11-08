@@ -2,6 +2,12 @@ import assert from "node:assert";
 import test from "node:test";
 // Node ESM imports require .js extension when pointing to typescript files
 import { onRequestGet as rawOnRequestGet, onRequestPost as rawOnRequestPost } from "./api/[[path]].ts";
+import { handleDeveloperDataRequest } from "./api/developerData.ts";
+import {
+  buildDeveloperAnalysisMessages,
+  resolveDeveloperAnalysisEngine,
+  validateDeveloperAnalysisPayload,
+} from "./api/developerAgent.ts";
 
 const TEST_OWNER_TOKEN = "a".repeat(43);
 
@@ -1276,4 +1282,110 @@ test("Developer Data maps storage preparation failures to a non-leaking server e
     code: "DEVELOPER_STORAGE_FAILED",
     error: "Developer Agent data could not be saved or loaded.",
   });
+});
+
+
+test("direct Developer Data handler covers all owner-scoped route branches in the Worker test process", async () => {
+  const db = testAgentDb();
+  const base = "https://example.com/api/developer/";
+  const get = (path: string) => handleDeveloperDataRequest(
+    new Request(base + path), { AGENT_DB: db }, "verified-owner",
+  );
+  const post = (path: string, body: unknown) => handleDeveloperDataRequest(
+    new Request(base + path, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    }),
+    { AGENT_DB: db }, "verified-owner",
+  );
+
+  assert.deepEqual(await (await get("tasks?limit=999"))?.json(), { tasks: [] });
+  assert.equal(db.calls.at(-1)?.values[1], 100);
+  const task = await post("tasks", { title: "Direct task", status: "running", engine: "auto", summary: "Summary", parentTaskId: "parent" });
+  assert.equal(task?.status, 201);
+  assert.equal(db.calls.at(-1)?.sql.includes("agent_task_events"), true);
+
+  assert.deepEqual(await (await get("projects"))?.json(), { projects: [] });
+  const project = await post("projects", { projectKey: "direct", name: "Direct project", summary: "Context" });
+  assert.equal(project?.status, 200);
+
+  assert.deepEqual(await (await get("project-memory?projectId=direct-project"))?.json(), { memories: [] });
+  const memory = await post("project-memory", {
+    projectId: "direct-project", category: "project-note", content: "Keep existing features",
+    privacyLevel: "sensitive", source: "owner",
+  });
+  assert.equal(memory?.status, 201);
+
+  const removed = await handleDeveloperDataRequest(
+    new Request(base + "project-memory?memoryId=memory-1", { method: "DELETE" }),
+    { AGENT_DB: db }, "verified-owner",
+  );
+  assert.equal(removed?.status, 200);
+});
+
+test("direct Developer Data handler covers malformed payload, missing IDs and not-found branches", async () => {
+  const db = testAgentDb({ changes: 0 });
+  const base = "https://example.com/api/developer/";
+  const get = (path: string) => handleDeveloperDataRequest(
+    new Request(base + path), { AGENT_DB: db }, "verified-owner",
+  );
+  const post = (path: string, body: string, contentType = "application/json") => handleDeveloperDataRequest(
+    new Request(base + path, { method: "POST", headers: { "Content-Type": contentType }, body }),
+    { AGENT_DB: db }, "verified-owner",
+  );
+
+  assert.equal((await get("project-memory"))?.status, 400);
+  assert.equal((await handleDeveloperDataRequest(
+    new Request(base + "project-memory", { method: "DELETE" }), { AGENT_DB: db }, "verified-owner",
+  ))?.status, 400);
+  assert.equal((await post("tasks", "{}", "text/plain"))?.status, 415);
+  assert.equal((await post("tasks", "[]"))?.status, 400);
+  assert.equal((await post("tasks", JSON.stringify({ title: "Task", status: "bad" })))?.status, 400);
+  assert.equal((await post("tasks", JSON.stringify({ title: "Task", engine: "bad" })))?.status, 400);
+  assert.equal((await post("projects", JSON.stringify({ name: "Missing key" })))?.status, 400);
+  assert.equal((await post("project-memory", JSON.stringify({
+    projectId: "p", category: "note", content: "text", privacyLevel: "public",
+  })))?.status, 400);
+  assert.equal((await post("project-memory", JSON.stringify({
+    projectId: "missing", category: "note", content: "text",
+  })))?.status, 404);
+  const deleted = await handleDeveloperDataRequest(
+    new Request(base + "project-memory?memoryId=missing", { method: "DELETE" }),
+    { AGENT_DB: db }, "verified-owner",
+  );
+  assert.equal(deleted?.status, 404);
+  assert.equal(await handleDeveloperDataRequest(new Request("https://example.com/elsewhere"), { AGENT_DB: db }, "verified-owner"), null);
+});
+
+test("direct Developer Agent helpers cover every engine and payload validation branch", () => {
+  for (const input of [null, [], "not-an-object", 7]) {
+    assert.equal(validateDeveloperAnalysisPayload(input).ok, false);
+  }
+  for (const input of [
+    { prompt: "" }, { prompt: "x".repeat(4001) },
+    { prompt: "Plan", projectContext: 42 },
+    { prompt: "Plan", projectContext: "x".repeat(8001) },
+    { prompt: "Plan", requestedEngine: "unknown" },
+  ]) {
+    assert.equal(validateDeveloperAnalysisPayload(input).ok, false);
+  }
+  const valid = validateDeveloperAnalysisPayload({
+    prompt: "  Preserve existing features  ", projectContext: "  Expo + D1  ", requestedEngine: "auto",
+  });
+  assert.equal(valid.ok, true);
+  if (valid.ok) {
+    assert.deepEqual(valid.value, {
+      prompt: "Preserve existing features", projectContext: "Expo + D1", requestedEngine: "auto",
+    });
+    const messages = buildDeveloperAnalysisMessages(valid.value);
+    assert.match(messages[0].content, /analysis-only/);
+    assert.match(messages[1].content, /Expo \+ D1/);
+    assert.match(messages[1].content, /Preserve existing features/);
+  }
+  const noContext = validateDeveloperAnalysisPayload({ prompt: "  Review  " });
+  assert.equal(noContext.ok, true);
+  if (noContext.ok) assert.match(buildDeveloperAnalysisMessages(noContext.value)[1].content, /^User task:/);
+
+  assert.equal(resolveDeveloperAnalysisEngine("native").status, "ready");
+  assert.equal(resolveDeveloperAnalysisEngine("copilot").status, "unavailable");
+  assert.equal(resolveDeveloperAnalysisEngine("auto").status, "fallback");
 });
