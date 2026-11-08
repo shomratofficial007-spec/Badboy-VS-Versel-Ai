@@ -225,17 +225,18 @@ export function createAgentStorage(db: D1Database) {
       name: string;
       summary?: string;
       now?: string;
-    }): Promise<void> {
+    }): Promise<string> {
       const ownerId = assertOwnerId(input.ownerId);
       const now = input.now ?? new Date().toISOString();
-      await db.prepare(
+      const result = await db.prepare(
         `INSERT INTO agent_projects
           (project_id, owner_id, project_key, name, summary, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(owner_id, project_key) DO UPDATE SET
            name = excluded.name,
            summary = excluded.summary,
-           updated_at = excluded.updated_at`,
+           updated_at = excluded.updated_at
+         RETURNING project_id`,
       ).bind(
         requiredText(input.projectId, "Project ID", 128),
         ownerId,
@@ -244,7 +245,9 @@ export function createAgentStorage(db: D1Database) {
         input.summary?.trim().slice(0, 4000) ?? "",
         now,
         now,
-      ).run();
+      ).first<{ project_id: string }>();
+      if (!result?.project_id) throw new Error("Project could not be saved.");
+      return result.project_id;
     },
 
     async addProjectMemory(input: {
@@ -256,7 +259,7 @@ export function createAgentStorage(db: D1Database) {
       source?: string;
       privacyLevel?: "private" | "sensitive" | "general";
       now?: string;
-    }): Promise<void> {
+    }): Promise<boolean> {
       const ownerId = assertOwnerId(input.ownerId);
       const content = requiredText(input.content, "Memory content", 8000);
       const now = input.now ?? new Date().toISOString();
@@ -278,6 +281,7 @@ export function createAgentStorage(db: D1Database) {
         requiredText(input.projectId, "Project ID", 128),
         ownerId,
       ).run();
+      return (result.meta?.changes ?? 0) === 1;
     },
 
     async deleteProjectMemory(memoryId: string, ownerIdInput: string): Promise<boolean> {
