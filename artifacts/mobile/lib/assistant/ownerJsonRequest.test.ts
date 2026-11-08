@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createOwnerJsonRequester } from "./api";
+import { createOwnerJsonRequester } from "./ownerJsonRequest";
 
 test("adds the verified owner token and JSON body to a POST request", async () => {
   let sentUrl = "";
