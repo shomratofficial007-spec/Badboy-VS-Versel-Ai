@@ -962,7 +962,7 @@ export default function SettingsScreen() {
                   disabled={developerDataBusy}
                   style={[styles.secondaryButton, { backgroundColor: colors.secondary, marginTop: 12, opacity: developerDataBusy ? 0.5 : 1 }]}
                 >
-                  {developerDataBusy ? <ActivityIndicator size="small" color={colors.secondaryForeground} /> : <Feather name="cloud-upload" size={14} color={colors.secondaryForeground} />}
+                  {developerDataBusy ? <ActivityIndicator size="small" color={colors.secondaryForeground} /> : <Feather name="upload" size={14} color={colors.secondaryForeground} />}
                   <Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>Private D1-এ Project Brain সংরক্ষণ</Text>
                 </Pressable>
                 {developerProjects.length > 0 ? (
