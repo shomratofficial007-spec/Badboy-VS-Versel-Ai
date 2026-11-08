@@ -9,15 +9,25 @@ const alerts: Array<{ title: string; message: string; buttons: any[] }> = [];
 const signOutCalls: string[] = [];
 const clearChatCalls: string[] = [];
 const settingsUpdates: unknown[] = [];
+const inputHandlers: Array<{ label: string; placeholder: string; onChangeText: (value: string) => void }> = [];
+const telegramCalls: Array<{ method: string; args: unknown[] }> = [];
+let telegramHandlers = {
+  hasTelegramBot: async () => false,
+  connectTelegramBot: async (_token: string) => ({ username: 'badboy_helper' }),
+  disconnectTelegramBot: async () => {},
+  checkTelegramMessages: async () => [] as any[],
+  sendTelegramMessage: async (_text: string) => {},
+};
 const textContent = (node: any): string => {
   if (typeof node === 'string' || typeof node === 'number') return String(node);
   if (Array.isArray(node)) return node.map(textContent).join(' ');
   if (React.isValidElement(node)) return textContent((node.props as any).children);
   return '';
 };
-const host = (tag: string) => function Host({ children, accessibilityLabel, placeholder, disabled, onPress, onValueChange }: any) {
+const host = (tag: string) => function Host({ children, accessibilityLabel, placeholder, disabled, onPress, onValueChange, onChangeText }: any) {
   if (tag === 'button' && typeof onPress === 'function') pressables.push({ label: accessibilityLabel ?? textContent(children), onPress });
   if (typeof onValueChange === 'function') switchHandlers.push({ label: accessibilityLabel ?? '', onValueChange });
+  if (typeof onChangeText === 'function') inputHandlers.push({ label: accessibilityLabel ?? '', placeholder: placeholder ?? '', onChangeText });
   return React.createElement(tag, {
     ...(accessibilityLabel ? { 'aria-label': accessibilityLabel } : {}),
     ...(placeholder ? { placeholder } : {}),
@@ -101,9 +111,9 @@ mock.module('../lib/assistant/expertReview.ts', {
 });
 mock.module('../lib/assistant/telegram.ts', {
   namedExports: {
-    checkTelegramMessages: async () => [], connectTelegramBot: async () => ({}),
+    checkTelegramMessages: (...args: unknown[]) => { telegramCalls.push({ method: 'checkTelegramMessages', args }); return telegramHandlers.checkTelegramMessages(); }, connectTelegramBot: async () => ({}),
     disconnectTelegramBot: async () => {}, hasTelegramBot: async () => false,
-    sendTelegramMessage: async () => {},
+    sendTelegramMessage: (...args: [string]) => { telegramCalls.push({ method: 'sendTelegramMessage', args }); return telegramHandlers.sendTelegramMessage(...args); },
   },
 });
 mock.module('../lib/assistant/developer.ts', {
@@ -338,4 +348,166 @@ test('Settings blank-input actions fail closed without calling services or chang
   }
   assert.deepEqual(settingsUpdates, []);
   assert.deepEqual(alerts, []);
+});
+
+
+function createSettingsHookHarness() {
+  const slots: unknown[] = [];
+  let cursor = 0;
+  const internals = (React as any).__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+  assert.ok(internals, 'React hook dispatcher internals are available in the test runtime');
+  const dispatcher = {
+    useState(initial: unknown) {
+      const index = cursor++;
+      if (!(index in slots)) slots[index] = initial;
+      return [
+        slots[index],
+        (next: unknown) => {
+          slots[index] = typeof next === 'function'
+            ? (next as (previous: unknown) => unknown)(slots[index])
+            : next;
+        },
+      ];
+    },
+    useEffect() {},
+  };
+  const render = async () => {
+    cursor = 0;
+    const previous = internals.H;
+    internals.H = dispatcher;
+    try {
+      const { default: SettingsScreen } = await settingsScreenPromise;
+      return visit(SettingsScreen());
+    } finally {
+      internals.H = previous;
+    }
+  };
+  return render;
+}
+
+function resetTelegramState() {
+  inputHandlers.length = 0;
+  telegramCalls.length = 0;
+  alerts.length = 0;
+  telegramHandlers = {
+    hasTelegramBot: async () => false,
+    connectTelegramBot: async (_token: string) => ({ username: 'badboy_helper' }),
+    disconnectTelegramBot: async () => {},
+    checkTelegramMessages: async () => [] as any[],
+    sendTelegramMessage: async (_text: string) => {},
+  };
+}
+
+test('Settings Telegram flow confirms connection, loads inbox, sends a message and disconnects', async () => {
+  resetTelegramState();
+  const render = createSettingsHookHarness();
+  await render();
+  const tokenInput = inputHandlers.find((item) => item.label === 'Telegram bot token');
+  assert.ok(tokenInput, 'Telegram token input is rendered');
+  tokenInput.onChangeText('  123:abc  ');
+  await render();
+
+  pressables.find((item) => item.label.includes('Bot সংযোগ করুন'))?.onPress();
+  assert.equal(alerts.at(-1)?.title, 'Telegram bot সংযোগ করবেন?');
+  await alerts.at(-1)?.buttons.find((button) => button.text === 'সংযোগ করুন')?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  let html = await render();
+  assert.match(html, /@badboy_helper/);
+  assert.deepEqual(telegramCalls.find((item) => item.method === 'connectTelegramBot')?.args, ['123:abc']);
+
+  telegramHandlers.checkTelegramMessages = async () => [{
+    id: 7, chatId: 88, sender: 'Owner', text: 'Hello Badboy', date: 100,
+  }];
+  pressables.find((item) => item.label.includes('Inbox দেখুন'))?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  html = await render();
+  assert.match(html, /Hello Badboy/);
+  assert.equal(telegramCalls.filter((item) => item.method === 'checkTelegramMessages').length, 1);
+
+  const messageInput = inputHandlers.find((item) => item.placeholder === 'Bot-এ বার্তা লিখুন');
+  assert.ok(messageInput);
+  messageInput.onChangeText('  Reply from Badboy  ');
+  await render();
+  pressables.find((item) => item.label.includes('অনুমতি দিয়ে পাঠান'))?.onPress();
+  assert.equal(alerts.at(-1)?.title, 'Telegram-এ পাঠাবেন?');
+  await alerts.at(-1)?.buttons.find((button) => button.text === 'পাঠান')?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(telegramCalls.find((item) => item.method === 'sendTelegramMessage')?.args, ['Reply from Badboy']);
+
+  pressables.find((item) => item.label.includes('Bot বিচ্ছিন্ন করুন'))?.onPress();
+  assert.equal(alerts.at(-1)?.title, 'Telegram সংযোগ বিচ্ছিন্ন করবেন?');
+  await alerts.at(-1)?.buttons.find((button) => button.text === 'বিচ্ছিন্ন করুন')?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  html = await render();
+  assert.match(html, /Bot token/);
+  assert.equal(telegramCalls.filter((item) => item.method === 'disconnectTelegramBot').length, 1);
+});
+
+test('Settings Telegram actions surface connection, inbox, send and disconnect failures', async () => {
+  resetTelegramState();
+  const render = createSettingsHookHarness();
+  await render();
+  const tokenInput = inputHandlers.find((item) => item.label === 'Telegram bot token');
+  assert.ok(tokenInput);
+  tokenInput.onChangeText('valid-token');
+  await render();
+
+  telegramHandlers.connectTelegramBot = async () => { throw new Error('invalid Telegram token'); };
+  pressables.find((item) => item.label.includes('Bot সংযোগ করুন'))?.onPress();
+  await alerts.at(-1)?.buttons.find((button) => button.text === 'সংযোগ করুন')?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  let html = await render();
+  assert.match(html, /invalid Telegram token/);
+
+  // A separate connected-state render lets the inbox and send error paths be exercised.
+  const connectedRender = createSettingsHookHarness();
+  const connectedSlots = (React as any).__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+  const connectedInternals = connectedSlots;
+  const originalUseState = connectedInternals.H;
+  const connectedDispatcher = {
+    ...originalUseState,
+    useState(initial: unknown) {
+      const value = initial;
+      if (initial === false && !connectedDispatcher.didSetConnected) {
+        connectedDispatcher.didSetConnected = true;
+        return [true, () => {}];
+      }
+      return [value, () => {}];
+    },
+    didSetConnected: false,
+  };
+  const connectedScreen = async () => {
+    const previous = connectedInternals.H;
+    connectedInternals.H = connectedDispatcher;
+    try {
+      const { default: SettingsScreen } = await settingsScreenPromise;
+      return visit(SettingsScreen());
+    } finally {
+      connectedInternals.H = previous;
+    }
+  };
+  telegramHandlers.checkTelegramMessages = async () => { throw new Error('inbox unavailable'); };
+  await connectedScreen();
+  pressables.find((item) => item.label.includes('Inbox দেখুন'))?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  html = await connectedScreen();
+  assert.match(html, /inbox unavailable/);
+
+  telegramHandlers.sendTelegramMessage = async () => { throw new Error('send rejected'); };
+  const messageInput = inputHandlers.find((item) => item.placeholder === 'Bot-এ বার্তা লিখুন');
+  assert.ok(messageInput);
+  messageInput.onChangeText('Message');
+  await connectedScreen();
+  pressables.find((item) => item.label.includes('অনুমতি দিয়ে পাঠান'))?.onPress();
+  await alerts.at(-1)?.buttons.find((button) => button.text === 'পাঠান')?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  html = await connectedScreen();
+  assert.match(html, /send rejected/);
+
+  telegramHandlers.disconnectTelegramBot = async () => { throw new Error('secure storage failure'); };
+  pressables.find((item) => item.label.includes('Bot বিচ্ছিন্ন করুন'))?.onPress();
+  await alerts.at(-1)?.buttons.find((button) => button.text === 'বিচ্ছিন্ন করুন')?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  html = await connectedScreen();
+  assert.match(html, /Bot token মুছতে সমস্যা হয়েছে/);
 });
