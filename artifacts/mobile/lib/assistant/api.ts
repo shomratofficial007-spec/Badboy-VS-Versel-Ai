@@ -6,7 +6,7 @@ import { getOwnerToken } from './ownerAuth';
 
 // This repository deploys its own Worker; do not send native APK traffic to the
 // unrelated legacy Voice-Memory-Assistant Worker.
-import { apiUrl, requestOwnerJson } from "./ownerJsonRequest";
+import { apiUrl } from "./ownerJsonRequest";
 async function ownerAuthorizationHeader(): Promise<string> {
   const token = await getOwnerToken();
   if (!token) {
