@@ -196,3 +196,42 @@ test('Settings exposes voice consent, input/output, auto-speak, auto-submit and 
     voiceIdentifier: null,
   });
 });
+
+test('Settings preserves every roadmap preference and all selectable theme choices', async () => {
+  const { default: SettingsScreen } = await settingsScreenPromise;
+  pressables.length = 0;
+  switchHandlers.length = 0;
+  settingsUpdates.length = 0;
+  renderToStaticMarkup(React.createElement(SettingsScreen));
+
+  const roadmapControls = [
+    'Web Development', 'App Development', 'Self Development',
+    'Autonomous Task Manager', 'Project Brain', 'Auto QA & Testing',
+    'Plugin Marketplace', 'AI Provider Manager', 'Automation Hub',
+    'Release & Recovery', 'App Integrations', 'Advanced Memory',
+  ];
+  for (const title of roadmapControls) {
+    const control = switchHandlers.find((item) => item.label === title);
+    assert.ok(control, `missing roadmap preference: ${title}`);
+    control.onValueChange(true);
+  }
+  assert.deepEqual(settingsUpdates, [
+    { roadmap: { ...roadmap, webDevelopment: true } },
+    { roadmap: { ...roadmap, appDevelopment: true } },
+    { roadmap: { ...roadmap, selfDevelopment: true } },
+    { roadmap: { ...roadmap, autonomousAgent: true } },
+    { roadmap: { ...roadmap, projectBrain: true } },
+    { roadmap: { ...roadmap, autoQA: true } },
+    { roadmap: { ...roadmap, pluginMarketplace: true } },
+    { roadmap: { ...roadmap, providerManager: true } },
+    { roadmap: { ...roadmap, automationHub: true } },
+    { roadmap: { ...roadmap, releaseRecovery: true } },
+    { roadmap: { ...roadmap, integrations: true } },
+    { roadmap: { ...roadmap, localMemoryControls: true } },
+  ]);
+
+  const ocean = pressables.find((item) => item.label.includes('Ocean Blue'));
+  assert.ok(ocean, 'Ocean theme is available');
+  ocean.onPress();
+  assert.deepEqual(settingsUpdates.at(-1), { theme: 'ocean' });
+});
