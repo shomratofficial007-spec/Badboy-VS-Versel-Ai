@@ -13,14 +13,15 @@ mock.module('../lib/assistant/ownerAuth.ts', {
   },
 });
 
-const { OwnerAuthProvider, useOwnerAuth } = await import('./OwnerAuthContext');
+const ownerAuthContextPromise = import('./OwnerAuthContext');
 
 function AuthState() {
   const auth = useOwnerAuth();
   return React.createElement('output', null, `${auth.ready}:${auth.authenticated}`);
 }
 
-test('OwnerAuthProvider supplies a safe unauthenticated initial state during server rendering', () => {
+test('OwnerAuthProvider supplies a safe unauthenticated initial state during server rendering', async () => {
+  const { OwnerAuthProvider, useOwnerAuth } = await ownerAuthContextPromise;
   authCalls.length = 0;
   const html = renderToStaticMarkup(
     React.createElement(OwnerAuthProvider, null, React.createElement(AuthState)),
@@ -29,7 +30,8 @@ test('OwnerAuthProvider supplies a safe unauthenticated initial state during ser
   assert.deepEqual(authCalls, []);
 });
 
-test('useOwnerAuth rejects use outside the provider instead of silently granting access', () => {
+test('useOwnerAuth rejects use outside the provider instead of silently granting access', async () => {
+  const { useOwnerAuth } = await ownerAuthContextPromise;
   function OutsideProvider() {
     useOwnerAuth();
     return null;
