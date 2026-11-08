@@ -27,9 +27,10 @@ mock.module('../context/OwnerAuthContext.tsx', {
   namedExports: { useOwnerAuth: () => ({ signIn: async () => {} }) },
 });
 
-const { default: OwnerLoginScreen } = await import('./owner-login');
+const ownerLoginScreenPromise = import('./owner-login');
 
-test('Owner Login starts with a disabled secure-token action and explains local data privacy', () => {
+test('Owner Login starts with a disabled secure-token action and explains local data privacy', async () => {
+  const { default: OwnerLoginScreen } = await ownerLoginScreenPromise;
   const html = renderToStaticMarkup(React.createElement(OwnerLoginScreen));
   assert.match(html, /BADBOY/);
   assert.match(html, /Owner Login/);
