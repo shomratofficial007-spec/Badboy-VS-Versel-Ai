@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 
 const pressables: Array<{label:string;onPress:()=>void}>=[];
 const switches: Array<{label:string;onValueChange:(value:boolean)=>void}>=[];
@@ -11,12 +10,13 @@ const updates: Array<Record<string,unknown>>=[];
 const calls: Record<string,any[]>={speak:[],stop:[],agent:[],expert:[],share:[],links:[],analysis:[]};
 const stateSlots:unknown[]=[];
 let stateCursor=0;
-const settings:any={personality:'Helpful and concise',onlineAI:true,developerEngine:'auto',theme:'badboy',autoImprove:false,developerMode:true,voiceProcessingConsent:false,voiceInputEnabled:true,voiceOutputEnabled:true,autoSpeakReplies:false,autoSubmitVoice:false,wakeWordEnabled:false,voiceLanguage:'bn-BD',voiceIdentifier:null,roadmap:{webDevelopment:false,appDevelopment:false,selfDevelopment:false,autonomousAgent:false,projectBrain:false,autoQA:false,pluginMarketplace:false,providerManager:false,automationHub:false,releaseRecovery:false,integrations:false,localMemoryControls:false}};
-mock.method(React,'useState',(initial:unknown)=>{
+const useStateMock=(initial:unknown)=>{
  const i=stateCursor++;
- if(!(i in stateSlots)) stateSlots[i]=typeof initial==='function'?(initial as ()=>unknown)():initial;
+ if(!(i in stateSlots))stateSlots[i]=typeof initial==='function'?(initial as ()=>unknown)():initial;
  return [stateSlots[i],(next:unknown)=>{stateSlots[i]=typeof next==='function'?(next as (v:unknown)=>unknown)(stateSlots[i]):next;}];
-});
+};
+mock.module('react',{namedExports:{useState:useStateMock,useEffect:()=>{}}});
+const settings:any={personality:'Helpful and concise',onlineAI:true,developerEngine:'auto',theme:'badboy',autoImprove:false,developerMode:true,voiceProcessingConsent:false,voiceInputEnabled:true,voiceOutputEnabled:true,autoSpeakReplies:false,autoSubmitVoice:false,wakeWordEnabled:false,voiceLanguage:'bn-BD',voiceIdentifier:null,roadmap:{webDevelopment:false,appDevelopment:false,selfDevelopment:false,autonomousAgent:false,projectBrain:false,autoQA:false,pluginMarketplace:false,providerManager:false,automationHub:false,releaseRecovery:false,integrations:false,localMemoryControls:false}};
 const childText=(node:any):string=>typeof node==='string'||typeof node==='number'?String(node):Array.isArray(node)?node.map(childText).join(' '):React.isValidElement(node)?childText((node.props as any).children):'';
 const host=(tag:string)=>function Host({children,accessibilityLabel,placeholder,disabled,onPress,onValueChange,onChangeText}:any){
  const label=accessibilityLabel??childText(children);
@@ -33,10 +33,8 @@ let agentResults:any[]=[
 ];
 let expertFailure:unknown=null,shareFailure=false;
 mock.module('react-native',{namedExports:{
- ActivityIndicator:()=>React.createElement('span',null,'loading'),
- Alert:{alert:(title:string,_message:string,buttons:any[]=[])=>(alerts.push({title,buttons}))},
- Linking:{openURL:async(url:string)=>{calls.links.push(url);}},Platform:{OS:'android'},
- Pressable:host('button'),ScrollView:host('main'),
+ ActivityIndicator:()=>null,Alert:{alert:(title:string,_message:string,buttons:any[]=[])=>(alerts.push({title,buttons}))},
+ Linking:{openURL:async(url:string)=>{calls.links.push(url);}},Platform:{OS:'android'},Pressable:host('button'),ScrollView:host('main'),
  Share:{share:async(value:any)=>{calls.share.push(value);if(shareFailure)throw new Error('share failed');return{};}},
  StyleSheet:{create:(value:unknown)=>value},Switch:host('input'),Text:host('span'),TextInput:host('input'),View:host('section'),
 }});
@@ -71,6 +69,16 @@ mock.module('../lib/assistant/developerEngine.ts',{namedExports:{resolveDevelope
 
 const screenPromise=import('../app/(tabs)/settings');
 const tick=async()=>{await new Promise(resolve=>setTimeout(resolve,0));};
+const visit=(node:any):string=>{
+ if(node===null||node===undefined||typeof node==='boolean')return '';
+ if(typeof node==='string'||typeof node==='number')return String(node);
+ if(Array.isArray(node))return node.map(visit).join('');
+ if(React.isValidElement(node)){
+  if(typeof node.type==='function')return visit(node.type(node.props));
+  return visit((node.props as any).children);
+ }
+ return '';
+};
 const reset=()=>{
  stateSlots.length=0;stateCursor=0;pressables.length=0;switches.length=0;inputs.length=0;alerts.length=0;updates.length=0;
  for(const value of Object.values(calls))value.length=0;
@@ -82,7 +90,7 @@ const reset=()=>{
  ];
  expertFailure=null;shareFailure=false;
 };
-const render=async()=>{const{default:Screen}=await screenPromise;hookCursor=0;return renderToStaticMarkup(React.createElement(Screen));};
+const render=async()=>{const{default:Screen}=await screenPromise;hookCursor=0;return visit(Screen());};
 const getInput=(placeholder:string)=>{const found=inputs.find(x=>x.placeholder===placeholder);assert.ok(found,'missing input '+placeholder);return found;};
 const press=(label:string)=>{const found=pressables.find(x=>x.label.includes(label));assert.ok(found,'missing button '+label);return found.onPress;};
 
@@ -93,12 +101,12 @@ test('Settings personality save trims text and uses fallback for an empty draft'
  assert.deepEqual(updates.at(-1),{personality:'Warm, clear, and practical.'});
 });
 
-test('Settings language search is case-insensitive and voice preview uses the selected voice',async()=>{
+test('Settings language search is case-insensitive and voice preview follows selected language',async()=>{
  reset();await render();getInput('ভাষা খুঁজুন / Search language...').onChangeText('ENGLISH');
  const html=await render();assert.match(html,/English \(US\)/);assert.doesNotMatch(html,/বাংলা \(বাংলাদেশ\)/);
  press('English (US)')();assert.deepEqual(updates.at(-1),{voiceLanguage:'en-US',voiceIdentifier:null});
- await render();press('Bangla Voice')();assert.deepEqual(updates.at(-1),{voiceIdentifier:'bn-v'});
- press('নমুনা শুনুন: Bangla Voice')();assert.equal(calls.speak.length,1);assert.equal(calls.speak[0][3],'bn-v');
+ await render();press('English Voice')();assert.deepEqual(updates.at(-1),{voiceIdentifier:'en-v'});
+ press('নমুনা শুনুন: English Voice')();assert.equal(calls.speak.length,1);assert.equal(calls.speak[0][3],'en-v');
  press('নমুনা বন্ধ করুন')();assert.equal(calls.stop.length,1);
 });
 
