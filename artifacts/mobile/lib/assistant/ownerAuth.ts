@@ -1,11 +1,14 @@
 import { fetch as expoFetch } from 'expo/fetch';
 import * as SecureStore from 'expo-secure-store';
-import { Platform } from 'react-native';
 
 const OWNER_TOKEN_KEY = 'badboy-owner-token-v1';
 const DEFAULT_NATIVE_API_DOMAIN = 'https://badboy-vs-versel-ai.shomratofficial007.workers.dev';
 
 let activeToken: string | null = null;
+
+function isWebPlatform(): boolean {
+  return process.env.EXPO_OS === 'web';
+}
 
 function authApiUrl() {
   if (
@@ -22,7 +25,7 @@ function authApiUrl() {
 
 export async function getOwnerToken(): Promise<string | null> {
   if (activeToken) return activeToken;
-  if (Platform.OS === 'web') return null;
+  if (isWebPlatform()) return null;
   try {
     activeToken = await SecureStore.getItemAsync(OWNER_TOKEN_KEY);
     return activeToken;
@@ -32,7 +35,7 @@ export async function getOwnerToken(): Promise<string | null> {
 }
 
 export async function saveOwnerToken(token: string): Promise<void> {
-  if (Platform.OS !== 'web') {
+  if (!isWebPlatform()) {
     await SecureStore.setItemAsync(OWNER_TOKEN_KEY, token);
   }
   activeToken = token;
@@ -40,7 +43,7 @@ export async function saveOwnerToken(token: string): Promise<void> {
 
 export async function clearOwnerToken(): Promise<void> {
   activeToken = null;
-  if (Platform.OS !== 'web') {
+  if (!isWebPlatform()) {
     await SecureStore.deleteItemAsync(OWNER_TOKEN_KEY);
   }
 }
