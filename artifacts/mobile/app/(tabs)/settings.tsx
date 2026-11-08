@@ -19,6 +19,17 @@ import { useAssistant } from '@/context/AssistantContext';
 import { useOwnerAuth } from '@/context/OwnerAuthContext';
 import { VOICE_LANGUAGES, getAvailableSpeechVoices, speak, stopSpeaking, type AvailableSpeechVoice } from '@/lib/assistant/voice';
 import { streamDeveloperAnalysis, streamReply } from '@/lib/assistant/api';
+import {
+  addDeveloperProjectMemory,
+  deleteDeveloperProjectMemory,
+  listDeveloperProjectMemory,
+  listDeveloperProjects,
+  listDeveloperTasks,
+  saveDeveloperProject,
+  type DeveloperProjectMemoryRecord,
+  type DeveloperProjectRecord,
+  type DeveloperTaskRecord,
+} from '@/lib/assistant/developerData';
 import { buildExpertReviewPrompt, inspectBadboyRepository, type RepositoryEvidence } from '@/lib/assistant/expertReview';
 import { useColors } from '@/hooks/useColors';
 import {
@@ -107,6 +118,92 @@ export default function SettingsScreen() {
   const [developerAnalysisEngine, setDeveloperAnalysisEngine] = useState('');
   const [developerAnalysisFallback, setDeveloperAnalysisFallback] = useState('');
   const [developerAnalysisTaskId, setDeveloperAnalysisTaskId] = useState('');
+  const [developerTasks, setDeveloperTasks] = useState<DeveloperTaskRecord[]>([]);
+  const [developerProjects, setDeveloperProjects] = useState<DeveloperProjectRecord[]>([]);
+  const [selectedDeveloperProjectId, setSelectedDeveloperProjectId] = useState('');
+  const [developerMemories, setDeveloperMemories] = useState<DeveloperProjectMemoryRecord[]>([]);
+  const [developerMemoryDraft, setDeveloperMemoryDraft] = useState('');
+  const [developerDataBusy, setDeveloperDataBusy] = useState(false);
+  const [developerDataError, setDeveloperDataError] = useState<string | null>(null);
+
+  const refreshDeveloperTasks = async () => {
+    try {
+      setDeveloperTasks(await listDeveloperTasks());
+    } catch (cause) {
+      setDeveloperDataError(cause instanceof Error ? cause.message : 'Developer task history লোড করা যায়নি।');
+    }
+  };
+
+  const refreshDeveloperProjects = async () => {
+    try {
+      const projects = await listDeveloperProjects();
+      setDeveloperProjects(projects);
+      if (!selectedDeveloperProjectId && projects[0]) {
+        setSelectedDeveloperProjectId(projects[0].project_id);
+      }
+    } catch (cause) {
+      setDeveloperDataError(cause instanceof Error ? cause.message : 'Project তালিকা লোড করা যায়নি।');
+    }
+  };
+
+  const handleSaveProjectBrain = async () => {
+    if (!projectBrain || developerDataBusy) return;
+    setDeveloperDataBusy(true);
+    setDeveloperDataError(null);
+    try {
+      const project = await saveDeveloperProject({
+        projectKey: 'badboy-main',
+        name: projectBrain.name,
+        summary: [
+          projectBrain.architecture,
+          ...projectBrain.frameworks,
+          ...projectBrain.apiEndpoints,
+          ...projectBrain.knownLimitations,
+        ].join('\\n').slice(0, 4000),
+      });
+      setSelectedDeveloperProjectId(project.projectId);
+      await refreshDeveloperProjects();
+    } catch (cause) {
+      setDeveloperDataError(cause instanceof Error ? cause.message : 'Project Brain D1-এ সংরক্ষণ করা যায়নি।');
+    } finally {
+      setDeveloperDataBusy(false);
+    }
+  };
+
+  const handleAddDeveloperMemory = async () => {
+    if (!selectedDeveloperProjectId || !developerMemoryDraft.trim() || developerDataBusy) return;
+    setDeveloperDataBusy(true);
+    setDeveloperDataError(null);
+    try {
+      await addDeveloperProjectMemory({
+        projectId: selectedDeveloperProjectId,
+        category: 'project-note',
+        content: developerMemoryDraft.trim(),
+        source: 'owner',
+        privacyLevel: 'private',
+      });
+      setDeveloperMemoryDraft('');
+      setDeveloperMemories(await listDeveloperProjectMemory(selectedDeveloperProjectId));
+    } catch (cause) {
+      setDeveloperDataError(cause instanceof Error ? cause.message : 'Private project memory সংরক্ষণ করা যায়নি।');
+    } finally {
+      setDeveloperDataBusy(false);
+    }
+  };
+
+  const handleDeleteDeveloperMemory = async (memoryId: string) => {
+    if (developerDataBusy) return;
+    setDeveloperDataBusy(true);
+    setDeveloperDataError(null);
+    try {
+      await deleteDeveloperProjectMemory(memoryId);
+      setDeveloperMemories((previous) => previous.filter((item) => item.memory_id !== memoryId));
+    } catch (cause) {
+      setDeveloperDataError(cause instanceof Error ? cause.message : 'Project memory মুছে ফেলা যায়নি।');
+    } finally {
+      setDeveloperDataBusy(false);
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -129,9 +226,25 @@ export default function SettingsScreen() {
     setProjectBrain(getProjectBrainSummary());
     setQaResult(runAutoQASuite());
     setPlugins(getPluginRegistryStatus());
+    void listDeveloperTasks().then((tasks) => { if (active) setDeveloperTasks(tasks); }).catch(() => {});
+    void listDeveloperProjects().then((projects) => {
+      if (active) {
+        setDeveloperProjects(projects);
+        if (projects[0]) setSelectedDeveloperProjectId((current) => current || projects[0].project_id);
+      }
+    }).catch(() => {});
 
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!selectedDeveloperProjectId) return;
+    let active = true;
+    listDeveloperProjectMemory(selectedDeveloperProjectId)
+      .then((memories) => { if (active) setDeveloperMemories(memories); })
+      .catch((cause) => { if (active) setDeveloperDataError(cause instanceof Error ? cause.message : 'Project memory লোড করা যায়নি।'); });
+    return () => { active = false; };
+  }, [selectedDeveloperProjectId]);
 
   useEffect(() => {
     if (expertReviewDraft.trim()) {
@@ -211,6 +324,7 @@ export default function SettingsScreen() {
       );
     } finally {
       setDeveloperAnalysisBusy(false);
+      void refreshDeveloperTasks();
     }
   };
 
