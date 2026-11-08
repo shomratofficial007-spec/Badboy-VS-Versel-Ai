@@ -34,10 +34,10 @@ mock.module('@expo/vector-icons', { namedExports: { Feather: () => null } });
 mock.module('react-native-safe-area-context', {
   namedExports: { useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) },
 });
-mock.module('@/context/AssistantContext', {
+mock.module('../../context/AssistantContext.tsx', {
   namedExports: { useAssistant: () => assistantState },
 });
-mock.module('@/hooks/useColors', {
+mock.module('../../hooks/useColors.ts', {
   namedExports: {
     useColors: () => ({
       background: '#000', foreground: '#fff', mutedForeground: '#aaa',
