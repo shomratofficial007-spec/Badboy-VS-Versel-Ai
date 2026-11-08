@@ -11,6 +11,15 @@ const clearChatCalls: string[] = [];
 const settingsUpdates: unknown[] = [];
 const inputHandlers: Array<{ label: string; placeholder: string; onChangeText: (value: string) => void }> = [];
 const telegramCalls: Array<{ method: string; args: unknown[] }> = [];
+const developerDataCalls: Array<{ method: string; args: unknown[] }> = [];
+let developerDataHandlers = {
+  listDeveloperTasks: async () => [] as any[],
+  listDeveloperProjects: async () => [] as any[],
+  saveDeveloperProject: async (_input: any) => ({ projectId: 'project-1', projectKey: 'badboy-main', name: 'Badboy' }),
+  listDeveloperProjectMemory: async (_projectId: string) => [] as any[],
+  addDeveloperProjectMemory: async (_input: any) => ({ memoryId: 'memory-2', saved: true }),
+  deleteDeveloperProjectMemory: async (_memoryId: string) => ({ deleted: true }),
+};
 let telegramHandlers = {
   hasTelegramBot: async () => false,
   connectTelegramBot: async (_token: string) => ({ username: 'badboy_helper' }),
@@ -100,10 +109,13 @@ mock.module('../lib/assistant/api.ts', {
 });
 mock.module('../lib/assistant/developerData.ts', {
   namedExports: {
-    addDeveloperProjectMemory: async () => {}, deleteDeveloperProjectMemory: async () => {},
-    getAnalysisProjectNotes: async () => [], listDeveloperProjectMemory: async () => [],
-    listDeveloperProjects: async () => [], listDeveloperTasks: async () => [],
-    saveDeveloperProject: async () => {},
+    addDeveloperProjectMemory: (...args: [any]) => { developerDataCalls.push({ method: 'addDeveloperProjectMemory', args }); return developerDataHandlers.addDeveloperProjectMemory(...args); },
+    deleteDeveloperProjectMemory: (...args: [string]) => { developerDataCalls.push({ method: 'deleteDeveloperProjectMemory', args }); return developerDataHandlers.deleteDeveloperProjectMemory(...args); },
+    getAnalysisProjectNotes: async () => [],
+    listDeveloperProjectMemory: (...args: [string]) => { developerDataCalls.push({ method: 'listDeveloperProjectMemory', args }); return developerDataHandlers.listDeveloperProjectMemory(...args); },
+    listDeveloperProjects: (...args: unknown[]) => { developerDataCalls.push({ method: 'listDeveloperProjects', args }); return developerDataHandlers.listDeveloperProjects(); },
+    listDeveloperTasks: (...args: unknown[]) => { developerDataCalls.push({ method: 'listDeveloperTasks', args }); return developerDataHandlers.listDeveloperTasks(); },
+    saveDeveloperProject: (...args: [any]) => { developerDataCalls.push({ method: 'saveDeveloperProject', args }); return developerDataHandlers.saveDeveloperProject(...args); },
   },
 });
 mock.module('../lib/assistant/expertReview.ts', {
@@ -403,6 +415,15 @@ function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {
 
 function resetTelegramState() {
   inputHandlers.length = 0;
+  developerDataCalls.length = 0;
+  developerDataHandlers = {
+    listDeveloperTasks: async () => [],
+    listDeveloperProjects: async () => [],
+    saveDeveloperProject: async (_input: any) => ({ projectId: 'project-1', projectKey: 'badboy-main', name: 'Badboy' }),
+    listDeveloperProjectMemory: async (_projectId: string) => [],
+    addDeveloperProjectMemory: async (_input: any) => ({ memoryId: 'memory-2', saved: true }),
+    deleteDeveloperProjectMemory: async (_memoryId: string) => ({ deleted: true }),
+  };
   telegramCalls.length = 0;
   alerts.length = 0;
   telegramHandlers = {
@@ -495,4 +516,100 @@ test('Settings Telegram actions surface connection, inbox, send and disconnect f
   await new Promise((resolve) => setTimeout(resolve, 0));
   html = await connectedRender();
   assert.match(html, /Bot token মুছতে সমস্যা হয়েছে/);
+});
+
+
+const sampleProjectBrain = {
+  name: 'Badboy AI',
+  architecture: 'Cloudflare Worker + Expo mobile app',
+  frameworks: ['React Native', 'TypeScript'],
+  apiEndpoints: ['/api/assistant/chat'],
+  knownLimitations: ['Copilot runtime remains disabled'],
+};
+const sampleProjectMemory = {
+  memory_id: 'memory-1', owner_id: 'owner-1', project_id: 'project-1',
+  category: 'project-note', content: 'Keep the existing voice features',
+  source: 'owner', privacy_level: 'private', created_at: '2026-11-08', updated_at: '2026-11-08',
+};
+
+test('Settings Project Brain saves its real project summary into owner-scoped D1 and refreshes project list', async () => {
+  resetTelegramState();
+  developerDataHandlers.saveDeveloperProject = async (input) => ({
+    projectId: 'project-1', projectKey: input.projectKey, name: input.name,
+  });
+  developerDataHandlers.listDeveloperProjects = async () => [{
+    project_id: 'project-1', owner_id: 'owner-1', project_key: 'badboy-main',
+    name: 'Badboy AI', summary: 'Existing project', created_at: '2026-11-08', updated_at: '2026-11-08',
+  }];
+  const render = createSettingsHookHarness({ 14: 'brain', 24: sampleProjectBrain });
+  await render();
+  pressables.find((item) => item.label.includes('Private D1-এ Project Brain সংরক্ষণ'))?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const saved = developerDataCalls.find((item) => item.method === 'saveDeveloperProject');
+  assert.deepEqual(saved?.args, [{
+    projectKey: 'badboy-main',
+    name: 'Badboy AI',
+    summary: 'Cloudflare Worker + Expo mobile app\\\\nReact Native\\\\nTypeScript\\\\n/api/assistant/chat\\\\nCopilot runtime remains disabled',
+  }]);
+  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperProjects').length, 1);
+});
+
+test('Settings saves private project notes trimmed and reloads the selected project memory', async () => {
+  resetTelegramState();
+  developerDataHandlers.listDeveloperProjectMemory = async (projectId) => {
+    assert.equal(projectId, 'project-1');
+    return [sampleProjectMemory];
+  };
+  const render = createSettingsHookHarness({
+    14: 'brain', 24: sampleProjectBrain, 41: 'project-1', 43: '  Preserve the original wake-word flow  ',
+  });
+  await render();
+  pressables.find((item) => item.label.includes('Private Note সংরক্ষণ'))?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(developerDataCalls.find((item) => item.method === 'addDeveloperProjectMemory')?.args, [{
+    projectId: 'project-1', category: 'project-note',
+    content: 'Preserve the original wake-word flow', source: 'owner', privacyLevel: 'private',
+  }]);
+  const html = await render();
+  assert.match(html, /Keep the existing voice features/);
+});
+
+test('Settings deletes only the selected private project note and handles D1 failures', async () => {
+  resetTelegramState();
+  const render = createSettingsHookHarness({
+    14: 'brain', 24: sampleProjectBrain, 41: 'project-1', 42: [sampleProjectMemory],
+  });
+  await render();
+  pressables.find((item) => item.label === 'Delete private project note')?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(developerDataCalls.find((item) => item.method === 'deleteDeveloperProjectMemory')?.args, ['memory-1']);
+  assert.doesNotMatch(await render(), /Keep the existing voice features/);
+
+  resetTelegramState();
+  developerDataHandlers.saveDeveloperProject = async () => { throw new Error('D1 project write failed'); };
+  const saveFailure = createSettingsHookHarness({ 14: 'brain', 24: sampleProjectBrain });
+  await saveFailure();
+  pressables.find((item) => item.label.includes('Private D1-এ Project Brain সংরক্ষণ'))?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.match(await saveFailure(), /D1 project write failed/);
+
+  resetTelegramState();
+  developerDataHandlers.addDeveloperProjectMemory = async () => { throw new Error('D1 memory write failed'); };
+  const memoryFailure = createSettingsHookHarness({
+    14: 'brain', 24: sampleProjectBrain, 41: 'project-1', 43: 'Private note',
+  });
+  await memoryFailure();
+  pressables.find((item) => item.label.includes('Private Note সংরক্ষণ'))?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.match(await memoryFailure(), /D1 memory write failed/);
+
+  resetTelegramState();
+  developerDataHandlers.deleteDeveloperProjectMemory = async () => { throw new Error('D1 memory delete failed'); };
+  const deleteFailure = createSettingsHookHarness({
+    14: 'brain', 24: sampleProjectBrain, 41: 'project-1', 42: [sampleProjectMemory],
+  });
+  await deleteFailure();
+  pressables.find((item) => item.label === 'Delete private project note')?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.match(await deleteFailure(), /D1 memory delete failed/);
 });
