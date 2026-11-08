@@ -7,7 +7,7 @@ const DEFAULT_NATIVE_API_DOMAIN = 'https://badboy-vs-versel-ai.shomratofficial00
 let activeToken: string | null = null;
 
 function isWebPlatform(): boolean {
-  return process.env.EXPO_OS === 'web';
+  return process.env.EXPO_OS === 'web' || process.env.EXPO_OS === undefined;
 }
 
 function authApiUrl() {
