@@ -3,7 +3,19 @@ import { mock, test } from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-const host = (tag: string) => function Host({ children, accessibilityLabel, placeholder, disabled }: any) {
+const pressables: Array<{ label: string; onPress: () => void }> = [];
+const alerts: Array<{ title: string; message: string; buttons: any[] }> = [];
+const signOutCalls: string[] = [];
+const clearChatCalls: string[] = [];
+const settingsUpdates: unknown[] = [];
+const textContent = (node: any): string => {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(textContent).join(' ');
+  if (React.isValidElement(node)) return textContent((node.props as any).children);
+  return '';
+};
+const host = (tag: string) => function Host({ children, accessibilityLabel, placeholder, disabled, onPress }: any) {
+  if (tag === 'button' && typeof onPress === 'function') pressables.push({ label: accessibilityLabel ?? textContent(children), onPress });
   return React.createElement(tag, {
     ...(accessibilityLabel ? { 'aria-label': accessibilityLabel } : {}),
     ...(placeholder ? { placeholder } : {}),
@@ -31,7 +43,7 @@ const settings = {
 mock.module('react-native', {
   namedExports: {
     ActivityIndicator: () => React.createElement('span', null, 'loading'),
-    Alert: { alert: () => {} },
+    Alert: { alert: (title: string, message: string, buttons: any[] = []) => alerts.push({ title, message, buttons }) },
     Linking: { openURL: async () => {} },
     Platform: { OS: 'android' },
     Pressable: host('button'),
@@ -51,13 +63,13 @@ mock.module('react-native-safe-area-context', {
 mock.module('../context/AssistantContext.tsx', {
   namedExports: {
     useAssistant: () => ({
-      settings, updateSettings: () => {}, clearChat: async () => {},
+      settings, updateSettings: (value: unknown) => { settingsUpdates.push(value); }, clearChat: async () => { clearChatCalls.push('cleared'); },
       expertReviewDraft: '', clearExpertReviewDraft: () => {},
     }),
   },
 });
 mock.module('../context/OwnerAuthContext.tsx', {
-  namedExports: { useOwnerAuth: () => ({ signOut: async () => {} }) },
+  namedExports: { useOwnerAuth: () => ({ signOut: async () => { signOutCalls.push('signed-out'); } }) },
 });
 mock.module('../hooks/useColors.ts', { namedExports: { useColors: () => colors } });
 mock.module('../lib/assistant/voice.ts', {
@@ -109,6 +121,10 @@ const settingsScreenPromise = import('../app/(tabs)/settings');
 
 test('Settings screen renders existing voice, privacy, developer and account controls', async () => {
   const { default: SettingsScreen } = await settingsScreenPromise;
+  pressables.length = 0;
+  alerts.length = 0;
+  signOutCalls.length = 0;
+  clearChatCalls.length = 0;
   const html = renderToStaticMarkup(React.createElement(SettingsScreen));
   assert.match(html, /BADBOY|Badboy/);
   assert.match(html, /Settings|সেটিংস|ব্যক্তিগত/);
@@ -116,6 +132,16 @@ test('Settings screen renders existing voice, privacy, developer and account con
   assert.match(html, /Wake Word|ওয়েক|Hey Badboy/i);
   assert.match(html, /Owner Sign Out/);
   assert.match(html, /চ্যাট ইতিহাস মুছুন/);
+
+  pressables.find((item) => item.label.includes('Owner Sign Out'))?.onPress();
+  assert.equal(alerts.at(-1)?.title, 'Owner Login থেকে বের হবেন?');
+  await alerts.at(-1)?.buttons.find((button) => button.text === 'Sign Out')?.onPress();
+  assert.deepEqual(signOutCalls, ['signed-out']);
+
+  pressables.find((item) => item.label.includes('চ্যাট ইতিহাস মুছুন'))?.onPress();
+  assert.equal(alerts.at(-1)?.title, 'চ্যাট ইতিহাস মুছবেন?');
+  await alerts.at(-1)?.buttons.find((button) => button.text === 'মুছুন')?.onPress();
+  assert.deepEqual(clearChatCalls, ['cleared']);
 });
 
 test('Settings reveals Developer Agent and Project Brain controls when developer mode is enabled', async () => {
