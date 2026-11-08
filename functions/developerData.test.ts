@@ -8,8 +8,10 @@ class FakeD1 implements D1Database {
   rows: unknown[] = [];
   firstRow: unknown = { project_id: "canonical-project-id" };
   changes = 1;
+  throwOnPrepare = false;
 
   prepare(sql: string): D1PreparedStatement {
+    if (this.throwOnPrepare) throw new Error("D1 connection unavailable.");
     const call = { sql, values: [] as unknown[] };
     this.calls.push(call);
     const statement = {
@@ -182,4 +184,40 @@ test("returns null for unrelated paths and rejects unsupported methods", async (
     OWNER,
   );
   assert.equal(response?.status, 405);
+});
+
+
+test("maps missing required task fields to a client validation error", async () => {
+  const db = new FakeD1();
+  const response = await handleDeveloperDataRequest(
+    request("tasks", "POST", { engine: "native" }),
+    { AGENT_DB: db },
+    OWNER,
+  );
+  assert.equal(response?.status, 400);
+  assert.equal((await response?.json() as { code: string }).code, "INVALID_DEVELOPER_DATA");
+  assert.equal(db.calls.length, 0);
+});
+
+test("uses the default task limit for invalid query values", async () => {
+  const db = new FakeD1();
+  const response = await handleDeveloperDataRequest(
+    request("tasks?limit=not-a-number"),
+    { AGENT_DB: db },
+    OWNER,
+  );
+  assert.equal(response?.status, 200);
+  assert.equal(db.calls[0].values[1], 25);
+});
+
+test("returns a safe storage error when D1 operations fail", async () => {
+  const db = new FakeD1();
+  db.throwOnPrepare = true;
+  const response = await handleDeveloperDataRequest(
+    request("tasks"),
+    { AGENT_DB: db },
+    OWNER,
+  );
+  assert.equal(response?.status, 500);
+  assert.equal((await response?.json() as { code: string }).code, "DEVELOPER_STORAGE_FAILED");
 });
