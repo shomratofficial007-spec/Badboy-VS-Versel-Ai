@@ -2,6 +2,7 @@ import { buildDeveloperAnalysisMessages, resolveDeveloperAnalysisEngine, validat
 import { authenticatePersonalOwner } from "./personalAuth.ts";
 import { handleDeveloperDataRequest } from "./developerData.ts";
 import { createAgentStorage, type D1Database } from "./agentStorage.ts";
+import { applyAgentMigrations } from "./agentMigrations.ts";
 // Cloudflare Pages Function: /api/* routes backed by OpenRouter.
 // Directs /api/assistant/chat requests to OpenRouter with streaming SSE.
 
@@ -21,6 +22,7 @@ interface Env {
   GROQ_API_KEY?: string;
   BADBOY_OWNER_TOKEN?: string;
   AGENT_DB?: D1Database;
+  AGENT_MIGRATIONS_ENABLED?: string;
 }
 
 const CORS_HEADERS = {
@@ -912,6 +914,10 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     const auth = await authenticatePersonalOwner(request, env);
     if (!auth.ok) return auth.response;
     verifiedOwnerId = auth.identity.ownerId;
+  }
+
+  if (verifiedOwnerId && request.method === "POST" && pathname === "/api/developer/migrations/apply") {
+    return applyAgentMigrations(env, verifiedOwnerId);
   }
 
   if (verifiedOwnerId) {
