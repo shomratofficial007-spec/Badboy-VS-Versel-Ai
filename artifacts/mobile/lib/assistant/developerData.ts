@@ -34,54 +34,73 @@ export interface DeveloperProjectMemoryRecord {
   updated_at: string;
 }
 
-export async function listDeveloperTasks(limit = 25): Promise<DeveloperTaskRecord[]> {
-  const result = await requestOwnerJson<{ tasks: DeveloperTaskRecord[] }>(
-    `/developer/tasks?limit=${Math.max(1, Math.min(100, Math.floor(limit)))}`,
-    "GET",
-  );
-  return result.tasks;
+type OwnerJsonRequester = <T>(
+  path: string,
+  method: "GET" | "POST" | "DELETE",
+  body?: Record<string, unknown>,
+) => Promise<T>;
+
+export function createDeveloperDataClient(requestJson: OwnerJsonRequester = requestOwnerJson) {
+  return {
+    async listDeveloperTasks(limit = 25): Promise<DeveloperTaskRecord[]> {
+      const boundedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+      const result = await requestJson<{ tasks: DeveloperTaskRecord[] }>(
+        `/developer/tasks?limit=${boundedLimit}`,
+        "GET",
+      );
+      return result.tasks;
+    },
+
+    async listDeveloperProjects(limit = 25): Promise<DeveloperProjectRecord[]> {
+      const boundedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+      const result = await requestJson<{ projects: DeveloperProjectRecord[] }>(
+        `/developer/projects?limit=${boundedLimit}`,
+        "GET",
+      );
+      return result.projects;
+    },
+
+    async saveDeveloperProject(input: {
+      projectKey: string;
+      name: string;
+      summary?: string;
+    }): Promise<{ projectId: string; projectKey: string; name: string }> {
+      return requestJson("/developer/projects", "POST", input);
+    },
+
+    async listDeveloperProjectMemory(projectId: string, limit = 50): Promise<DeveloperProjectMemoryRecord[]> {
+      const boundedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+      const result = await requestJson<{ memories: DeveloperProjectMemoryRecord[] }>(
+        `/developer/project-memory?projectId=${encodeURIComponent(projectId)}&limit=${boundedLimit}`,
+        "GET",
+      );
+      return result.memories;
+    },
+
+    async addDeveloperProjectMemory(input: {
+      projectId: string;
+      category: string;
+      content: string;
+      source?: string;
+      privacyLevel?: "private" | "sensitive" | "general";
+    }): Promise<{ memoryId: string; saved: boolean }> {
+      return requestJson("/developer/project-memory", "POST", input);
+    },
+
+    async deleteDeveloperProjectMemory(memoryId: string): Promise<{ deleted: boolean }> {
+      return requestJson(
+        `/developer/project-memory?memoryId=${encodeURIComponent(memoryId)}`,
+        "DELETE",
+      );
+    },
+  };
 }
 
-export async function listDeveloperProjects(limit = 25): Promise<DeveloperProjectRecord[]> {
-  const result = await requestOwnerJson<{ projects: DeveloperProjectRecord[] }>(
-    `/developer/projects?limit=${Math.max(1, Math.min(100, Math.floor(limit)))}`,
-    "GET",
-  );
-  return result.projects;
-}
+const developerDataClient = createDeveloperDataClient();
 
-export async function saveDeveloperProject(input: {
-  projectKey: string;
-  name: string;
-  summary?: string;
-}): Promise<{ projectId: string; projectKey: string; name: string }> {
-  return requestOwnerJson("/developer/projects", "POST", input);
-}
-
-export async function listDeveloperProjectMemory(
-  projectId: string,
-  limit = 50,
-): Promise<DeveloperProjectMemoryRecord[]> {
-  const result = await requestOwnerJson<{ memories: DeveloperProjectMemoryRecord[] }>(
-    `/developer/project-memory?projectId=${encodeURIComponent(projectId)}&limit=${Math.max(1, Math.min(100, Math.floor(limit)))}`,
-    "GET",
-  );
-  return result.memories;
-}
-
-export async function addDeveloperProjectMemory(input: {
-  projectId: string;
-  category: string;
-  content: string;
-  source?: string;
-  privacyLevel?: "private" | "sensitive" | "general";
-}): Promise<{ memoryId: string; saved: boolean }> {
-  return requestOwnerJson("/developer/project-memory", "POST", input);
-}
-
-export async function deleteDeveloperProjectMemory(memoryId: string): Promise<{ deleted: boolean }> {
-  return requestOwnerJson(
-    `/developer/project-memory?memoryId=${encodeURIComponent(memoryId)}`,
-    "DELETE",
-  );
-}
+export const listDeveloperTasks = developerDataClient.listDeveloperTasks;
+export const listDeveloperProjects = developerDataClient.listDeveloperProjects;
+export const saveDeveloperProject = developerDataClient.saveDeveloperProject;
+export const listDeveloperProjectMemory = developerDataClient.listDeveloperProjectMemory;
+export const addDeveloperProjectMemory = developerDataClient.addDeveloperProjectMemory;
+export const deleteDeveloperProjectMemory = developerDataClient.deleteDeveloperProjectMemory;
