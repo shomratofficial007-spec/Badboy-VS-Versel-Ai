@@ -915,7 +915,7 @@ test('Settings GitHub token save trims input and remove clears the connected sta
 
   await pressables.find((item) => item.label.includes('টোকেন মুছুন'))?.onPress();
   html = await render();
-  assert.match(html, /ghp_xxxxxxxxxxxx/);
+  assert.ok(inputHandlers.some((item) => item.placeholder === 'ghp_xxxxxxxxxxxx'), 'empty GitHub token input is restored after removal');
   assert.equal(githubCalls.filter((item) => item.method === 'removeGitHubToken').length, 1);
   assert.equal(alerts.at(-1)?.title, 'মুছে ফেলা হয়েছে');
 });
