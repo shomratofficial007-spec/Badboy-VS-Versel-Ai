@@ -313,3 +313,29 @@ test('Settings can switch every Developer Agent engine option without starting a
     assert.deepEqual(settingsUpdates.at(-1), { developerEngine: engine });
   }
 });
+
+
+test('Settings blank-input actions fail closed without calling services or changing settings', async () => {
+  settings.developerMode = true;
+  const { default: SettingsScreen } = await settingsScreenPromise;
+  pressables.length = 0;
+  settingsUpdates.length = 0;
+  alerts.length = 0;
+  renderToStaticMarkup(React.createElement(SettingsScreen));
+
+  const guardedActions = [
+    'টাস্ক রান করুন',
+    'Expert Review চালাও',
+    'Analyze with selected engine',
+    'প্ল্যান ও ওয়ার্কফ্লো তৈরি করুন',
+    'টোকেন সংরক্ষণ করুন',
+    'Bot সংযোগ করুন',
+  ];
+  for (const label of guardedActions) {
+    const action = pressables.find((item) => item.label.includes(label));
+    assert.ok(action, 'missing guarded action: ' + label);
+    action.onPress();
+  }
+  assert.deepEqual(settingsUpdates, []);
+  assert.deepEqual(alerts, []);
+});
