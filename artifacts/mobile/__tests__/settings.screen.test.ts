@@ -158,3 +158,41 @@ test('Settings reveals Developer Agent and Project Brain controls when developer
   assert.match(html, /Project Brain|প্রজেক্ট ব্রেইন/);
   assert.match(html, /Auto QA|স্বয়ংক্রিয় পরীক্ষা/);
 });
+
+test('Settings exposes voice consent, input/output, auto-speak, auto-submit and wake-word controls', async () => {
+  const { default: SettingsScreen } = await settingsScreenPromise;
+  pressables.length = 0;
+  switchHandlers.length = 0;
+  settingsUpdates.length = 0;
+  renderToStaticMarkup(React.createElement(SettingsScreen));
+
+  const enabledControls = [
+    'Voice Processing Consent',
+    'Voice Input',
+    'Voice Output',
+    'Auto Speak Replies',
+    'Auto Submit Voice Input',
+    'Hey Badboy Wake Word',
+  ];
+  for (const title of enabledControls) {
+    const control = switchHandlers.find((item) => item.label === title);
+    assert.ok(control, `missing Settings control: ${title}`);
+    control.onValueChange(true);
+  }
+  assert.deepEqual(settingsUpdates.slice(0, 6), [
+    { voiceProcessingConsent: true },
+    { voiceInputEnabled: true },
+    { voiceOutputEnabled: true },
+    { autoSpeakReplies: true },
+    { autoSubmitVoice: true },
+    { wakeWordEnabled: true },
+  ]);
+
+  const english = pressables.find((item) => item.label.includes('English (US)'));
+  assert.ok(english, 'English language option is rendered');
+  english.onPress();
+  assert.deepEqual(settingsUpdates.at(-1), {
+    voiceLanguage: 'en-US',
+    voiceIdentifier: null,
+  });
+});
