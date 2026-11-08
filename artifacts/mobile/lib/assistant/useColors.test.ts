@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import colors from '../../constants/colors';
 
 let selectedTheme = 'badboy';
 mock.module('@/context/AssistantContext', {
   namedExports: { useAssistant: () => ({ settings: { theme: selectedTheme } }) },
 });
 const hookPromise = import('../../hooks/useColors');
-const palettes = (await import('../../constants/colors')).default.themes;
+const palettes = colors.themes;
 
 test('useColors returns every selectable palette and shared radius', async () => {
   const { useColors } = await hookPromise;
