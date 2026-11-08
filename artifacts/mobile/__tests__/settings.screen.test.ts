@@ -111,8 +111,10 @@ mock.module('../lib/assistant/expertReview.ts', {
 });
 mock.module('../lib/assistant/telegram.ts', {
   namedExports: {
-    checkTelegramMessages: (...args: unknown[]) => { telegramCalls.push({ method: 'checkTelegramMessages', args }); return telegramHandlers.checkTelegramMessages(); }, connectTelegramBot: async () => ({}),
-    disconnectTelegramBot: async () => {}, hasTelegramBot: async () => false,
+    checkTelegramMessages: (...args: unknown[]) => { telegramCalls.push({ method: 'checkTelegramMessages', args }); return telegramHandlers.checkTelegramMessages(); },
+    connectTelegramBot: (...args: [string]) => { telegramCalls.push({ method: 'connectTelegramBot', args }); return telegramHandlers.connectTelegramBot(...args); },
+    disconnectTelegramBot: (...args: unknown[]) => { telegramCalls.push({ method: 'disconnectTelegramBot', args }); return telegramHandlers.disconnectTelegramBot(); },
+    hasTelegramBot: (...args: unknown[]) => { telegramCalls.push({ method: 'hasTelegramBot', args }); return telegramHandlers.hasTelegramBot(); },
     sendTelegramMessage: (...args: [string]) => { telegramCalls.push({ method: 'sendTelegramMessage', args }); return telegramHandlers.sendTelegramMessage(...args); },
   },
 });
