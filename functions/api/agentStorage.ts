@@ -1,10 +1,9 @@
 /**
  * D1 persistence primitives for the Developer Agent.
  *
- * IMPORTANT: ownerId must come from a server-verified identity (for example,
- * a validated Cloudflare Access JWT). Never pass a client-supplied owner_id
- * directly into these functions. These primitives are intentionally not
- * connected to public routes until the Access identity boundary is implemented.
+ * IMPORTANT: ownerId must come from the verified Worker owner-token identity.
+ * Never pass a client-supplied owner_id directly into these functions. The
+ * API layer supplies the server-assigned identity after bearer-token checks.
  */
 
 export interface D1Result<T = unknown> {
@@ -263,7 +262,7 @@ export function createAgentStorage(db: D1Database) {
       const ownerId = assertOwnerId(input.ownerId);
       const content = requiredText(input.content, "Memory content", 8000);
       const now = input.now ?? new Date().toISOString();
-      await db.prepare(
+      const result = await db.prepare(
         `INSERT INTO agent_project_memory
           (memory_id, owner_id, project_id, category, content, source, privacy_level, created_at, updated_at)
          SELECT ?, ?, project_id, ?, ?, ?, ?, ?, ?
