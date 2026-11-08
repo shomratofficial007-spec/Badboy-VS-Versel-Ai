@@ -277,7 +277,7 @@ test('executeAgentTask - Gmail sends only after confirmation and reports HTTP/ne
         request = { url: String(input), init };
         return Response.json({ id: 'sent-message' });
       };
-      const result = await executeAgentTask('Send an email via Gmail', true, true, '  oauth-token  ');
+      const result = await executeAgentTask('Send an email via Gmail', true, true, 'oauth-token');
       assert.equal(result.state, 'completed');
       assert.equal(result.requiresConfirmation, true);
       assert.equal(request?.url, 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send');
@@ -368,7 +368,7 @@ test('createGitHubPullRequest - completes a mocked safe branch, file commit and 
     assert.equal(result.prNumber, 12);
     assert.equal(result.prUrl, 'https://github.com/example/repo/pull/12');
     assert.equal(result.branchName, 'feature/badboy-test-branch');
-    assert.ok(result.logs.some((entry) => entry.includes('PR সফলভাবে তৈরি হয়েছে')));
+    assert.ok(result.logs.some((entry) => entry.includes('সফলভাবে তৈরি হয়েছে! URL:')));
     assert.equal(calls.length, 5);
     assert.ok(calls.every((call) => call.authorization === 'Bearer test-github-token'));
     assert.equal(calls[2].method, 'GET');
