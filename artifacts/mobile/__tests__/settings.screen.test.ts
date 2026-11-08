@@ -351,7 +351,18 @@ test('Settings blank-input actions fail closed without calling services or chang
 });
 
 
-function createSettingsHookHarness() {
+function visit(node: any): string {
+  if (node === null || node === undefined || typeof node === 'boolean') return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(visit).join('');
+  if (React.isValidElement(node)) {
+    if (typeof node.type === 'function') return visit(node.type(node.props));
+    return visit((node.props as any).children);
+  }
+  return '';
+}
+
+function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {}) {
   const slots: unknown[] = [];
   let cursor = 0;
   const internals = (React as any).__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
@@ -359,7 +370,7 @@ function createSettingsHookHarness() {
   const dispatcher = {
     useState(initial: unknown) {
       const index = cursor++;
-      if (!(index in slots)) slots[index] = initial;
+      if (!(index in slots)) slots[index] = index in initialOverrides ? initialOverrides[index] : initial;
       return [
         slots[index],
         (next: unknown) => {
@@ -459,55 +470,30 @@ test('Settings Telegram actions surface connection, inbox, send and disconnect f
   let html = await render();
   assert.match(html, /invalid Telegram token/);
 
-  // A separate connected-state render lets the inbox and send error paths be exercised.
-  const connectedRender = createSettingsHookHarness();
-  const connectedSlots = (React as any).__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
-  const connectedInternals = connectedSlots;
-  const originalUseState = connectedInternals.H;
-  const connectedDispatcher = {
-    ...originalUseState,
-    useState(initial: unknown) {
-      const value = initial;
-      if (initial === false && !connectedDispatcher.didSetConnected) {
-        connectedDispatcher.didSetConnected = true;
-        return [true, () => {}];
-      }
-      return [value, () => {}];
-    },
-    didSetConnected: false,
-  };
-  const connectedScreen = async () => {
-    const previous = connectedInternals.H;
-    connectedInternals.H = connectedDispatcher;
-    try {
-      const { default: SettingsScreen } = await settingsScreenPromise;
-      return visit(SettingsScreen());
-    } finally {
-      connectedInternals.H = previous;
-    }
-  };
+  // Telegram connected state is the third useState slot in SettingsScreen.
+  const connectedRender = createSettingsHookHarness({ 2: true });
   telegramHandlers.checkTelegramMessages = async () => { throw new Error('inbox unavailable'); };
-  await connectedScreen();
+  await connectedRender();
   pressables.find((item) => item.label.includes('Inbox দেখুন'))?.onPress();
   await new Promise((resolve) => setTimeout(resolve, 0));
-  html = await connectedScreen();
+  html = await connectedRender();
   assert.match(html, /inbox unavailable/);
 
   telegramHandlers.sendTelegramMessage = async () => { throw new Error('send rejected'); };
   const messageInput = inputHandlers.find((item) => item.placeholder === 'Bot-এ বার্তা লিখুন');
   assert.ok(messageInput);
   messageInput.onChangeText('Message');
-  await connectedScreen();
+  await connectedRender();
   pressables.find((item) => item.label.includes('অনুমতি দিয়ে পাঠান'))?.onPress();
   await alerts.at(-1)?.buttons.find((button) => button.text === 'পাঠান')?.onPress();
   await new Promise((resolve) => setTimeout(resolve, 0));
-  html = await connectedScreen();
+  html = await connectedRender();
   assert.match(html, /send rejected/);
 
   telegramHandlers.disconnectTelegramBot = async () => { throw new Error('secure storage failure'); };
   pressables.find((item) => item.label.includes('Bot বিচ্ছিন্ন করুন'))?.onPress();
   await alerts.at(-1)?.buttons.find((button) => button.text === 'বিচ্ছিন্ন করুন')?.onPress();
   await new Promise((resolve) => setTimeout(resolve, 0));
-  html = await connectedScreen();
+  html = await connectedRender();
   assert.match(html, /Bot token মুছতে সমস্যা হয়েছে/);
 });
