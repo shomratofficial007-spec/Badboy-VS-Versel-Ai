@@ -922,23 +922,36 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   if (request.method === "GET") {
     if (pathname === "/api/developer/health") {
       const nativeAvailable = Boolean(env.OPENROUTER_API_KEY?.trim());
+      let taskPersistenceAvailable = false;
+      if (env.AGENT_DB) {
+        try {
+          const table = await env.AGENT_DB.prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'agent_tasks' LIMIT 1",
+          ).first<{ name: string }>();
+          taskPersistenceAvailable = Boolean(table?.name);
+        } catch {
+          taskPersistenceAvailable = false;
+        }
+      }
+      const analysisAvailable = nativeAvailable && taskPersistenceAvailable;
       return jsonResponse({
-        status: nativeAvailable ? "ready" : "degraded",
+        status: analysisAvailable ? "ready" : "degraded",
         engines: {
           native: { available: nativeAvailable },
           copilot: {
             available: false,
             reason: "Isolated Copilot CLI runtime and authentication are not yet validated.",
           },
-          auto: { available: nativeAvailable, selectedEngine: nativeAvailable ? "native" : null },
+          auto: { available: analysisAvailable, selectedEngine: analysisAvailable ? "native" : null },
         },
         capabilities: {
-          analysis: nativeAvailable,
+          analysis: analysisAvailable,
+          taskPersistence: taskPersistenceAvailable,
           repositoryRead: false,
           repositoryWrite: false,
           workflowDispatch: false,
         },
-      }, nativeAvailable ? 200 : 503);
+      }, analysisAvailable ? 200 : 503);
     }
     if (pathname === "/api/healthz" || pathname === "/api/health") {
       const chatConfigured = Boolean(env.OPENROUTER_API_KEY?.trim());
