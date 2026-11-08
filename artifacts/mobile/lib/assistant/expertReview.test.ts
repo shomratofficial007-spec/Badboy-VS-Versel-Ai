@@ -133,6 +133,7 @@ test('inspectBadboyRepository reports a truncated tree as partial evidence', asy
 test('inspectBadboyRepository returns failed evidence for repository and tree HTTP errors', async (t) => {
   token = 'test-owner-token';
   await t.test('repository metadata denied', async () => {
+    token = 'test-owner-token';
     globalThis.fetch = async () => new Response('forbidden', { status: 403 });
     const evidence = await inspectBadboyRepository();
     assert.equal(evidence.status, 'failed');
@@ -141,6 +142,7 @@ test('inspectBadboyRepository returns failed evidence for repository and tree HT
   });
 
   await t.test('tree endpoint unavailable', async () => {
+    token = 'test-owner-token';
     globalThis.fetch = async (input) => {
       if (String(input).endsWith('/Badboy-VS-Versel-Ai')) return Response.json({ default_branch: 'main' });
       return new Response('not found', { status: 404 });
@@ -154,6 +156,7 @@ test('inspectBadboyRepository returns failed evidence for repository and tree HT
 test('inspectBadboyRepository converts network and malformed-response failures to failed evidence', async (t) => {
   token = 'test-owner-token';
   await t.test('network failure', async () => {
+    token = 'test-owner-token';
     globalThis.fetch = async () => { throw new Error('socket unavailable'); };
     const evidence = await inspectBadboyRepository();
     assert.equal(evidence.status, 'failed');
@@ -161,6 +164,7 @@ test('inspectBadboyRepository converts network and malformed-response failures t
   });
 
   await t.test('non-Error rejection', async () => {
+    token = 'test-owner-token';
     globalThis.fetch = async () => { throw 'unexpected failure'; };
     const evidence = await inspectBadboyRepository();
     assert.equal(evidence.status, 'failed');
