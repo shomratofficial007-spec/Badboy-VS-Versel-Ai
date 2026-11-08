@@ -48,7 +48,7 @@ mock.module('@expo/vector-icons', { namedExports: { Feather: () => null } });
 mock.module('react-native-safe-area-context', {
   namedExports: { useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) },
 });
-mock.module('@/context/AssistantContext', {
+mock.module('../context/AssistantContext.tsx', {
   namedExports: {
     useAssistant: () => ({
       settings, updateSettings: () => {}, clearChat: async () => {},
@@ -56,11 +56,11 @@ mock.module('@/context/AssistantContext', {
     }),
   },
 });
-mock.module('@/context/OwnerAuthContext', {
+mock.module('../context/OwnerAuthContext.tsx', {
   namedExports: { useOwnerAuth: () => ({ signOut: async () => {} }) },
 });
-mock.module('@/hooks/useColors', { namedExports: { useColors: () => colors } });
-mock.module('@/lib/assistant/voice', {
+mock.module('../hooks/useColors.ts', { namedExports: { useColors: () => colors } });
+mock.module('../lib/assistant/voice.ts', {
   namedExports: {
     VOICE_LANGUAGES: [
       { code: 'bn-BD', label: 'বাংলা (বাংলাদেশ)' },
@@ -71,10 +71,10 @@ mock.module('@/lib/assistant/voice', {
     stopSpeaking: async () => {},
   },
 });
-mock.module('@/lib/assistant/api', {
+mock.module('../lib/assistant/api.ts', {
   namedExports: { streamDeveloperAnalysis: async () => {}, streamReply: async () => {} },
 });
-mock.module('@/lib/assistant/developerData', {
+mock.module('../lib/assistant/developerData.ts', {
   namedExports: {
     addDeveloperProjectMemory: async () => {}, deleteDeveloperProjectMemory: async () => {},
     getAnalysisProjectNotes: async () => [], listDeveloperProjectMemory: async () => [],
@@ -82,17 +82,17 @@ mock.module('@/lib/assistant/developerData', {
     saveDeveloperProject: async () => {},
   },
 });
-mock.module('@/lib/assistant/expertReview', {
+mock.module('../lib/assistant/expertReview.ts', {
   namedExports: { buildExpertReviewPrompt: () => '', inspectBadboyRepository: async () => ({}) },
 });
-mock.module('@/lib/assistant/telegram', {
+mock.module('../lib/assistant/telegram.ts', {
   namedExports: {
     checkTelegramMessages: async () => [], connectTelegramBot: async () => ({}),
     disconnectTelegramBot: async () => {}, hasTelegramBot: async () => false,
     sendTelegramMessage: async () => {},
   },
 });
-mock.module('@/lib/assistant/developer', {
+mock.module('../lib/assistant/developer.ts', {
   namedExports: {
     createGitHubPullRequest: async () => ({}), executeAgentTask: async () => ({}),
     generateDevelopmentPlan: async () => ({}), getGitHubToken: async () => null,
@@ -101,7 +101,7 @@ mock.module('@/lib/assistant/developer', {
     saveGitHubToken: async () => {},
   },
 });
-mock.module('@/lib/assistant/developerEngine', {
+mock.module('../lib/assistant/developerEngine.ts', {
   namedExports: { resolveDeveloperEngine: () => ({ engine: 'native', fallback: false }) },
 });
 
