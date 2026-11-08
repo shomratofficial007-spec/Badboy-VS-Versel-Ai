@@ -59,7 +59,8 @@ test('Memory screen renders the private local-storage empty state', async () => 
   assert.doesNotMatch(html, /নোট খুঁজুন/);
 });
 
-test('Memory screen renders saved notes, search and storage errors without moving data to cloud', () => {
+test('Memory screen renders saved notes, search and storage errors without moving data to cloud', async () => {
+  const { default: MemoryScreen } = await memoryScreenPromise;
   assistantState = {
     ...assistantState,
     memories: [{ id: 'note-1', title: 'কাজের নোট', content: 'আগামীকাল কাজ শেষ করব', createdAt: 1_760_000_000_000 }],
