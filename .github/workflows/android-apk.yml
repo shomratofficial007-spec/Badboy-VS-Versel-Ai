@@ -70,11 +70,32 @@ jobs:
           sed -n '/react[[:space:]]*{/,/^[[:space:]]*}/p' app/build.gradle
           grep -Fq 'debuggableVariants = []' app/build.gradle
 
+      - name: Increase Gradle distribution download timeout
+        working-directory: artifacts/mobile/android
+        run: |
+          PROPERTIES="gradle/wrapper/gradle-wrapper.properties"
+          if grep -q '^networkTimeout=' "$PROPERTIES"; then
+            sed -i 's/^networkTimeout=.*/networkTimeout=120000/' "$PROPERTIES"
+          else
+            printf '\nnetworkTimeout=120000\n' >> "$PROPERTIES"
+          fi
+
       - name: Build installable debug APK with embedded JavaScript
         working-directory: artifacts/mobile/android
         env:
           NODE_ENV: production
-        run: ./gradlew --no-daemon -PreactNativeArchitectures=arm64-v8a assembleDebug
+        run: |
+          for attempt in 1 2 3; do
+            if ./gradlew --no-daemon -PreactNativeArchitectures=arm64-v8a assembleDebug; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::Gradle build failed after 3 attempts."
+              exit 1
+            fi
+            echo "Gradle download/build attempt $attempt failed; retrying in 15 seconds."
+            sleep 15
+          done
 
       - name: Verify TFLite model is packaged uncompressed
         working-directory: artifacts/mobile/android
