@@ -15,7 +15,8 @@ const useStateMock=(initial:unknown)=>{
  if(!(i in stateSlots))stateSlots[i]=typeof initial==='function'?(initial as ()=>unknown)():initial;
  return [stateSlots[i],(next:unknown)=>{stateSlots[i]=typeof next==='function'?(next as (v:unknown)=>unknown)(stateSlots[i]):next;}];
 };
-mock.module('react',{namedExports:{useState:useStateMock,useEffect:()=>{}}});
+const reactInternals=(React as any).__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+reactInternals.H={useState:useStateMock,useEffect:()=>{}};
 const settings:any={personality:'Helpful and concise',onlineAI:true,developerEngine:'auto',theme:'badboy',autoImprove:false,developerMode:true,voiceProcessingConsent:false,voiceInputEnabled:true,voiceOutputEnabled:true,autoSpeakReplies:false,autoSubmitVoice:false,wakeWordEnabled:false,voiceLanguage:'bn-BD',voiceIdentifier:null,roadmap:{webDevelopment:false,appDevelopment:false,selfDevelopment:false,autonomousAgent:false,projectBrain:false,autoQA:false,pluginMarketplace:false,providerManager:false,automationHub:false,releaseRecovery:false,integrations:false,localMemoryControls:false}};
 const childText=(node:any):string=>typeof node==='string'||typeof node==='number'?String(node):Array.isArray(node)?node.map(childText).join(' '):React.isValidElement(node)?childText((node.props as any).children):'';
 const host=(tag:string)=>function Host({children,accessibilityLabel,placeholder,disabled,onPress,onValueChange,onChangeText}:any){
