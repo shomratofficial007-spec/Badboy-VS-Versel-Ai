@@ -3,15 +3,29 @@ import { mock, test } from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+const pressables: Array<{ label: string; onPress: () => void }> = [];
+const alerts: Array<{ title: string; message: string; buttons: any[] }> = [];
+const deletedMemoryIds: string[] = [];
+
 let assistantState = {
   memories: [] as Array<{ id: string; title: string; content: string; createdAt: number }>,
   storageError: null as string | null,
   saveMemory: async () => {},
   updateMemory: async () => {},
-  deleteMemory: async () => {},
+  deleteMemory: async (id: string) => { deletedMemoryIds.push(id); },
 };
 
-const host = (tag: string) => function Host({ children, accessibilityLabel, placeholder, ...props }: any) {
+const textContent = (node: any): string => {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(textContent).join(' ');
+  if (React.isValidElement(node)) return textContent((node.props as any).children);
+  return '';
+};
+
+const host = (tag: string) => function Host({ children, accessibilityLabel, placeholder, onPress, ...props }: any) {
+  if (tag === 'button' && typeof onPress === 'function') {
+    pressables.push({ label: accessibilityLabel ?? textContent(children), onPress });
+  }
   return React.createElement(tag, {
     ...(accessibilityLabel ? { 'aria-label': accessibilityLabel } : {}),
     ...(placeholder ? { placeholder } : {}),
@@ -21,7 +35,7 @@ const host = (tag: string) => function Host({ children, accessibilityLabel, plac
 
 mock.module('react-native', {
   namedExports: {
-    Alert: { alert: () => {} },
+    Alert: { alert: (title: string, message: string, buttons: any[] = []) => alerts.push({ title, message, buttons }) },
     Pressable: host('button'),
     ScrollView: host('main'),
     StyleSheet: { create: (styles: unknown) => styles },
@@ -61,6 +75,9 @@ test('Memory screen renders the private local-storage empty state', async () => 
 
 test('Memory screen renders saved notes, search and storage errors without moving data to cloud', async () => {
   const { default: MemoryScreen } = await memoryScreenPromise;
+  pressables.length = 0;
+  alerts.length = 0;
+  deletedMemoryIds.length = 0;
   assistantState = {
     ...assistantState,
     memories: [{ id: 'note-1', title: 'কাজের নোট', content: 'আগামীকাল কাজ শেষ করব', createdAt: 1_760_000_000_000 }],
@@ -72,4 +89,10 @@ test('Memory screen renders saved notes, search and storage errors without movin
   assert.match(html, /নোট খুঁজুন/);
   assert.match(html, /Local secure storage warning/);
   assert.match(html, /এই তথ্যটি সম্পূর্ণ লোকাল|সম্পূর্ণ লোকাল/);
+
+  pressables.find((item) => item.label.includes('সম্পাদনা করুন'))?.onPress();
+  pressables.find((item) => item.label.includes('নোট মুছুন'))?.onPress();
+  assert.equal(alerts.at(-1)?.title, 'নোট মুছে ফেলবেন?');
+  alerts.at(-1)?.buttons.find((button) => button.style === 'destructive')?.onPress();
+  assert.deepEqual(deletedMemoryIds, ['note-1']);
 });
