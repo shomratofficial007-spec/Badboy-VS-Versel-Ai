@@ -12,6 +12,13 @@ const settingsUpdates: unknown[] = [];
 const inputHandlers: Array<{ label: string; placeholder: string; onChangeText: (value: string) => void }> = [];
 const telegramCalls: Array<{ method: string; args: unknown[] }> = [];
 const developerDataCalls: Array<{ method: string; args: unknown[] }> = [];
+const developerAnalysisCalls: unknown[][] = [];
+let developerAnalysisHandler = async (
+  _prompt: string, _context: string, _engine: string, onChunk: (chunk: string) => void,
+) => {
+  onChunk('Native analysis result');
+  return { taskId: 'task-99' };
+};
 let developerDataHandlers = {
   listDeveloperTasks: async () => [] as any[],
   listDeveloperProjects: async () => [] as any[],
@@ -105,13 +112,21 @@ mock.module('../lib/assistant/voice.ts', {
   },
 });
 mock.module('../lib/assistant/api.ts', {
-  namedExports: { streamDeveloperAnalysis: async () => {}, streamReply: async () => {} },
+  namedExports: {
+    streamDeveloperAnalysis: (...args: [string, string, string, (chunk: string) => void]) => {
+      developerAnalysisCalls.push(args);
+      return developerAnalysisHandler(...args);
+    },
+    streamReply: async () => {},
+  },
 });
 mock.module('../lib/assistant/developerData.ts', {
   namedExports: {
     addDeveloperProjectMemory: (...args: [any]) => { developerDataCalls.push({ method: 'addDeveloperProjectMemory', args }); return developerDataHandlers.addDeveloperProjectMemory(...args); },
     deleteDeveloperProjectMemory: (...args: [string]) => { developerDataCalls.push({ method: 'deleteDeveloperProjectMemory', args }); return developerDataHandlers.deleteDeveloperProjectMemory(...args); },
-    getAnalysisProjectNotes: async () => [],
+    getAnalysisProjectNotes: (memories: any[]) => memories
+      .filter((memory) => memory.privacy_level !== 'sensitive')
+      .map((memory) => ({ category: memory.category, content: memory.content, privacyLevel: memory.privacy_level })),
     listDeveloperProjectMemory: (...args: [string]) => { developerDataCalls.push({ method: 'listDeveloperProjectMemory', args }); return developerDataHandlers.listDeveloperProjectMemory(...args); },
     listDeveloperProjects: (...args: unknown[]) => { developerDataCalls.push({ method: 'listDeveloperProjects', args }); return developerDataHandlers.listDeveloperProjects(); },
     listDeveloperTasks: (...args: unknown[]) => { developerDataCalls.push({ method: 'listDeveloperTasks', args }); return developerDataHandlers.listDeveloperTasks(); },
@@ -140,7 +155,7 @@ mock.module('../lib/assistant/developer.ts', {
   },
 });
 mock.module('../lib/assistant/developerEngine.ts', {
-  namedExports: { resolveDeveloperEngine: () => ({ engine: 'native', fallback: false }) },
+  namedExports: { resolveDeveloperEngine: (engine: string) => engine === 'copilot' ? { status: 'unavailable', reason: 'Copilot runtime unavailable' } : { status: 'available', activeEngine: 'native' } },
 });
 
 const settingsScreenPromise = import('../app/(tabs)/settings');
@@ -416,6 +431,8 @@ function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {
 function resetTelegramState() {
   inputHandlers.length = 0;
   developerDataCalls.length = 0;
+  developerAnalysisCalls.length = 0;
+  developerAnalysisHandler = async (_prompt, _context, _engine, onChunk) => { onChunk('Native analysis result'); return { taskId: 'task-99' }; };
   developerDataHandlers = {
     listDeveloperTasks: async () => [],
     listDeveloperProjects: async () => [],
@@ -612,4 +629,91 @@ test('Settings deletes only the selected private project note and handles D1 fai
   pressables.find((item) => item.label === 'Delete private project note')?.onPress();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.match(await deleteFailure(), /D1 memory delete failed/);
+});
+
+
+test('Settings Developer Agent sends private but never sensitive Project Brain notes to Native analysis', async () => {
+  resetTelegramState();
+  settings.developerMode = true;
+  settings.developerEngine = 'native';
+  developerDataHandlers.listDeveloperProjectMemory = async () => [
+    { ...sampleProjectMemory, content: 'Keep existing voice behavior', privacy_level: 'private' },
+    { ...sampleProjectMemory, memory_id: 'memory-sensitive', content: 'Sensitive owner data', privacy_level: 'sensitive' },
+  ];
+  developerDataHandlers.listDeveloperTasks = async () => [{
+    task_id: 'task-99', owner_id: 'owner-1', status: 'completed', engine: 'native',
+    title: 'Review Settings', summary: 'Analysis finished', parent_task_id: null,
+    created_at: '2026-11-08', updated_at: '2026-11-08',
+  }];
+  const render = createSettingsHookHarness({ 32: 'Review Settings coverage', 41: 'project-1' });
+  await render();
+  pressables.find((item) => item.label.includes('Analyze with selected engine'))?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const html = await render();
+  assert.match(html, /Native analysis result/);
+  assert.match(html, /Task ID: task-99/);
+  assert.equal(developerAnalysisCalls.length, 1);
+  assert.equal(developerAnalysisCalls[0][2], 'native');
+  const context = JSON.parse(String(developerAnalysisCalls[0][1]));
+  assert.deepEqual(context.privateProjectNotes, [{
+    category: 'project-note', content: 'Keep existing voice behavior', privacyLevel: 'private',
+  }]);
+  assert.doesNotMatch(String(developerAnalysisCalls[0][1]), /Sensitive owner data/);
+  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 1);
+});
+
+test('Settings Developer Agent fails closed on unavailable Copilot and reports empty or failed Native analysis', async () => {
+  resetTelegramState();
+  settings.developerMode = true;
+  settings.developerEngine = 'copilot';
+  const copilotRender = createSettingsHookHarness({ 32: 'Review Settings' });
+  await copilotRender();
+  pressables.find((item) => item.label.includes('Analyze with selected engine'))?.onPress();
+  let html = await copilotRender();
+  assert.match(html, /Copilot runtime unavailable/);
+  assert.equal(developerAnalysisCalls.length, 0);
+
+  resetTelegramState();
+  settings.developerEngine = 'native';
+  developerAnalysisHandler = async () => ({ taskId: 'task-empty' });
+  const emptyRender = createSettingsHookHarness({ 32: 'Review Settings' });
+  await emptyRender();
+  pressables.find((item) => item.label.includes('Analyze with selected engine'))?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  html = await emptyRender();
+  assert.match(html, /বিশ্লেষণ থেকে কোনো রিপোর্ট পাওয়া যায়নি/);
+
+  resetTelegramState();
+  developerDataHandlers.listDeveloperProjectMemory = async () => { throw new Error('Project notes unavailable'); };
+  const errorRender = createSettingsHookHarness({ 32: 'Review Settings', 41: 'project-1' });
+  await errorRender();
+  pressables.find((item) => item.label.includes('Analyze with selected engine'))?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  html = await errorRender();
+  assert.match(html, /Project notes unavailable/);
+  assert.equal(developerAnalysisCalls.length, 0);
+  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 1);
+});
+
+test('Settings Developer task history refresh displays records and surfaces D1 read errors', async () => {
+  resetTelegramState();
+  settings.developerMode = true;
+  developerDataHandlers.listDeveloperTasks = async () => [{
+    task_id: 'task-history-1', owner_id: 'owner-1', status: 'completed', engine: 'native',
+    title: 'Settings regression suite', summary: null, parent_task_id: null,
+    created_at: '2026-11-08', updated_at: '2026-11-08',
+  }];
+  const render = createSettingsHookHarness();
+  await render();
+  pressables.find((item) => item.label === 'Refresh')?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.match(await render(), /Settings regression suite/);
+
+  resetTelegramState();
+  developerDataHandlers.listDeveloperTasks = async () => { throw new Error('Task history D1 unavailable'); };
+  const failureRender = createSettingsHookHarness();
+  await failureRender();
+  pressables.find((item) => item.label === 'Refresh')?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.match(await failureRender(), /Task history D1 unavailable/);
 });
