@@ -89,13 +89,13 @@ jobs:
 
           for (const expected of required) {
             const record = records.find((entry) =>
-              entry.split(/\\r?\\n/).some((line) =>
-                line.startsWith('SF:') && line.slice(3).replaceAll('\\\\', '/').endsWith(expected)
+              entry.split(/\r?\n/).some((line) =>
+                line.startsWith('SF:') && line.slice(3).replaceAll('\\', '/').endsWith(expected)
               )
             );
             if (!record) throw new Error(`LCOV is missing required source: ${expected}`);
 
-            const lines = [...record.matchAll(/^DA:(\\d+),(\\d+)/gm)];
+            const lines = [...record.matchAll(/^DA:(\d+),(\d+)/gm)];
             const found = lines.length;
             const hit = lines.filter((match) => Number(match[2]) > 0).length;
             if (found === 0 || hit === 0) {
