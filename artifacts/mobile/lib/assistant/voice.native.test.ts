@@ -150,8 +150,8 @@ test('native available voice catalogue filters invalid entries, fills names and 
   reset();
   const voice = await voicePromise;
   assert.deepEqual(await voice.getAvailableSpeechVoices(), [
-    { identifier: 'voice-a', name: 'voice-a', language: 'bn-IN' },
     { identifier: 'voice-b', name: 'Beta', language: 'bn-BD' },
+    { identifier: 'voice-a', name: 'voice-a', language: 'bn-IN' },
   ]);
   voiceError = new Error('voice provider failed');
   assert.deepEqual(await voice.getAvailableSpeechVoices(), []);
