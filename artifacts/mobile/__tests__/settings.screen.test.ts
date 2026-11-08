@@ -4,6 +4,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 const pressables: Array<{ label: string; onPress: () => void }> = [];
+const switchHandlers: Array<{ label: string; onValueChange: (value: boolean) => void }> = [];
 const alerts: Array<{ title: string; message: string; buttons: any[] }> = [];
 const signOutCalls: string[] = [];
 const clearChatCalls: string[] = [];
@@ -14,8 +15,9 @@ const textContent = (node: any): string => {
   if (React.isValidElement(node)) return textContent((node.props as any).children);
   return '';
 };
-const host = (tag: string) => function Host({ children, accessibilityLabel, placeholder, disabled, onPress }: any) {
+const host = (tag: string) => function Host({ children, accessibilityLabel, placeholder, disabled, onPress, onValueChange }: any) {
   if (tag === 'button' && typeof onPress === 'function') pressables.push({ label: accessibilityLabel ?? textContent(children), onPress });
+  if (typeof onValueChange === 'function') switchHandlers.push({ label: accessibilityLabel ?? '', onValueChange });
   return React.createElement(tag, {
     ...(accessibilityLabel ? { 'aria-label': accessibilityLabel } : {}),
     ...(placeholder ? { placeholder } : {}),
@@ -123,6 +125,8 @@ test('Settings screen renders existing voice, privacy, developer and account con
   const { default: SettingsScreen } = await settingsScreenPromise;
   pressables.length = 0;
   alerts.length = 0;
+  switchHandlers.length = 0;
+  settingsUpdates.length = 0;
   signOutCalls.length = 0;
   clearChatCalls.length = 0;
   const html = renderToStaticMarkup(React.createElement(SettingsScreen));
@@ -132,6 +136,8 @@ test('Settings screen renders existing voice, privacy, developer and account con
   assert.match(html, /Wake Word|ওয়েক|Hey Badboy/i);
   assert.match(html, /Owner Sign Out/);
   assert.match(html, /চ্যাট ইতিহাস মুছুন/);
+  switchHandlers.find((item) => item.label === 'Develop mode')?.onValueChange(true);
+  assert.deepEqual(settingsUpdates, [{ developerMode: true }]);
 
   pressables.find((item) => item.label.includes('Owner Sign Out'))?.onPress();
   assert.equal(alerts.at(-1)?.title, 'Owner Login থেকে বের হবেন?');
