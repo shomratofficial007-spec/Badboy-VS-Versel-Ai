@@ -67,6 +67,7 @@ jobs:
           functions/functions.test.ts
           functions/developerAgent.test.ts
           functions/agentStorage.test.ts
+          functions/agentMigrations.test.ts
           functions/accessAuth.test.ts
           functions/personalAuth.test.ts
           functions/developerData.test.ts
