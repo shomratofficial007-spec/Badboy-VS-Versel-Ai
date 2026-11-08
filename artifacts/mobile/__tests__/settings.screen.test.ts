@@ -549,7 +549,7 @@ test('Settings Project Brain saves its real project summary into owner-scoped D1
   assert.deepEqual(saved?.args, [{
     projectKey: 'badboy-main',
     name: 'Badboy AI',
-    summary: 'Cloudflare Worker + Expo mobile app\\\\nReact Native\\\\nTypeScript\\\\n/api/assistant/chat\\\\nCopilot runtime remains disabled',
+    summary: 'Cloudflare Worker + Expo mobile app\\nReact Native\\nTypeScript\\n/api/assistant/chat\\nCopilot runtime remains disabled',
   }]);
   assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperProjects').length, 1);
 });
