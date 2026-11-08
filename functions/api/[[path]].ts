@@ -1141,6 +1141,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   return handleApiRequest(context.request, context.env);
 };
 
+export const onRequestDelete: PagesFunction<Env> = async (context) => {
+  return handleApiRequest(context.request, context.env);
+};
+
 export default {
   async fetch(request: Request, env: Env, ctx: { waitUntil: (promise: Promise<unknown>) => void }): Promise<Response> {
     const url = new URL(request.url);
