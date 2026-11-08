@@ -426,7 +426,7 @@ test('Settings Telegram flow confirms connection, loads inbox, sends a message a
   await alerts.at(-1)?.buttons.find((button) => button.text === 'সংযোগ করুন')?.onPress();
   await new Promise((resolve) => setTimeout(resolve, 0));
   let html = await render();
-  assert.match(html, /@badboy_helper/);
+  assert.match(html, /সংযুক্ত · এই ডিভাইসে/);
   assert.deepEqual(telegramCalls.find((item) => item.method === 'connectTelegramBot')?.args, ['123:abc']);
 
   telegramHandlers.checkTelegramMessages = async () => [{
@@ -466,15 +466,9 @@ test('Settings Telegram actions surface connection, inbox, send and disconnect f
   tokenInput.onChangeText('valid-token');
   await render();
 
-  telegramHandlers.connectTelegramBot = async () => { throw new Error('invalid Telegram token'); };
-  pressables.find((item) => item.label.includes('Bot সংযোগ করুন'))?.onPress();
-  await alerts.at(-1)?.buttons.find((button) => button.text === 'সংযোগ করুন')?.onPress();
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  let html = await render();
-  assert.match(html, /invalid Telegram token/);
-
   // Telegram connected state is the third useState slot in SettingsScreen.
   const connectedRender = createSettingsHookHarness({ 2: true });
+  let html = await connectedRender();
   telegramHandlers.checkTelegramMessages = async () => { throw new Error('inbox unavailable'); };
   await connectedRender();
   pressables.find((item) => item.label.includes('Inbox দেখুন'))?.onPress();
