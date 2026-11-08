@@ -753,7 +753,7 @@ test('Settings lifecycle loads the owner integrations, handles storage and memor
   }, { runEffects: true });
   await render();
   const html = await render();
-  assert.match(html, /secure storage unavailable/);
+  assert.match(html, /ফোনের নিরাপদ স্টোরেজ পরীক্ষা করা যায়নি/);
   assert.match(html, /project memory unavailable/);
   const reviewInput = inputHandlers.find((item) => item.placeholder.includes('Badboy-এর উত্তর'));
   assert.ok(reviewInput);
