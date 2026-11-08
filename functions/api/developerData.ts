@@ -118,15 +118,14 @@ export async function handleDeveloperDataRequest(
       if (!body) return json({ code: "UNSUPPORTED_MEDIA_TYPE", error: "Content-Type must be application/json." }, 415);
       const projectKey = requiredString(body.projectKey, "Project key", 160);
       const name = requiredString(body.name, "Project name", 200);
-      const projectId = crypto.randomUUID();
-      await storage.upsertProject({
-        projectId,
+      const projectId = await storage.upsertProject({
+        projectId: crypto.randomUUID(),
         ownerId,
         projectKey,
         name,
         summary: typeof body.summary === "string" ? body.summary.trim().slice(0, 4000) : "",
       });
-      return json({ projectId, projectKey, name }, 201);
+      return json({ projectId, projectKey, name }, 200);
     }
 
     if (request.method === "GET" && pathname === "/api/developer/project-memory") {
@@ -145,7 +144,7 @@ export async function handleDeveloperDataRequest(
         return json({ code: "INVALID_PRIVACY_LEVEL", error: "privacyLevel must be private, sensitive, or general." }, 400);
       }
       const memoryId = crypto.randomUUID();
-      await storage.addProjectMemory({
+      const inserted = await storage.addProjectMemory({
         memoryId,
         ownerId,
         projectId: requiredString(body.projectId, "Project ID", 128),
@@ -154,7 +153,9 @@ export async function handleDeveloperDataRequest(
         source: typeof body.source === "string" ? body.source.trim().slice(0, 80) : "user",
         privacyLevel,
       });
-      return json({ memoryId, saved: true }, 201);
+      return inserted
+        ? json({ memoryId, saved: true }, 201)
+        : json({ code: "PROJECT_NOT_FOUND", error: "Project was not found for this owner." }, 404);
     }
 
     if (request.method === "DELETE" && pathname === "/api/developer/project-memory") {
