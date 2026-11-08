@@ -1,5 +1,7 @@
 import { buildDeveloperAnalysisMessages, resolveDeveloperAnalysisEngine, validateDeveloperAnalysisPayload } from "./developerAgent.ts";
 import { authenticatePersonalOwner } from "./personalAuth.ts";
+import { handleDeveloperDataRequest } from "./developerData.ts";
+import type { D1Database } from "./agentStorage.ts";
 // Cloudflare Pages Function: /api/* routes backed by OpenRouter.
 // Directs /api/assistant/chat requests to OpenRouter with streaming SSE.
 
@@ -18,11 +20,12 @@ interface Env {
   OPENROUTER_API_KEY?: string;
   GROQ_API_KEY?: string;
   BADBOY_OWNER_TOKEN?: string;
+  AGENT_DB?: D1Database;
 }
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
 };
 
@@ -834,7 +837,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   }
 
   // Keep only service health and the credential verifier public. Every other
-  // API route, including Developer Agent and future D1 routes, requires the owner key.
+  // API route, including Developer Agent data, requires the owner key.
   if (request.method === "POST" && pathname === "/api/auth/verify") {
     const auth = await authenticatePersonalOwner(request, env);
     if (!auth.ok) return auth.response;
@@ -843,9 +846,16 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
 
   const isPublicHealthCheck = request.method === "GET" &&
     (pathname === "/api/healthz" || pathname === "/api/health");
+  let verifiedOwnerId: string | null = null;
   if (!isPublicHealthCheck) {
     const auth = await authenticatePersonalOwner(request, env);
     if (!auth.ok) return auth.response;
+    verifiedOwnerId = auth.identity.ownerId;
+  }
+
+  if (verifiedOwnerId) {
+    const dataResponse = await handleDeveloperDataRequest(request, env, verifiedOwnerId);
+    if (dataResponse) return dataResponse;
   }
 
   if (request.method === "GET") {
