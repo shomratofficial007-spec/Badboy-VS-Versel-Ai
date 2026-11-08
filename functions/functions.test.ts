@@ -968,3 +968,163 @@ test("D1 data endpoints are available only after the owner is authenticated and 
   const payload = await missingStorage.json() as any;
   assert.equal(payload.code, "AGENT_STORAGE_NOT_CONFIGURED");
 });
+
+
+test("authenticated Developer Data routes exercise task list and create success branches", async () => {
+  const db = testAgentDb();
+  const listed = await onRequestGet({
+    request: new Request("https://example.com/api/developer/tasks?limit=10"),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(listed.status, 200);
+  assert.deepEqual(await listed.json(), { tasks: [] });
+  assert.match(db.calls[0].sql, /FROM agent_tasks/);
+  assert.equal(db.calls[0].values[0], "badboy-personal-owner-v1");
+  assert.equal(db.calls[0].values[1], 10);
+
+  const created = await onRequestPost({
+    request: new Request("https://example.com/api/developer/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "  Verify owner-scoped task  ",
+        summary: "  Keep existing features  ",
+        parentTaskId: "parent-task",
+        ownerId: "forged-owner",
+      }),
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(created.status, 201);
+  const payload = await created.json() as any;
+  assert.equal(payload.status, "queued");
+  assert.ok(payload.taskId);
+  assert.match(db.calls[1].sql, /INSERT INTO agent_tasks/);
+  assert.equal(db.calls[1].values[1], "badboy-personal-owner-v1");
+  assert.equal(db.calls[1].values.includes("forged-owner"), false);
+  assert.match(db.calls[2].sql, /INSERT INTO agent_task_events/);
+});
+
+test("authenticated Developer Data routes exercise project and project-memory CRUD branches", async () => {
+  const db = testAgentDb();
+  const projects = await onRequestGet({
+    request: new Request("https://example.com/api/developer/projects?limit=1000"),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(projects.status, 200);
+  assert.deepEqual(await projects.json(), { projects: [] });
+  assert.equal(db.calls[0].values[1], 100);
+
+  const savedProject = await onRequestPost({
+    request: new Request("https://example.com/api/developer/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectKey: "  badboy-main  ",
+        name: "  Badboy AI  ",
+        summary: "  Keep local memory and voice  ",
+      }),
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(savedProject.status, 200);
+  assert.deepEqual(await savedProject.json(), {
+    projectId: "test-project",
+    projectKey: "badboy-main",
+    name: "Badboy AI",
+  });
+
+  const memories = await onRequestGet({
+    request: new Request("https://example.com/api/developer/project-memory?projectId=project-1&limit=3"),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(memories.status, 200);
+  assert.deepEqual(await memories.json(), { memories: [] });
+  assert.deepEqual(db.calls[2].values, ["project-1", "badboy-personal-owner-v1", 3]);
+
+  const added = await onRequestPost({
+    request: new Request("https://example.com/api/developer/project-memory", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId: "project-1", category: "project-note",
+        content: "Preserve the wake-word flow", source: "owner",
+      }),
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(added.status, 201);
+  assert.equal((await added.json() as any).saved, true);
+  assert.match(db.calls[3].sql, /INSERT INTO agent_project_memory/);
+
+  const deleted = await onRequestPost({
+    request: new Request("https://example.com/api/developer/project-memory?memoryId=memory-1", {
+      method: "DELETE",
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(deleted.status, 200);
+  assert.deepEqual(await deleted.json(), { deleted: true });
+});
+
+test("authenticated Developer Data validation rejects missing identifiers and invalid privacy", async () => {
+  const db = testAgentDb();
+  const missingProject = await onRequestGet({
+    request: new Request("https://example.com/api/developer/project-memory"),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(missingProject.status, 400);
+  assert.equal((await missingProject.json() as any).code, "PROJECT_ID_REQUIRED");
+
+  const invalidPrivacy = await onRequestPost({
+    request: new Request("https://example.com/api/developer/project-memory", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: "project-1", category: "note", content: "hello", privacyLevel: "public" }),
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(invalidPrivacy.status, 400);
+  assert.equal((await invalidPrivacy.json() as any).code, "INVALID_PRIVACY_LEVEL");
+
+  const missingMemory = await onRequestPost({
+    request: new Request("https://example.com/api/developer/project-memory", { method: "DELETE" }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(missingMemory.status, 400);
+  assert.equal((await missingMemory.json() as any).code, "MEMORY_ID_REQUIRED");
+});
+
+test("authenticated Developer Data maps unsupported content, malformed JSON and storage exceptions safely", async () => {
+  const db = testAgentDb();
+  const unsupported = await onRequestPost({
+    request: new Request("https://example.com/api/developer/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: "{}",
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(unsupported.status, 415);
+
+  const malformed = await onRequestPost({
+    request: new Request("https://example.com/api/developer/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{",
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(malformed.status, 400);
+  assert.equal((await malformed.json() as any).code, "INVALID_JSON_BODY");
+
+  const brokenDb = {
+    prepare() { throw new Error("D1 connection unavailable"); },
+  };
+  const storageFailure = await onRequestGet({
+    request: new Request("https://example.com/api/developer/tasks"),
+    env: { AGENT_DB: brokenDb },
+  } as any);
+  assert.equal(storageFailure.status, 500);
+  assert.equal((await storageFailure.json() as any).code, "DEVELOPER_STORAGE_FAILED");
+});
