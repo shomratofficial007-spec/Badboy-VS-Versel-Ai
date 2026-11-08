@@ -109,8 +109,32 @@ jobs:
       - name: Verify LCOV report exists
         run: test -s coverage/lcov.info
 
+      # Preserve the exact report as an auditable artifact even if the remote
+      # SonarCloud service rejects analysis (for example, Automatic Analysis on).
+      - name: Upload LCOV coverage report
+        if: ${{ always() && hashFiles('coverage/lcov.info') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-${{ github.event.pull_request.number || 'main' }}-coverage-lcov
+          path: coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Verify SonarCloud analysis credentials
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::error::SONAR_TOKEN is missing. Add it as a repository Actions secret."
+            exit 1
+          fi
+          echo "SONAR_TOKEN is present (value is never printed)."
+
       - name: Analyze with SonarCloud
         uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6
+        # Verbose scanner output proves whether LCOV was discovered/imported.
+        with:
+          args: -X
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
