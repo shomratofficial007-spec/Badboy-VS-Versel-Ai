@@ -4,7 +4,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 const authCalls: string[] = [];
-mock.module('@/lib/assistant/ownerAuth', {
+mock.module('../lib/assistant/ownerAuth.ts', {
   namedExports: {
     clearOwnerToken: async () => { authCalls.push('clear'); },
     restoreOwnerSession: async () => { authCalls.push('restore'); return true; },
