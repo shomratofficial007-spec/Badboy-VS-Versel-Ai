@@ -919,3 +919,76 @@ test('Settings GitHub token save trims input and remove clears the connected sta
   assert.equal(githubCalls.filter((item) => item.method === 'removeGitHubToken').length, 1);
   assert.equal(alerts.at(-1)?.title, 'মুছে ফেলা হয়েছে');
 });
+
+
+test('Settings renders Project Brain, Auto QA, plugin, Android and web views with real populated data', async () => {
+  resetTelegramState();
+  settings.developerMode = true;
+  const project = {
+    project_id: 'project-2', owner_id: 'owner-1', project_key: 'voice-memory',
+    name: 'Voice Memory Assistant', summary: 'Local-first assistant', created_at: '2026-11-08', updated_at: '2026-11-08',
+  };
+  let html = await createSettingsHookHarness({
+    14: 'brain', 24: sampleProjectBrain, 40: [project], 41: 'project-1', 42: [],
+  })();
+  assert.match(html, /Voice Memory Assistant/);
+  assert.match(html, /Private Project Memory/);
+
+  html = await createSettingsHookHarness({
+    14: 'qa', 25: { details: ['TypeScript passed', 'Owner auth regression passed'] },
+  })();
+  assert.match(html, /Auto QA & ভ্যালিডেশন সুইট/);
+  assert.match(html, /Owner auth regression passed/);
+
+  html = await createSettingsHookHarness({
+    14: 'plugins',
+    26: [{ id: 'cloudflare-d1', name: 'Cloudflare D1', status: 'available', description: 'Private project storage' }],
+  })();
+  assert.match(html, /Plugin Marketplace & Tool Registry/);
+  assert.match(html, /Cloudflare D1/);
+  assert.match(html, /PRIVATE PROJECT STORAGE|Private project storage/);
+
+  html = await createSettingsHookHarness({ 14: 'android' })();
+  assert.match(html, /Android APK \\/ AAB বিল্ড কনফিগারেশন/);
+  assert.match(html, /npx eas-cli build --platform android --profile preview/);
+
+  html = await createSettingsHookHarness({ 14: 'web' })();
+  assert.match(html, /Cloudflare Pages হোস্ট অ্যান্ড ডিপ্লয়/);
+  assert.match(html, /pnpm run build && pnpm run deploy/);
+});
+
+test('Settings renders verified Expert Review evidence and reports the offline guard', async () => {
+  resetTelegramState();
+  settings.developerMode = true;
+  const evidenceRender = createSettingsHookHarness({
+    28: 'Expert report: preserve existing settings',
+    29: { status: 'verified', filePaths: ['artifacts/mobile/app/(tabs)/settings.tsx'], note: 'Repository files inspected' },
+  });
+  const html = await evidenceRender();
+  assert.match(html, /Repository: VERIFIED/);
+  assert.match(html, /Repository files inspected/);
+  assert.match(html, /Expert report: preserve existing settings/);
+  assert.ok(pressables.some((item) => item.label.includes('রিপোর্ট শেয়ার করুন')));
+
+  settings.onlineAI = false;
+  const offlineHtml = await createSettingsHookHarness({ 27: 'Review this draft' })();
+  assert.match(offlineHtml, /অনলাইন AI বন্ধ আছে। Expert Review চালাতে Online AI চালু করো।/);
+  settings.onlineAI = true;
+});
+
+test('Settings lists and previews an installed voice matching the selected language', async () => {
+  resetTelegramState();
+  settings.voiceLanguage = 'en-US';
+  settings.voiceIdentifier = null;
+  const render = createSettingsHookHarness({
+    9: [{ identifier: 'en-US-test', name: 'English TTS voice', language: 'en-US' }],
+    10: false,
+  });
+  const html = await render();
+  assert.match(html, /English TTS voice/);
+  pressables.find((item) => item.label.includes('English TTS voice'))?.onPress();
+  assert.deepEqual(settingsUpdates.at(-1), { voiceIdentifier: 'en-US-test' });
+  pressables.find((item) => item.label.includes('নমুনা শুনুন: English TTS voice'))?.onPress();
+  assert.deepEqual(settingsUpdates.at(-1), { voiceIdentifier: 'en-US-test' });
+  settings.voiceLanguage = 'bn-BD';
+});
