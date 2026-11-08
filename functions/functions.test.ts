@@ -30,7 +30,7 @@ function testAgentDb() {
     prepare(_sql: string) {
       const statement: any = {
         bind(..._values: unknown[]) { return statement; },
-        first: async () => ({ project_id: "test-project" }),
+        first: async () => ({ project_id: "test-project", name: "agent_tasks" }),
         all: async () => ({ success: true, results: [] }),
         run: async () => ({ success: true, meta: { changes: 1 } }),
       };
@@ -616,6 +616,17 @@ test("developer health reports Native capability and unavailable Copilot runtime
   assert.strictEqual(json.engines.auto.selectedEngine, "native");
   assert.strictEqual(json.capabilities.repositoryRead, false);
   assert.strictEqual(json.capabilities.repositoryWrite, false);
+});
+
+test("developer health does not claim analysis is ready before the D1 migration exists", async () => {
+  const response = await onRequestGet({
+    request: new Request("https://example.com/api/developer/health"),
+    env: { OPENROUTER_API_KEY: "test-key" },
+  } as any);
+  assert.equal(response.status, 503);
+  const payload = await response.json() as any;
+  assert.equal(payload.capabilities.analysis, false);
+  assert.equal(payload.capabilities.taskPersistence, false);
 });
 
 test("developer analysis rejects invalid payloads before contacting providers", async () => {
