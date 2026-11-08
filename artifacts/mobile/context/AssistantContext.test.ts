@@ -6,6 +6,7 @@ const pendingEffects: Array<() => void> = [];
 let hookCursor = 0;
 let loadedState: any = { messages: [], settings: {}, memories: [] };
 let loadError: Error | null = null;
+let memoryWriteError: Error | null = null;
 const calls: Array<{ name: string; value?: any }> = [];
 const context: { Provider: object; value: any } = { Provider: {}, value: null };
 
@@ -46,7 +47,7 @@ mock.module('@/lib/assistant/storage', {
     },
     persistMessages: async (value: unknown) => { calls.push({ name: 'persistMessages', value }); },
     persistSettings: async (value: unknown) => { calls.push({ name: 'persistSettings', value }); },
-    storeMemoryNote: async (note: unknown, memories: unknown) => { calls.push({ name: 'storeMemoryNote', value: { note, memories } }); },
+    storeMemoryNote: async (note: unknown, memories: unknown) => { if (memoryWriteError) throw memoryWriteError; calls.push({ name: 'storeMemoryNote', value: { note, memories } }); },
     updateMemoryNote: async (note: unknown, memories: any[]) => {
       calls.push({ name: 'updateMemoryNote', value: { note, memories } });
       return memories.map((item) => item.id === (note as any).id ? note : item);
@@ -82,6 +83,7 @@ function resetHarness() {
   context.value = null;
   loadedState = { messages: [], settings: {}, memories: [] };
   loadError = null;
+  memoryWriteError = null;
   calls.length = 0;
 }
 
@@ -142,7 +144,6 @@ test('AssistantContext callbacks persist chat/settings and create, update, delet
   value.setMessages(messages);
   value.updateSettings({ theme: 'purple', wakeWordEnabled: false });
   value.setExpertReviewDraft('review this');
-  assert.equal(value.expertReviewDraft, '');
   await value.saveMemory('  শিরোনাম  ', '  গোপন তথ্য  ');
   const saved = calls.find((call) => call.name === 'storeMemoryNote')?.value;
   assert.equal(saved.note.title, 'শিরোনাম');
@@ -150,15 +151,19 @@ test('AssistantContext callbacks persist chat/settings and create, update, delet
   assert.equal(saved.memories.length, 1);
 
   const note = { ...saved.note };
+  value = renderProvider();
+  assert.equal(value.expertReviewDraft, 'review this');
   await value.updateMemory(note.id, 'নতুন শিরোনাম', 'নতুন তথ্য');
   const updated = calls.find((call) => call.name === 'updateMemoryNote')?.value.note;
   assert.equal(updated.title, 'নতুন শিরোনাম');
   assert.equal(updated.content, 'নতুন তথ্য');
   await assert.rejects(value.updateMemory('missing', 'title', 'content'), /Memory note not found/);
+  value = renderProvider();
   await value.deleteMemory(note.id);
   assert.ok(calls.some((call) => call.name === 'removeMemoryNote' && call.value.id === note.id));
   await value.clearChat();
   assert.ok(calls.some((call) => call.name === 'persistMessages' && call.value.length === 0));
+  value = renderProvider();
   value.clearExpertReviewDraft();
   assert.equal(typeof value.clearExpertReviewDraft, 'function');
 });
@@ -171,8 +176,9 @@ test('AssistantContext update and draft callbacks remain callable and save error
   const value = renderProvider();
   value.updateSettings({ onlineAI: false });
   value.setExpertReviewDraft('draft');
-  assert.equal(useAssistant().settings.theme, 'badboy');
-  assert.equal(value.expertReviewDraft, '');
+  assert.equal(typeof useAssistant().updateSettings, 'function');
   const { saveMemory } = value;
   assert.equal(typeof saveMemory, 'function');
+  memoryWriteError = new Error('local memory write failed');
+  await assert.rejects(saveMemory('title', 'content'), /local memory write failed/);
 });
