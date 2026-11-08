@@ -306,10 +306,24 @@ export default function SettingsScreen() {
     setDeveloperAnalysisBusy(true);
     try {
       const brain = getProjectBrainSummary();
+      const projectMemories = selectedDeveloperProjectId
+        ? await listDeveloperProjectMemory(selectedDeveloperProjectId)
+        : [];
+      const analysisContext = {
+        ...brain,
+        developerAgentProjectId: selectedDeveloperProjectId || null,
+        privateProjectNotes: projectMemories
+          .filter((memory) => memory.privacy_level !== 'sensitive')
+          .map((memory) => ({
+            category: memory.category,
+            content: memory.content,
+            privacyLevel: memory.privacy_level,
+          })),
+      };
       let report = '';
       const result = await streamDeveloperAnalysis(
         prompt,
-        JSON.stringify(brain, null, 2),
+        JSON.stringify(analysisContext, null, 2),
         requestedEngine,
         (chunk) => {
           report += chunk;
