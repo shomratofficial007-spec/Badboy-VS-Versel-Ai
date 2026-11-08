@@ -26,10 +26,14 @@ const onRequestPost = (context: any) =>
     : rawOnRequestPost(withTestOwner(context));
 
 function testAgentDb() {
+  const calls: Array<{ sql: string; values: unknown[] }> = [];
   return {
-    prepare(_sql: string) {
+    calls,
+    prepare(sql: string) {
+      const call = { sql, values: [] as unknown[] };
+      calls.push(call);
       const statement: any = {
-        bind(..._values: unknown[]) { return statement; },
+        bind(...values: unknown[]) { call.values = values; return statement; },
         first: async () => ({ project_id: "test-project", name: "agent_tasks" }),
         all: async () => ({ success: true, results: [] }),
         run: async () => ({ success: true, meta: { changes: 1 } }),
@@ -791,6 +795,24 @@ test("developer analysis forwards multiple buffered SSE events before the upstre
   }
 });;
 
+
+test("authenticated D1 task creation uses only the server-assigned owner identity", async () => {
+  const db = testAgentDb();
+  const response = await rawOnRequestPost({
+    request: new Request("https://example.com/api/developer/tasks", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${TEST_OWNER_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ title: "Owner scoped task", ownerId: "forged-owner" }),
+    }),
+    env: { BADBOY_OWNER_TOKEN: TEST_OWNER_TOKEN, AGENT_DB: db },
+  } as any);
+  assert.equal(response.status, 201);
+  assert.equal(db.calls[0].values[1], "badboy-personal-owner-v1");
+  assert.equal(db.calls[0].values.includes("forged-owner"), false);
+});
 
 test("private Developer Agent D1 routes require configured storage after owner authentication", async () => {
   const paths = [
