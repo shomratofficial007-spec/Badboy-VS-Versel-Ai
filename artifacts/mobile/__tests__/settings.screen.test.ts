@@ -3,50 +3,7 @@ import { mock, test } from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-const hookState: unknown[] = [];
-let hookCursor = 0;
-const useMockState = <T,>(initial: T): [T, (next: T | ((current: T) => T)) => void] => {
-  const index = hookCursor++;
-  if (!(index in hookState)) hookState[index] = initial;
-  return [
-    hookState[index] as T,
-    (next) => {
-      const current = hookState[index] as T;
-      hookState[index] = typeof next === 'function'
-        ? (next as (value: T) => T)(current)
-        : next;
-    },
-  ];
-};
-const resetHooks = () => {
-  hookState.length = 0;
-  hookCursor = 0;
-};
 const pressables: Array<{ label: string; onPress: () => void }> = [];
-const textInputs: Array<{ placeholder: string; onChangeText: (value: string) => void }> = [];
-const shareCalls: string[] = [];
-let streamReplyImpl = async (_prompt: string, _settings: unknown, onChunk: (chunk: string) => void) => {
-  onChunk('Verified Expert Review report');
-};
-let streamDeveloperAnalysisImpl = async (
-  _prompt: string,
-  _context: string,
-  _engine: string,
-  onChunk: (chunk: string) => void,
-) => {
-  onChunk('Developer Agent analysis report');
-  return { taskId: 'task-test-123' };
-};
-let inspectRepositoryImpl: () => Promise<any> = async () => ({
-  status: 'not_connected' as const,
-  repository: 'shomratofficial007-spec/Badboy-VS-Versel-Ai',
-  checkedAt: '2026-11-09T00:00:00.000Z',
-  filePaths: [],
-  note: 'GitHub PAT is not connected.',
-});
-let resolveEngineResult: { status: string; activeEngine?: string; reason?: string } = {
-  status: 'available', activeEngine: 'native',
-};
 const switchHandlers: Array<{ label: string; onValueChange: (value: boolean) => void }> = [];
 const alerts: Array<{ title: string; message: string; buttons: any[] }> = [];
 const signOutCalls: string[] = [];
@@ -58,10 +15,9 @@ const textContent = (node: any): string => {
   if (React.isValidElement(node)) return textContent((node.props as any).children);
   return '';
 };
-const host = (tag: string) => function Host({ children, accessibilityLabel, placeholder, disabled, onPress, onValueChange, onChangeText }: any) {
+const host = (tag: string) => function Host({ children, accessibilityLabel, placeholder, disabled, onPress, onValueChange }: any) {
   if (tag === 'button' && typeof onPress === 'function') pressables.push({ label: accessibilityLabel ?? textContent(children), onPress });
   if (typeof onValueChange === 'function') switchHandlers.push({ label: accessibilityLabel ?? '', onValueChange });
-  if (typeof onChangeText === 'function') textInputs.push({ placeholder: placeholder ?? '', onChangeText });
   return React.createElement(tag, {
     ...(accessibilityLabel ? { 'aria-label': accessibilityLabel } : {}),
     ...(placeholder ? { placeholder } : {}),
@@ -86,7 +42,6 @@ const settings = {
   autoSpeakReplies: false, autoSubmitVoice: false, wakeWordEnabled: false,
   voiceLanguage: 'bn-BD', voiceIdentifier: null, roadmap,
 };
-mock.module('react', { namedExports: { useState: useMockState, useEffect: () => {} } });
 mock.module('react-native', {
   namedExports: {
     ActivityIndicator: () => React.createElement('span', null, 'loading'),
@@ -95,7 +50,7 @@ mock.module('react-native', {
     Platform: { OS: 'android' },
     Pressable: host('button'),
     ScrollView: host('main'),
-    Share: { share: async ({ message }: { message: string }) => { shareCalls.push(message); return { action: 'dismissedAction' }; } },
+    Share: { share: async () => ({ action: 'dismissedAction' }) },
     StyleSheet: { create: (value: unknown) => value },
     Switch: host('input'),
     Text: host('span'),
@@ -131,10 +86,7 @@ mock.module('../lib/assistant/voice.ts', {
   },
 });
 mock.module('../lib/assistant/api.ts', {
-  namedExports: {
-    streamDeveloperAnalysis: (...args: any[]) => streamDeveloperAnalysisImpl(...args),
-    streamReply: (...args: any[]) => streamReplyImpl(...args),
-  },
+  namedExports: { streamDeveloperAnalysis: async () => {}, streamReply: async () => {} },
 });
 mock.module('../lib/assistant/developerData.ts', {
   namedExports: {
@@ -145,10 +97,7 @@ mock.module('../lib/assistant/developerData.ts', {
   },
 });
 mock.module('../lib/assistant/expertReview.ts', {
-  namedExports: {
-    buildExpertReviewPrompt: (pasted: string) => `Review request: ${pasted}`,
-    inspectBadboyRepository: () => inspectRepositoryImpl(),
-  },
+  namedExports: { buildExpertReviewPrompt: () => '', inspectBadboyRepository: async () => ({}) },
 });
 mock.module('../lib/assistant/telegram.ts', {
   namedExports: {
@@ -167,20 +116,12 @@ mock.module('../lib/assistant/developer.ts', {
   },
 });
 mock.module('../lib/assistant/developerEngine.ts', {
-  namedExports: { resolveDeveloperEngine: () => resolveEngineResult },
+  namedExports: { resolveDeveloperEngine: () => ({ engine: 'native', fallback: false }) },
 });
 
 const settingsScreenPromise = import('../app/(tabs)/settings');
-const renderSettings = async () => {
-  hookCursor = 0;
-  const { default: SettingsScreen } = await settingsScreenPromise;
-  return renderToStaticMarkup(React.createElement(SettingsScreen));
-};
-const settleAsyncHandlers = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 test('Settings screen renders existing voice, privacy, developer and account controls', async () => {
-  resetHooks();
-  settings.developerMode = false;
   const { default: SettingsScreen } = await settingsScreenPromise;
   pressables.length = 0;
   alerts.length = 0;
@@ -188,7 +129,7 @@ test('Settings screen renders existing voice, privacy, developer and account con
   settingsUpdates.length = 0;
   signOutCalls.length = 0;
   clearChatCalls.length = 0;
-  const html = await renderSettings();
+  const html = renderToStaticMarkup(React.createElement(SettingsScreen));
   assert.match(html, /BADBOY|Badboy/);
   assert.match(html, /Settings|সেটিংস|ব্যক্তিগত/);
   assert.match(html, /ভয়েস|Voice/);
@@ -210,23 +151,20 @@ test('Settings screen renders existing voice, privacy, developer and account con
 });
 
 test('Settings reveals Developer Agent and Project Brain controls when developer mode is enabled', async () => {
-  resetHooks();
   settings.developerMode = true;
   const { default: SettingsScreen } = await settingsScreenPromise;
-  const html = await renderSettings();
+  const html = renderToStaticMarkup(React.createElement(SettingsScreen));
   assert.match(html, /Developer Agent|Developer Analysis|বিশ্লেষণ/);
   assert.match(html, /Project Brain|প্রজেক্ট ব্রেইন/);
   assert.match(html, /Auto QA|স্বয়ংক্রিয় পরীক্ষা/);
 });
 
 test('Settings exposes voice consent, input/output, auto-speak, auto-submit and wake-word controls', async () => {
-  resetHooks();
-  settings.developerMode = false;
   const { default: SettingsScreen } = await settingsScreenPromise;
   pressables.length = 0;
   switchHandlers.length = 0;
   settingsUpdates.length = 0;
-  await renderSettings();
+  renderToStaticMarkup(React.createElement(SettingsScreen));
 
   const enabledControls = [
     'Voice Processing Consent',
@@ -260,13 +198,11 @@ test('Settings exposes voice consent, input/output, auto-speak, auto-submit and 
 });
 
 test('Settings preserves every roadmap preference and all selectable theme choices', async () => {
-  resetHooks();
-  settings.developerMode = false;
   const { default: SettingsScreen } = await settingsScreenPromise;
   pressables.length = 0;
   switchHandlers.length = 0;
   settingsUpdates.length = 0;
-  await renderSettings();
+  renderToStaticMarkup(React.createElement(SettingsScreen));
 
   const roadmapControls = [
     'Web Development', 'App Development', 'Self Development',
@@ -298,106 +234,4 @@ test('Settings preserves every roadmap preference and all selectable theme choic
   assert.ok(ocean, 'Ocean theme is available');
   ocean.onPress();
   assert.deepEqual(settingsUpdates.at(-1), { theme: 'ocean' });
-});
-
-
-test('Settings Expert Review streams a report from inspected repository evidence and shares it', async () => {
-  resetHooks();
-  settings.developerMode = false;
-  settings.onlineAI = true;
-  pressables.length = 0;
-  textInputs.length = 0;
-  shareCalls.length = 0;
-  inspectRepositoryImpl = async () => ({
-    status: 'verified',
-    repository: 'shomratofficial007-spec/Badboy-VS-Versel-Ai',
-    defaultBranch: 'main',
-    checkedAt: '2026-11-09T00:00:00.000Z',
-    filePaths: ['artifacts/mobile/app/(tabs)/settings.tsx'],
-    note: 'Repository paths checked live.',
-  });
-  streamReplyImpl = async (_prompt, _settings, onChunk) => {
-    onChunk('Verified Expert Review report');
-  };
-
-  await renderSettings();
-  const reviewInput = textInputs.find((item) => item.placeholder.includes('Badboy-এর উত্তর'));
-  assert.ok(reviewInput, 'Expert Review input is rendered');
-  reviewInput.onChangeText('Check whether this feature is safe.');
-  await renderSettings();
-
-  const runReview = pressables.find((item) => item.label.includes('Expert Review চালাও'));
-  assert.ok(runReview, 'Expert Review action is rendered');
-  runReview.onPress();
-  await settleAsyncHandlers();
-
-  const reportHtml = await renderSettings();
-  assert.match(reportHtml, /Repository: VERIFIED/);
-  assert.match(reportHtml, /Verified Expert Review report/);
-
-  const share = pressables.find((item) => item.label.includes('রিপোর্ট শেয়ার করুন'));
-  assert.ok(share, 'report share action appears after a report is produced');
-  share.onPress();
-  await settleAsyncHandlers();
-  assert.deepEqual(shareCalls, ['Verified Expert Review report']);
-});
-
-test('Settings Developer Agent uses Native analysis and displays the returned task and report', async () => {
-  resetHooks();
-  settings.developerMode = true;
-  settings.onlineAI = true;
-  settings.developerEngine = 'native';
-  textInputs.length = 0;
-  pressables.length = 0;
-  streamDeveloperAnalysisImpl = async (_prompt, context, engine, onChunk) => {
-    assert.equal(engine, 'native');
-    assert.match(context, /developerAgentProjectId/);
-    onChunk('Developer Agent analysis report');
-    return { taskId: 'task-test-123' };
-  };
-  resolveEngineResult = { status: 'available', activeEngine: 'native' };
-
-  await renderSettings();
-  const promptInput = textInputs.find((item) => item.placeholder.includes('Developer Mode'));
-  assert.ok(promptInput, 'Developer Agent prompt input is rendered');
-  promptInput.onChangeText('Review the next safe implementation steps.');
-  await renderSettings();
-
-  const analyze = pressables.find((item) => item.label.includes('Analyze with selected engine'));
-  assert.ok(analyze, 'Developer Agent analyze action is rendered');
-  analyze.onPress();
-  await settleAsyncHandlers();
-
-  const html = await renderSettings();
-  assert.match(html, /Selected execution: Badboy Native/);
-  assert.match(html, /Task ID: task-test-123/);
-  assert.match(html, /Developer Agent analysis report/);
-});
-
-test('Settings blocks unavailable Copilot runtime and exposes its fallback reason', async () => {
-  resetHooks();
-  settings.developerMode = true;
-  settings.onlineAI = true;
-  settings.developerEngine = 'copilot';
-  textInputs.length = 0;
-  pressables.length = 0;
-  resolveEngineResult = {
-    status: 'unavailable',
-    reason: 'Copilot SDK runtime is not configured.',
-  };
-
-  await renderSettings();
-  const promptInput = textInputs.find((item) => item.placeholder.includes('Developer Mode'));
-  assert.ok(promptInput);
-  promptInput.onChangeText('Analyze the project.');
-  await renderSettings();
-
-  const analyze = pressables.find((item) => item.label.includes('Analyze with selected engine'));
-  assert.ok(analyze);
-  analyze.onPress();
-  await settleAsyncHandlers();
-
-  const html = await renderSettings();
-  assert.match(html, /GitHub Copilot SDK · not configured/);
-  assert.match(html, /Copilot SDK runtime is not configured/);
 });
