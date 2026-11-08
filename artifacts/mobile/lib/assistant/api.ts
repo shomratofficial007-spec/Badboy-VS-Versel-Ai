@@ -35,27 +35,40 @@ async function ownerAuthorizationHeader(): Promise<string> {
   return `Bearer ${token}`;
 }
 
-export async function requestOwnerJson<T>(
-  path: string,
-  method: 'GET' | 'POST' | 'DELETE',
-  body?: Record<string, unknown>,
-): Promise<T> {
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-    Authorization: await ownerAuthorizationHeader(),
+type OwnerJsonFetch = (input: string, init?: RequestInit) => Promise<Response>;
+
+export function createOwnerJsonRequester(
+  getToken: () => Promise<string | null>,
+  fetcher: OwnerJsonFetch = expoFetch as OwnerJsonFetch,
+) {
+  return async function requestOwnerJson<T>(
+    path: string,
+    method: 'GET' | 'POST' | 'DELETE',
+    body?: Record<string, unknown>,
+  ): Promise<T> {
+    const token = await getToken();
+    if (!token) {
+      throw new Error('Owner login is required. Enter your Badboy Owner Token to continue.');
+    }
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      Authorization: `Bearer ${token}`,
+    };
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    const response = await fetcher(apiUrl(path), {
+      method,
+      headers,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const payload = await response.json().catch(() => ({})) as T & { error?: string };
+    if (!response.ok) {
+      throw new Error(payload.error ?? `Badboy API request failed (HTTP ${response.status}).`);
+    }
+    return payload;
   };
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const response = await expoFetch(apiUrl(path), {
-    method,
-    headers,
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const payload = await response.json().catch(() => ({})) as T & { error?: string };
-  if (!response.ok) {
-    throw new Error(payload.error ?? `Badboy API request failed (HTTP ${response.status}).`);
-  }
-  return payload;
 }
+
+export const requestOwnerJson = createOwnerJsonRequester(getOwnerToken);
 
 export async function streamReply(
   message: string,
