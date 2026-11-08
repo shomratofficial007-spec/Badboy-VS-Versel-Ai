@@ -16,6 +16,22 @@ const ReactMock = {
     return { type, props: { ...props, children } };
   },
 };
+mock.module('react/jsx-runtime', {
+  namedExports: {
+    jsx: (type: unknown, props: any) => {
+      if (type === context.Provider) context.value = props.value;
+      return { type, props };
+    },
+    jsxs: (type: unknown, props: any) => {
+      if (type === context.Provider) context.value = props.value;
+      return { type, props };
+    },
+    jsxDEV: (type: unknown, props: any) => {
+      if (type === context.Provider) context.value = props.value;
+      return { type, props };
+    },
+  },
+});
 mock.module('react', {
   defaultExport: ReactMock,
   namedExports: {
