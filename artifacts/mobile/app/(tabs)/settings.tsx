@@ -22,6 +22,7 @@ import { streamDeveloperAnalysis, streamReply } from '@/lib/assistant/api';
 import {
   addDeveloperProjectMemory,
   deleteDeveloperProjectMemory,
+  getAnalysisProjectNotes,
   listDeveloperProjectMemory,
   listDeveloperProjects,
   listDeveloperTasks,
@@ -312,13 +313,7 @@ export default function SettingsScreen() {
       const analysisContext = {
         ...brain,
         developerAgentProjectId: selectedDeveloperProjectId || null,
-        privateProjectNotes: projectMemories
-          .filter((memory) => memory.privacy_level !== 'sensitive')
-          .map((memory) => ({
-            category: memory.category,
-            content: memory.content,
-            privacyLevel: memory.privacy_level,
-          })),
+        privateProjectNotes: getAnalysisProjectNotes(projectMemories),
       };
       let report = '';
       const result = await streamDeveloperAnalysis(
