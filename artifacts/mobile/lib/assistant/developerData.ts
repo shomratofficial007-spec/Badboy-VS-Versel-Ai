@@ -1,4 +1,4 @@
-import { requestOwnerJson } from "./api";
+import { requestOwnerJson } from "./ownerJsonRequest";
 
 export interface DeveloperTaskRecord {
   task_id: string;
