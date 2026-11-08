@@ -47,6 +47,28 @@ export interface AgentTaskRecord {
   updated_at: string;
 }
 
+export interface AgentProjectRecord {
+  project_id: string;
+  owner_id: string;
+  project_key: string;
+  name: string;
+  summary: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentProjectMemoryRecord {
+  memory_id: string;
+  owner_id: string;
+  project_id: string;
+  category: string;
+  content: string;
+  source: string;
+  privacy_level: "private" | "sensitive" | "general";
+  created_at: string;
+  updated_at: string;
+}
+
 function requiredText(value: string, field: string, maxLength: number): string {
   const normalized = value.trim();
   if (!normalized || normalized.length > maxLength) {
@@ -145,6 +167,54 @@ export function createAgentStorage(db: D1Database) {
          ORDER BY updated_at DESC
          LIMIT ?`,
       ).bind(ownerId, limit).all<AgentTaskRecord>();
+      return result.results ?? [];
+    },
+
+    async updateTaskStatus(input: {
+      taskId: string;
+      ownerId: string;
+      status: AgentTaskInput["status"];
+      summary?: string;
+      now?: string;
+    }): Promise<boolean> {
+      const ownerId = assertOwnerId(input.ownerId);
+      const taskId = requiredText(input.taskId, "Task ID", 128);
+      const summary = input.summary?.trim();
+      if (summary && summary.length > 4000) {
+        throw new Error("Task summary must not exceed 4000 characters.");
+      }
+      const result = await db.prepare(
+        "UPDATE agent_tasks SET status = ?, summary = COALESCE(?, summary), updated_at = ? WHERE task_id = ? AND owner_id = ?",
+      ).bind(
+        input.status,
+        summary || null,
+        input.now ?? new Date().toISOString(),
+        taskId,
+        ownerId,
+      ).run();
+      return (result.meta?.changes ?? 0) === 1;
+    },
+
+    async listProjects(ownerIdInput: string, limitInput = 25): Promise<AgentProjectRecord[]> {
+      const ownerId = assertOwnerId(ownerIdInput);
+      const limit = Math.max(1, Math.min(100, Math.floor(limitInput)));
+      const result = await db.prepare(
+        "SELECT project_id, owner_id, project_key, name, summary, created_at, updated_at FROM agent_projects WHERE owner_id = ? ORDER BY updated_at DESC LIMIT ?",
+      ).bind(ownerId, limit).all<AgentProjectRecord>();
+      return result.results ?? [];
+    },
+
+    async listProjectMemory(
+      projectIdInput: string,
+      ownerIdInput: string,
+      limitInput = 50,
+    ): Promise<AgentProjectMemoryRecord[]> {
+      const ownerId = assertOwnerId(ownerIdInput);
+      const projectId = requiredText(projectIdInput, "Project ID", 128);
+      const limit = Math.max(1, Math.min(100, Math.floor(limitInput)));
+      const result = await db.prepare(
+        "SELECT memory_id, owner_id, project_id, category, content, source, privacy_level, created_at, updated_at FROM agent_project_memory WHERE project_id = ? AND owner_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT ?",
+      ).bind(projectId, ownerId, limit).all<AgentProjectMemoryRecord>();
       return result.results ?? [];
     },
 
