@@ -41,6 +41,13 @@ mock.module('react-native', { namedExports: { Platform: { OS: 'android' } } });
 mock.module('expo-speech-recognition', {
   namedExports: { ExpoSpeechRecognitionModule: nativeModule },
 });
+mock.module('expo-speech', {
+  namedExports: {
+    getAvailableVoicesAsync: nativeModule.getAvailableVoicesAsync,
+    speak: () => {},
+    stop: () => {},
+  },
+});
 const voicePromise = import('./voice');
 
 function reset() {
@@ -123,10 +130,11 @@ test('native locale and permission provider failures fall back or report unsuppo
   const voice = await voicePromise;
   localeError = new Error('locale API missing');
   const errors: string[] = [];
-  voice.dictateOnce({ lang: 'bn-BD', onTranscript: () => {}, onError: (error) => errors.push(error ?? '') });
+  const cancel = voice.dictateOnce({ lang: 'bn-BD', onTranscript: () => {}, onError: (error) => errors.push(error ?? '') });
   await flush();
   assert.ok(calls.some((call) => call.name === 'start'));
   assert.deepEqual(errors, []);
+  cancel();
 
   permissionError = new Error('permission provider missing');
   assert.equal(await voice.checkMicrophonePermission(), 'unsupported');
