@@ -113,7 +113,7 @@ const bridge = createWakeWordBridge({
   loadNativeModule: () => require('expo-modules-core').requireNativeModule('BadboyWakeWord') as NativeWakeWordModule,
   createEmitter: (native) => {
     const { EventEmitter } = require('expo-modules-core');
-    return new EventEmitter<NativeWakeWordEventMap>(native as never);
+    return new EventEmitter(native as never);
   },
 });
 
