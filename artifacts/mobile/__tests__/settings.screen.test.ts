@@ -705,15 +705,21 @@ test('Settings Developer task history refresh displays records and surfaces D1 r
   }];
   const render = createSettingsHookHarness();
   await render();
-  pressables.find((item) => item.label === 'Refresh')?.onPress();
+  const refreshTasks = pressables.find((item) => item.label.includes('Refresh'));
+  assert.ok(refreshTasks, 'Developer task history refresh action is rendered');
+  refreshTasks.onPress();
   await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 1);
   assert.match(await render(), /Settings regression suite/);
 
   resetTelegramState();
   developerDataHandlers.listDeveloperTasks = async () => { throw new Error('Task history D1 unavailable'); };
   const failureRender = createSettingsHookHarness();
   await failureRender();
-  pressables.find((item) => item.label === 'Refresh')?.onPress();
+  const refreshFailure = pressables.find((item) => item.label.includes('Refresh'));
+  assert.ok(refreshFailure, 'Developer task history refresh action is rendered for error case');
+  refreshFailure.onPress();
   await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 1);
   assert.match(await failureRender(), /Task history D1 unavailable/);
 });
