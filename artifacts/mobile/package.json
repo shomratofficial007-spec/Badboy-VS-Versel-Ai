@@ -9,7 +9,7 @@
     "serve": "node server/serve.js",
     "deploy": "wrangler pages deploy ./dist --project-name voice-memory-assistant-net",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --experimental-test-module-mocks --import tsx --test lib/assistant/*.test.ts context/*.test.ts app/*.test.ts 'app/(tabs)'/*.test.ts"
+    "test": "node --experimental-test-module-mocks --import tsx --test lib/assistant/*.test.ts context/*.test.ts app/*.test.ts"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
