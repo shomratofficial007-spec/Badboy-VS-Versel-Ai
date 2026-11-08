@@ -384,6 +384,9 @@ function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {
   };
   const render = async () => {
     cursor = 0;
+    pressables.length = 0;
+    inputHandlers.length = 0;
+    switchHandlers.length = 0;
     const previous = internals.H;
     internals.H = dispatcher;
     try {
