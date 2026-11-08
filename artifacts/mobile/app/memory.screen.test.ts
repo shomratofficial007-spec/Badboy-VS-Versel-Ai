@@ -47,9 +47,10 @@ mock.module('../../hooks/useColors.ts', {
   },
 });
 
-const { default: MemoryScreen } = await import('./(tabs)/memory');
+const memoryScreenPromise = import('./(tabs)/memory');
 
-test('Memory screen renders the private local-storage empty state', () => {
+test('Memory screen renders the private local-storage empty state', async () => {
+  const { default: MemoryScreen } = await memoryScreenPromise;
   assistantState = { ...assistantState, memories: [], storageError: null };
   const html = renderToStaticMarkup(React.createElement(MemoryScreen));
   assert.match(html, /Private Memory/);
