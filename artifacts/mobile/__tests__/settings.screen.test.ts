@@ -37,7 +37,7 @@ let streamDeveloperAnalysisImpl = async (
   onChunk('Developer Agent analysis report');
   return { taskId: 'task-test-123' };
 };
-let inspectRepositoryImpl = async () => ({
+let inspectRepositoryImpl: () => Promise<any> = async () => ({
   status: 'not_connected' as const,
   repository: 'shomratofficial007-spec/Badboy-VS-Versel-Ai',
   checkedAt: '2026-11-09T00:00:00.000Z',
@@ -226,7 +226,7 @@ test('Settings exposes voice consent, input/output, auto-speak, auto-submit and 
   pressables.length = 0;
   switchHandlers.length = 0;
   settingsUpdates.length = 0;
-  renderSettings();
+  await renderSettings();
 
   const enabledControls = [
     'Voice Processing Consent',
@@ -266,7 +266,7 @@ test('Settings preserves every roadmap preference and all selectable theme choic
   pressables.length = 0;
   switchHandlers.length = 0;
   settingsUpdates.length = 0;
-  renderSettings();
+  await renderSettings();
 
   const roadmapControls = [
     'Web Development', 'App Development', 'Self Development',
