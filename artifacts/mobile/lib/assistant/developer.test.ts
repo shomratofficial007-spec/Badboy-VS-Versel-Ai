@@ -266,3 +266,186 @@ test('createGitHubPullRequest - handles missing token gracefully', async () => {
   assert.strictEqual(result.success, false);
   assert.ok(result.error?.includes('Personal Access Token'));
 });
+
+
+test('executeAgentTask - Gmail sends only after confirmation and reports HTTP/network failures', async (t) => {
+  const originalFetch = globalThis.fetch;
+  try {
+    await t.test('confirmed request succeeds with bearer authorization', async () => {
+      let request: { url: string; init?: RequestInit } | undefined;
+      globalThis.fetch = async (input, init) => {
+        request = { url: String(input), init };
+        return Response.json({ id: 'sent-message' });
+      };
+      const result = await executeAgentTask('Send an email via Gmail', true, true, '  oauth-token  ');
+      assert.equal(result.state, 'completed');
+      assert.equal(result.requiresConfirmation, true);
+      assert.equal(request?.url, 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send');
+      assert.equal(request?.init?.method, 'POST');
+      assert.equal(new Headers(request?.init?.headers).get('Authorization'), 'Bearer oauth-token');
+      assert.deepEqual(JSON.parse(String(request?.init?.body)), { raw: '' });
+    });
+
+    await t.test('HTTP error does not claim the email was sent', async () => {
+      globalThis.fetch = async () => new Response('permission denied', { status: 403 });
+      const result = await executeAgentTask('Send an email via Gmail', true, true, 'oauth-token');
+      assert.equal(result.state, 'failed');
+      assert.match(result.summary, /HTTP 403/);
+      assert.equal(result.requiresConfirmation, true);
+    });
+
+    await t.test('network error is returned as a failed task', async () => {
+      globalThis.fetch = async () => { throw new Error('network unavailable'); };
+      const result = await executeAgentTask('Send an email via Gmail', true, true, 'oauth-token');
+      assert.equal(result.state, 'failed');
+      assert.match(result.summary, /network unavailable/);
+      assert.ok(result.logs.some((entry) => entry.includes('Gmail সার্ভিস ত্রুটি')));
+    });
+
+    await t.test('offline email request is queued and still requires confirmation', async () => {
+      globalThis.fetch = async () => { throw new Error('must not fetch while offline'); };
+      const result = await executeAgentTask('Send an email via Gmail', false, true, 'oauth-token');
+      assert.equal(result.state, 'offline_queued');
+      assert.equal(result.requiresInternet, true);
+      assert.equal(result.requiresConfirmation, true);
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('executeAgentTask - generic request returns structured answer and empty input is safe', async () => {
+  const empty = await executeAgentTask('   ');
+  assert.equal(empty.state, 'completed');
+  assert.equal(empty.prompt, '');
+  assert.equal(empty.detectedLanguage, 'en');
+
+  const result = await executeAgentTask('আমার প্রজেক্টের অবস্থা ব্যাখ্যা করো', false);
+  assert.equal(result.state, 'completed');
+  assert.equal(result.requiresInternet, false);
+  assert.equal(result.structuredAnswer?.directAnswer.includes('সফলভাবে'), true);
+  assert.ok(result.summary.includes('১. মূল উত্তর'));
+});
+
+test('createGitHubPullRequest - completes a mocked safe branch, file commit and PR flow', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ url: string; method: string; body?: any; authorization: string | null }> = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    const headers = new Headers(init?.headers);
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    calls.push({ url, method, body, authorization: headers.get('Authorization') });
+
+    if (url.endsWith('/git/ref/heads/main')) {
+      return Response.json({ object: { sha: 'base-commit-sha' } });
+    }
+    if (url.endsWith('/git/refs') && method === 'POST') {
+      return new Response('branch already exists', { status: 422 });
+    }
+    if (url.includes('/contents/notes.md?ref=')) {
+      return Response.json({ sha: 'existing-file-sha' });
+    }
+    if (url.endsWith('/contents/notes.md') && method === 'PUT') {
+      return Response.json({ content: { sha: 'committed-file-sha' } });
+    }
+    if (url.endsWith('/pulls') && method === 'POST') {
+      return Response.json({ html_url: 'https://github.com/example/repo/pull/12', number: 12 });
+    }
+    throw new Error(`Unexpected GitHub API request: ${method} ${url}`);
+  };
+
+  try {
+    const plan = generateDevelopmentPlan('Add a private project note');
+    plan.branchName = 'feature/badboy-test-branch';
+    const result = await createGitHubPullRequest({
+      githubToken: '  test-github-token  ',
+      plan,
+      changes: [{ path: 'notes.md', content: 'Preserve existing project notes.' }],
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.prNumber, 12);
+    assert.equal(result.prUrl, 'https://github.com/example/repo/pull/12');
+    assert.equal(result.branchName, 'feature/badboy-test-branch');
+    assert.ok(result.logs.some((entry) => entry.includes('PR সফলভাবে তৈরি হয়েছে')));
+    assert.equal(calls.length, 5);
+    assert.ok(calls.every((call) => call.authorization === 'Bearer test-github-token'));
+    assert.equal(calls[2].method, 'GET');
+    assert.equal(calls[3].body.sha, 'existing-file-sha');
+    assert.equal(calls[4].body.head, 'feature/badboy-test-branch');
+    assert.equal(calls[4].body.base, 'main');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('createGitHubPullRequest - handles invalid credentials and missing base SHA without continuing', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const plan = generateDevelopmentPlan('Add a private project note');
+  try {
+    await t.test('401 credentials return a clear authentication error', async () => {
+      let calls = 0;
+      globalThis.fetch = async () => {
+        calls += 1;
+        return new Response('bad token', { status: 401 });
+      };
+      const result = await createGitHubPullRequest({
+        githubToken: 'invalid-token',
+        plan,
+        changes: [{ path: 'notes.md', content: 'note' }],
+      });
+      assert.equal(result.success, false);
+      assert.match(result.error ?? '', /অকার্যকর/);
+      assert.equal(calls, 1);
+    });
+
+    await t.test('missing base SHA fails before branch creation', async () => {
+      let calls = 0;
+      globalThis.fetch = async () => {
+        calls += 1;
+        return Response.json({ object: {} });
+      };
+      const result = await createGitHubPullRequest({
+        githubToken: 'valid-token',
+        plan,
+        changes: [{ path: 'notes.md', content: 'note' }],
+      });
+      assert.equal(result.success, false);
+      assert.match(result.error ?? '', /SHA পাওয়া যায়নি/);
+      assert.equal(calls, 1);
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('createGitHubPullRequest - reports commit failures and does not create a PR', async () => {
+  const originalFetch = globalThis.fetch;
+  let pullRequests = 0;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith('/git/ref/heads/main')) return Response.json({ object: { sha: 'base-sha' } });
+    if (url.endsWith('/git/refs')) return Response.json({});
+    if (url.includes('/contents/notes.md?ref=')) return new Response('not found', { status: 404 });
+    if (url.endsWith('/contents/notes.md') && init?.method === 'PUT') {
+      return new Response('write denied', { status: 403 });
+    }
+    if (url.endsWith('/pulls')) pullRequests += 1;
+    throw new Error(`Unexpected API call: ${url}`);
+  };
+
+  try {
+    const plan = generateDevelopmentPlan('Add a private project note');
+    const result = await createGitHubPullRequest({
+      githubToken: 'valid-token',
+      plan,
+      changes: [{ path: 'notes.md', content: 'note' }],
+    });
+    assert.equal(result.success, false);
+    assert.match(result.error ?? '', /ফাইল কমিট করতে ব্যর্থ/);
+    assert.equal(pullRequests, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
