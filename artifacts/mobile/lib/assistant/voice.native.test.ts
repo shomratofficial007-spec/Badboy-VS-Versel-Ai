@@ -8,6 +8,9 @@ let permissionGranted = true;
 let localeError: Error | null = null;
 let permissionError: Error | null = null;
 let voiceError: Error | null = null;
+let nativeTtsOptions: any = null;
+let nativeTtsText = '';
+let nativeStopCount = 0;
 
 const nativeModule = {
   isRecognitionAvailable: () => true,
@@ -44,8 +47,8 @@ mock.module('expo-speech-recognition', {
 mock.module('expo-speech', {
   namedExports: {
     getAvailableVoicesAsync: nativeModule.getAvailableVoicesAsync,
-    speak: () => {},
-    stop: () => {},
+    speak: (text: string, options: any) => { nativeTtsText = text; nativeTtsOptions = options; },
+    stop: () => { nativeStopCount += 1; },
   },
 });
 const voicePromise = import('./voice');
@@ -58,6 +61,9 @@ function reset() {
   localeError = null;
   permissionError = null;
   voiceError = null;
+  nativeTtsOptions = null;
+  nativeTtsText = '';
+  nativeStopCount = 0;
 }
 async function flush() {
   await Promise.resolve();
@@ -149,4 +155,36 @@ test('native available voice catalogue filters invalid entries, fills names and 
   ]);
   voiceError = new Error('voice provider failed');
   assert.deepEqual(await voice.getAvailableSpeechVoices(), []);
+});
+
+test('native TTS honors the selected installed voice and reports playback lifecycle', async () => {
+  reset();
+  const voice = await voicePromise;
+  const events: string[] = [];
+  assert.equal(voice.speak('  হ্যালো Badboy  ', 'bn-BD', {
+    onStart: () => events.push('start'),
+    onDone: () => events.push('done'),
+    onError: () => events.push('error'),
+  }, 'bn-installed-voice'), true);
+  assert.equal(nativeTtsText, 'হ্যালো Badboy');
+  assert.equal(nativeTtsOptions.language, 'bn-BD');
+  assert.equal(nativeTtsOptions.voice, 'bn-installed-voice');
+  assert.equal(nativeTtsOptions.pitch, 1);
+  assert.equal(nativeTtsOptions.rate, 1);
+  nativeTtsOptions.onStart();
+  nativeTtsOptions.onDone();
+  assert.deepEqual(events, ['start', 'done']);
+  assert.ok(nativeStopCount >= 1);
+});
+
+test('native TTS rejects blank text and stopSpeaking safely stops the provider', async () => {
+  reset();
+  const voice = await voicePromise;
+  const errors: string[] = [];
+  assert.equal(voice.speak('   ', 'bn-BD', {
+    onError: (error) => errors.push(String(error)),
+  }), false);
+  assert.match(errors[0], /পড়ে শোনানোর মতো কোনো লেখা নেই/);
+  voice.stopSpeaking();
+  assert.ok(nativeStopCount >= 1);
 });
