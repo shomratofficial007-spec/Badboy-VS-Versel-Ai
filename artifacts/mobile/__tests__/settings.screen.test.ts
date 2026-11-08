@@ -15,6 +15,24 @@ let clearExpertReviewDraftCalls = 0;
 const telegramCalls: Array<{ method: string; args: unknown[] }> = [];
 const developerDataCalls: Array<{ method: string; args: unknown[] }> = [];
 const developerAnalysisCalls: unknown[][] = [];
+const agentTaskCalls: unknown[][] = [];
+const githubCalls: Array<{ method: string; args: unknown[] }> = [];
+const openedUrls: string[] = [];
+let agentTaskHandler = async (_prompt: string, _online: boolean, _confirmed: boolean) => ({
+  state: 'completed', prompt: 'Search YouTube', summary: 'Search complete',
+  detectedLanguage: 'en', requiresInternet: true,
+  outputData: { action: 'open_youtube_search', query: 'Badboy AI' }, logs: ['Opened search'], latencyMs: 15,
+});
+let githubHandlers = {
+  saveGitHubToken: async (_token: string) => {},
+  removeGitHubToken: async () => {},
+  createGitHubPullRequest: async (_input: any) => ({ success: true, prUrl: 'https://github.com/example/repo/pull/88', prNumber: 88, summary: 'PR ready', logs: ['Branch checked', 'PR created'] }),
+  generateDevelopmentPlan: (_prompt: string) => ({
+    title: 'Settings test plan', category: 'web', featureDescription: 'Improve Settings',
+    filesToModify: ['settings.tsx'], tasks: [{ id: 'task-1', title: 'Add tests' }],
+    securityNotes: 'No deploy without approval', branchName: 'test/settings-coverage',
+  }),
+};
 let developerAnalysisHandler = async (
   _prompt: string, _context: string, _engine: string, onChunk: (chunk: string) => void,
 ) => {
@@ -74,7 +92,7 @@ mock.module('react-native', {
   namedExports: {
     ActivityIndicator: () => React.createElement('span', null, 'loading'),
     Alert: { alert: (title: string, message: string, buttons: any[] = []) => alerts.push({ title, message, buttons }) },
-    Linking: { openURL: async () => {} },
+    Linking: { openURL: async (url: string) => { openedUrls.push(url); } },
     Platform: { OS: 'android' },
     Pressable: host('button'),
     ScrollView: host('main'),
@@ -149,11 +167,14 @@ mock.module('../lib/assistant/telegram.ts', {
 });
 mock.module('../lib/assistant/developer.ts', {
   namedExports: {
-    createGitHubPullRequest: async () => ({}), executeAgentTask: async () => ({}),
-    generateDevelopmentPlan: async () => ({}), getGitHubToken: async () => null,
+    createGitHubPullRequest: (...args: [any]) => { githubCalls.push({ method: 'createGitHubPullRequest', args }); return githubHandlers.createGitHubPullRequest(...args); },
+    executeAgentTask: (...args: [string, boolean, boolean]) => { agentTaskCalls.push(args); return agentTaskHandler(...args); },
+    generateDevelopmentPlan: (...args: [string]) => { githubCalls.push({ method: 'generateDevelopmentPlan', args }); return githubHandlers.generateDevelopmentPlan(...args); },
+    getGitHubToken: async () => null,
     getPluginRegistryStatus: async () => ({}), getProjectBrainSummary: () => ({ name: 'Badboy AI', architecture: 'Worker + Expo', frameworks: ['Expo'], apiEndpoints: [], knownLimitations: [] }),
-    removeGitHubToken: async () => {}, runAutoQASuite: async () => ({}),
-    saveGitHubToken: async () => {},
+    removeGitHubToken: (...args: unknown[]) => { githubCalls.push({ method: 'removeGitHubToken', args }); return githubHandlers.removeGitHubToken(); },
+    runAutoQASuite: async () => ({}),
+    saveGitHubToken: (...args: [string]) => { githubCalls.push({ method: 'saveGitHubToken', args }); return githubHandlers.saveGitHubToken(...args); },
   },
 });
 mock.module('../lib/assistant/developerEngine.ts', {
@@ -442,6 +463,24 @@ function resetTelegramState() {
   inputHandlers.length = 0;
   developerDataCalls.length = 0;
   developerAnalysisCalls.length = 0;
+  agentTaskCalls.length = 0;
+  githubCalls.length = 0;
+  openedUrls.length = 0;
+  agentTaskHandler = async (_prompt, _online, _confirmed) => ({
+    state: 'completed', prompt: 'Search YouTube', summary: 'Search complete',
+    detectedLanguage: 'en', requiresInternet: true,
+    outputData: { action: 'open_youtube_search', query: 'Badboy AI' }, logs: ['Opened search'], latencyMs: 15,
+  });
+  githubHandlers = {
+    saveGitHubToken: async (_token) => {},
+    removeGitHubToken: async () => {},
+    createGitHubPullRequest: async (_input) => ({ success: true, prUrl: 'https://github.com/example/repo/pull/88', prNumber: 88, summary: 'PR ready', logs: ['Branch checked', 'PR created'] }),
+    generateDevelopmentPlan: (_prompt) => ({
+      title: 'Settings test plan', category: 'web', featureDescription: 'Improve Settings',
+      filesToModify: ['settings.tsx'], tasks: [{ id: 'task-1', title: 'Add tests' }],
+      securityNotes: 'No deploy without approval', branchName: 'test/settings-coverage',
+    }),
+  };
   expertReviewDraftValue = '';
   clearExpertReviewDraftCalls = 0;
   developerAnalysisHandler = async (_prompt, _context, _engine, onChunk) => { onChunk('Native analysis result'); return { taskId: 'task-99' }; };
@@ -763,4 +802,120 @@ test('Settings lifecycle loads the owner integrations, handles storage and memor
   assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 1);
   assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperProjects').length, 1);
   assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperProjectMemory').length, 1);
+});
+
+
+const samplePlan = {
+  title: 'Settings test plan', category: 'web', featureDescription: 'Improve Settings',
+  filesToModify: ['settings.tsx'], tasks: [{ id: 'task-1', title: 'Add tests' }],
+  securityNotes: 'No deploy without approval', branchName: 'test/settings-coverage',
+};
+
+test('Settings Agent renders permission and completed task states and opens only the confirmed YouTube action', async () => {
+  resetTelegramState();
+  settings.developerMode = true;
+  const pending = {
+    state: 'permission_pending', prompt: 'Search YouTube', summary: 'Waiting for approval',
+    detectedLanguage: 'en', requiresInternet: true, confirmationMessage: 'Owner approval required',
+    logs: ['Waiting for owner'],
+  };
+  const render = createSettingsHookHarness({ 12: pending });
+  let html = await render();
+  assert.match(html, /Owner approval required/);
+  assert.match(html, /Waiting for owner/);
+  pressables.find((item) => item.label.includes('অনুমতি দিন ও সম্পাদন করুন'))?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  html = await render();
+  assert.match(html, /টাস্ক স্ট্যাটাস: COMPLETED/);
+  assert.deepEqual(agentTaskCalls, [['Search YouTube', true, true]]);
+  assert.deepEqual(openedUrls, ['https://www.youtube.com/results?search_query=Badboy%20AI']);
+
+  const completed = {
+    state: 'completed', prompt: 'Offline task', summary: 'Finished offline',
+    detectedLanguage: 'bn', requiresInternet: false, logs: [],
+  };
+  html = await createSettingsHookHarness({ 12: completed })();
+  assert.match(html, /Finished offline/);
+  assert.doesNotMatch(html, /অনুমতি দিন ও সম্পাদন করুন/);
+  assert.doesNotMatch(html, /ONLINE/);
+});
+
+test('Settings creates a trimmed development plan and blocks PR creation without a GitHub token', async () => {
+  resetTelegramState();
+  settings.developerMode = true;
+  const planRender = createSettingsHookHarness({ 17: '  Improve Settings safely  ' });
+  await planRender();
+  pressables.find((item) => item.label.includes('প্ল্যান ও ওয়ার্কফ্লো তৈরি করুন'))?.onPress();
+  let html = await planRender();
+  assert.match(html, /Settings test plan/);
+  assert.deepEqual(githubCalls.find((item) => item.method === 'generateDevelopmentPlan')?.args, ['Improve Settings safely']);
+
+  const noTokenRender = createSettingsHookHarness({ 18: samplePlan });
+  await noTokenRender();
+  pressables.find((item) => item.label.includes('GitHub-এ PR তৈরি করুন'))?.onPress();
+  html = await noTokenRender();
+  assert.match(html, /GitHub Personal Access Token প্রয়োজন/);
+  assert.equal(githubCalls.filter((item) => item.method === 'createGitHubPullRequest').length, 0);
+});
+
+test('Settings confirms GitHub PR creation, renders success history, and surfaces API failures', async () => {
+  resetTelegramState();
+  settings.developerMode = true;
+  const successRender = createSettingsHookHarness({ 15: 'ghp_test-token', 18: samplePlan });
+  await successRender();
+  pressables.find((item) => item.label.includes('GitHub-এ PR তৈরি করুন'))?.onPress();
+  assert.equal(alerts.at(-1)?.title, 'স্বয়ংক্রিয় ডেভেলপমেন্ট ওয়ার্কফ্লো শুরু করবেন?');
+  await alerts.at(-1)?.buttons.find((button) => button.text === 'হ্যাঁ, শুরু করুন')?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  let html = await successRender();
+  assert.match(html, /PR ready/);
+  assert.match(html, /GitHub-এ PR দেখুন: #88/);
+  assert.match(html, /পূর্ববর্তী ডেভেলপমেন্ট হিস্ট্রি/);
+  assert.deepEqual(githubCalls.find((item) => item.method === 'createGitHubPullRequest')?.args, [{
+    githubToken: 'ghp_test-token', plan: samplePlan,
+  }]);
+
+  resetTelegramState();
+  settings.developerMode = true;
+  githubHandlers.createGitHubPullRequest = async () => ({
+    success: false, error: 'GitHub permission denied', logs: ['Repository write permission missing'],
+  });
+  const rejectedRender = createSettingsHookHarness({ 15: 'ghp_test-token', 18: samplePlan });
+  await rejectedRender();
+  pressables.find((item) => item.label.includes('GitHub-এ PR তৈরি করুন'))?.onPress();
+  await alerts.at(-1)?.buttons.find((button) => button.text === 'হ্যাঁ, শুরু করুন')?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  html = await rejectedRender();
+  assert.match(html, /GitHub permission denied/);
+  assert.match(html, /Repository write permission missing/);
+
+  resetTelegramState();
+  settings.developerMode = true;
+  githubHandlers.createGitHubPullRequest = async () => { throw new Error('GitHub API unavailable'); };
+  const thrownRender = createSettingsHookHarness({ 15: 'ghp_test-token', 18: samplePlan });
+  await thrownRender();
+  pressables.find((item) => item.label.includes('GitHub-এ PR তৈরি করুন'))?.onPress();
+  await alerts.at(-1)?.buttons.find((button) => button.text === 'হ্যাঁ, শুরু করুন')?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  html = await thrownRender();
+  assert.match(html, /GitHub API unavailable/);
+});
+
+test('Settings GitHub token save trims input and remove clears the connected state', async () => {
+  resetTelegramState();
+  settings.developerMode = true;
+  const render = createSettingsHookHarness({ 16: '  ghp_example-9876  ' });
+  await render();
+  pressables.find((item) => item.label.includes('টোকেন সংরক্ষণ করুন'))?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  let html = await render();
+  assert.match(html, /GitHub PAT সংযুক্ত আছে/);
+  assert.match(html, /••••9876/);
+  assert.deepEqual(githubCalls.find((item) => item.method === 'saveGitHubToken')?.args, ['ghp_example-9876']);
+
+  await pressables.find((item) => item.label.includes('টোকেন মুছুন'))?.onPress();
+  html = await render();
+  assert.match(html, /ghp_xxxxxxxxxxxx/);
+  assert.equal(githubCalls.filter((item) => item.method === 'removeGitHubToken').length, 1);
+  assert.equal(alerts.at(-1)?.title, 'মুছে ফেলা হয়েছে');
 });
