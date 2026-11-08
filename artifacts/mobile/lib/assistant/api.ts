@@ -6,7 +6,7 @@ import { getOwnerToken } from './ownerAuth';
 
 // This repository deploys its own Worker; do not send native APK traffic to the
 // unrelated legacy Voice-Memory-Assistant Worker.
-import { apiUrl, createOwnerJsonRequester } from "./ownerJsonRequest";
+import { apiUrl, requestOwnerJson } from "./ownerJsonRequest";
 async function ownerAuthorizationHeader(): Promise<string> {
   const token = await getOwnerToken();
   if (!token) {
@@ -14,8 +14,6 @@ async function ownerAuthorizationHeader(): Promise<string> {
   }
   return `Bearer ${token}`;
 }
-
-export const requestOwnerJson = createOwnerJsonRequester(getOwnerToken);
 
 export async function streamReply(
   message: string,
