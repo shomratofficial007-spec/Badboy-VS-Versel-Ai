@@ -43,9 +43,10 @@ jobs:
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
-      # Run Worker tests as a direct Node child of c8 so the coverage collector
-      # measures the exact TypeScript test process. Run mobile tests separately.
-      - name: Run Worker tests and generate LCOV coverage
+      # Keep both test suites inside the same c8 process tree. The previous
+      # workflow ran mobile tests after c8 exited, so mobile source files were
+      # included by --all but received no execution coverage in LCOV.
+      - name: Run Worker and mobile tests with LCOV coverage
         run: >-
           pnpm dlx c8@10.1.3
           --reporter=lcov
@@ -61,15 +62,16 @@ jobs:
           --exclude='**/*.d.ts'
           --exclude='**/*.spec.ts'
           --
+          sh -c '
           node --experimental-strip-types --test
           functions/functions.test.ts
           functions/developerAgent.test.ts
           functions/agentStorage.test.ts
           functions/accessAuth.test.ts
           functions/personalAuth.test.ts
-
-      - name: Run mobile tests
-        run: pnpm --filter @workspace/mobile test
+          &&
+          pnpm --filter @workspace/mobile test
+          '
 
       - name: Verify LCOV report exists
         run: test -s coverage/lcov.info
