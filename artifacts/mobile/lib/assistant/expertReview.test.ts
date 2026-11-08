@@ -8,8 +8,7 @@ mock.module('./developer', {
   },
 });
 
-const { buildExpertReviewPrompt, inspectBadboyRepository, selectRelevantRepositoryPaths } =
-  await import('./expertReview');
+const loadExpertReview = () => import('./expertReview');
 
 const originalFetch = globalThis.fetch;
 afterEach(() => {
@@ -17,7 +16,8 @@ afterEach(() => {
   token = null;
 });
 
-test('selectRelevantRepositoryPaths excludes generated folders and limits results', () => {
+test('selectRelevantRepositoryPaths excludes generated folders and limits results', async () => {
+  const { selectRelevantRepositoryPaths } = await loadExpertReview();
   const paths = [
     'node_modules/react/index.js',
     'artifacts/mobile/app/(tabs)/settings.tsx',
@@ -33,13 +33,15 @@ test('selectRelevantRepositoryPaths excludes generated folders and limits result
   ]);
 });
 
-test('selectRelevantRepositoryPaths handles zero and negative limits without including generated assets', () => {
+test('selectRelevantRepositoryPaths handles zero and negative limits without including generated assets', async () => {
+  const { selectRelevantRepositoryPaths } = await loadExpertReview();
   const paths = ['README.md', 'node_modules/pkg/index.js', 'artifacts/mobile/app/index.tsx'];
   assert.deepEqual(selectRelevantRepositoryPaths(paths, 0), []);
   assert.deepEqual(selectRelevantRepositoryPaths(paths, -1), ['artifacts/mobile/app/index.tsx']);
 });
 
-test('expert review prompt separates evidence, assumptions and forbidden actions', () => {
+test('expert review prompt separates evidence, assumptions and forbidden actions', async () => {
+  const { buildExpertReviewPrompt } = await loadExpertReview();
   const prompt = buildExpertReviewPrompt(
     'Badboy said it cannot add this feature.',
     {
@@ -61,6 +63,7 @@ test('expert review prompt separates evidence, assumptions and forbidden actions
 });
 
 test('inspectBadboyRepository returns not_connected without making a network request', async () => {
+  const { inspectBadboyRepository } = await loadExpertReview();
   token = null;
   let fetchCalls = 0;
   globalThis.fetch = async () => {
@@ -77,6 +80,7 @@ test('inspectBadboyRepository returns not_connected without making a network req
 });
 
 test('inspectBadboyRepository verifies metadata and filters the live Git tree', async () => {
+  const { inspectBadboyRepository } = await loadExpertReview();
   token = 'test-owner-token';
   const requests: Array<{ url: string; authorization: string | null }> = [];
   globalThis.fetch = async (input, init) => {
@@ -117,6 +121,7 @@ test('inspectBadboyRepository verifies metadata and filters the live Git tree', 
 });
 
 test('inspectBadboyRepository reports a truncated tree as partial evidence', async () => {
+  const { inspectBadboyRepository } = await loadExpertReview();
   token = 'test-owner-token';
   globalThis.fetch = async (input) => {
     const url = String(input);
@@ -131,6 +136,7 @@ test('inspectBadboyRepository reports a truncated tree as partial evidence', asy
 });
 
 test('inspectBadboyRepository returns failed evidence for repository and tree HTTP errors', async (t) => {
+  const { inspectBadboyRepository } = await loadExpertReview();
   token = 'test-owner-token';
   await t.test('repository metadata denied', async () => {
     token = 'test-owner-token';
@@ -154,6 +160,7 @@ test('inspectBadboyRepository returns failed evidence for repository and tree HT
 });
 
 test('inspectBadboyRepository converts network and malformed-response failures to failed evidence', async (t) => {
+  const { inspectBadboyRepository } = await loadExpertReview();
   token = 'test-owner-token';
   await t.test('network failure', async () => {
     token = 'test-owner-token';
