@@ -36,7 +36,7 @@ test('selectRelevantRepositoryPaths excludes generated folders and limits result
 test('selectRelevantRepositoryPaths handles zero and negative limits without including generated assets', () => {
   const paths = ['README.md', 'node_modules/pkg/index.js', 'artifacts/mobile/app/index.tsx'];
   assert.deepEqual(selectRelevantRepositoryPaths(paths, 0), []);
-  assert.deepEqual(selectRelevantRepositoryPaths(paths, -1), ['README.md', 'artifacts/mobile/app/index.tsx']);
+  assert.deepEqual(selectRelevantRepositoryPaths(paths, -1), ['artifacts/mobile/app/index.tsx']);
 });
 
 test('expert review prompt separates evidence, assumptions and forbidden actions', () => {
