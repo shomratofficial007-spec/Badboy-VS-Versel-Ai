@@ -25,6 +25,20 @@ const onRequestPost = (context: any) =>
     ? rawOnRequestPost(context)
     : rawOnRequestPost(withTestOwner(context));
 
+function testAgentDb() {
+  return {
+    prepare(_sql: string) {
+      const statement: any = {
+        bind(..._values: unknown[]) { return statement; },
+        first: async () => ({ project_id: "test-project" }),
+        all: async () => ({ success: true, results: [] }),
+        run: async () => ({ success: true, meta: { changes: 1 } }),
+      };
+      return statement;
+    },
+  };
+}
+
 test("onRequestGet - health check endpoint returns status ok", async () => {
   const context = {
     request: new Request("https://example.com/api/health"),
@@ -592,7 +606,7 @@ test("onRequestPost - rejects malformed JSON with a consistent error envelope", 
 test("developer health reports Native capability and unavailable Copilot runtime", async () => {
   const context = {
     request: new Request("https://example.com/api/developer/health"),
-    env: { OPENROUTER_API_KEY: "test-key" },
+    env: { OPENROUTER_API_KEY: "test-key", AGENT_DB: testAgentDb() },
   } as any;
   const response = await onRequestGet(context);
   assert.strictEqual(response.status, 200);
@@ -618,7 +632,7 @@ test("developer analysis rejects invalid payloads before contacting providers", 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: " " }),
       }),
-      env: { OPENROUTER_API_KEY: "test-key" },
+      env: { OPENROUTER_API_KEY: "test-key", AGENT_DB: testAgentDb() },
     } as any;
     const response = await onRequestPost(context);
     assert.strictEqual(response.status, 400);
@@ -644,7 +658,7 @@ test("developer analysis keeps Copilot unavailable without calling an AI provide
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: "Inspect the repo", requestedEngine: "copilot" }),
       }),
-      env: { OPENROUTER_API_KEY: "test-key" },
+      env: { OPENROUTER_API_KEY: "test-key", AGENT_DB: testAgentDb() },
     } as any;
     const response = await onRequestPost(context);
     assert.strictEqual(response.status, 409);
@@ -681,7 +695,7 @@ test("developer analysis streams Native output with task metadata and safe conte
           requestedEngine: "auto",
         }),
       }),
-      env: { OPENROUTER_API_KEY: "test-key" },
+      env: { OPENROUTER_API_KEY: "test-key", AGENT_DB: testAgentDb() },
     } as any;
     const response = await onRequestPost(context);
     assert.strictEqual(response.status, 200);
@@ -727,7 +741,7 @@ test("developer analysis forwards multiple buffered SSE events before the upstre
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: "Stream safely" }),
       }),
-      env: { OPENROUTER_API_KEY: "test-key" },
+      env: { OPENROUTER_API_KEY: "test-key", AGENT_DB: testAgentDb() },
     } as any;
 
     const response = await onRequestPost(context);
