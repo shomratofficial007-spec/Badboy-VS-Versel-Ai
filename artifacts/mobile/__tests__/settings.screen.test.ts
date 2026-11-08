@@ -42,7 +42,7 @@ const textContent = (node: any): string => {
   if (React.isValidElement(node)) return textContent((node.props as any).children);
   return '';
 };
-const host = (tag: string) => function Host({ children, accessibilityLabel, placeholder, disabled, onPress, onValueChange, onChangeText }: any) {
+const host = (tag: string) => function Host({ children, accessibilityLabel, placeholder, value, disabled, onPress, onValueChange, onChangeText }: any) {
   if (tag === 'button' && typeof onPress === 'function') pressables.push({ label: accessibilityLabel ?? textContent(children), onPress });
   if (typeof onValueChange === 'function') switchHandlers.push({ label: accessibilityLabel ?? '', onValueChange });
   if (typeof onChangeText === 'function') inputHandlers.push({ label: accessibilityLabel ?? '', placeholder: placeholder ?? '', value, onChangeText });
