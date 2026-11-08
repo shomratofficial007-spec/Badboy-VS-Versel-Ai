@@ -1206,7 +1206,7 @@ test("Developer Data defaults non-string optional task fields and validates proj
 });
 
 test("Developer Data returns not-found for foreign projects and memories without mutating data", async () => {
-  const noProjectDb = testAgentDb({ firstRow: null });
+  const noProjectDb = testAgentDb({ changes: 0 });
   const missingProject = await onRequestPost({
     request: new Request("https://example.com/api/developer/project-memory", {
       method: "POST",
