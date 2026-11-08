@@ -30,9 +30,10 @@ mock.module('expo-secure-store', {
   },
 });
 
-const { saveGitHubToken, getGitHubToken, removeGitHubToken } = await import('./developer');
+const loadDeveloper = () => import('./developer');
 
 test('GitHub token helpers prefer SecureStore and trim saved credentials', async () => {
+  const { saveGitHubToken, getGitHubToken, removeGitHubToken } = await loadDeveloper();
   secureAvailable = true;
   secureOperationError = false;
   secureValues.clear();
@@ -49,6 +50,7 @@ test('GitHub token helpers prefer SecureStore and trim saved credentials', async
 });
 
 test('GitHub token helpers fall back to AsyncStorage when SecureStore is unavailable', async () => {
+  const { saveGitHubToken, getGitHubToken, removeGitHubToken } = await loadDeveloper();
   secureAvailable = false;
   secureOperationError = false;
   secureValues.clear();
@@ -63,6 +65,7 @@ test('GitHub token helpers fall back to AsyncStorage when SecureStore is unavail
 });
 
 test('GitHub token helpers fall back when SecureStore operations throw', async () => {
+  const { saveGitHubToken, getGitHubToken, removeGitHubToken } = await loadDeveloper();
   secureAvailable = true;
   secureOperationError = true;
   secureValues.clear();
