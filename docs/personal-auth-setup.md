@@ -34,6 +34,7 @@ The authenticated Worker now exposes owner-scoped Developer Agent data routes:
 - The server derives the owner ID from the verified `BADBOY_OWNER_TOKEN`; client-supplied `ownerId` values are ignored.
 - Task, project, and project-memory queries are scoped by that server-derived owner ID. A project memory cannot be attached to another owner's project.
 - These D1 records are separate from Chat History and personal Memory, which remain in the app's existing on-device storage.
+- Owner project notes with `private` or `general` privacy levels may be included in Developer Agent analysis context; notes marked `sensitive` are excluded from AI requests.
 
 ### Apply the additive D1 migration
 
