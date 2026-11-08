@@ -72,7 +72,7 @@ test('memory create/update/delete stores content securely and maintains only ind
   const { readLocalState, storeMemoryNote, updateMemoryNote, removeMemoryNote } = await storagePromise;
   reset();
   const note = { id: 'n1', title: 'নোট', content: 'গোপন তথ্য', createdAt: 'today' };
-  await storeMemoryNote(note, [note]);
+  await storeMemoryNote(note, []);
   assert.equal(secure.get('oi-assistant-memory-n1'), 'গোপন তথ্য');
   assert.deepEqual(JSON.parse(local.get('oi-assistant-memory-index-v1')!), [
     { id: 'n1', title: 'নোট', createdAt: 'today' },
