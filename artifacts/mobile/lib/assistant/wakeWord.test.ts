@@ -2,6 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   createWakeWordBridge,
+  getOfflineWakeWordStatus,
+  isOfflineWakeWordSupported,
+  startOfflineWakeWord,
+  stopOfflineWakeWord,
+  subscribeToWakeWord,
   type WakeWordEvent,
   type WakeWordStatus,
 } from './wakeWord';
@@ -100,4 +105,15 @@ test('wake event subscription accepts only the exact Hey Badboy phrase', () => {
   listener?.({ ...detected, phrase: 'other' } as never);
   listener?.(detected as never);
   assert.deepEqual(received, [detected]);
+});
+
+test('production exports remain safe when the native module is absent in a headless runtime', async () => {
+  assert.equal(isOfflineWakeWordSupported(), false);
+  assert.equal((await getOfflineWakeWordStatus()).enabled, false);
+  assert.equal((await stopOfflineWakeWord()).state, 'stopped');
+  await assert.rejects(startOfflineWakeWord(), /unavailable in this app build/);
+  let called = false;
+  const subscription = subscribeToWakeWord(() => { called = true; });
+  subscription.remove();
+  assert.equal(called, false);
 });
