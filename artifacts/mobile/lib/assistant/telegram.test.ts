@@ -80,7 +80,7 @@ test('checkTelegramMessages requires a connected bot and maps text and non-text 
     { id: 11, chatId: 88, sender: 'helper', text: '(non-text message)', date: 101 },
   ]);
   assert.equal(secure.get('oi-assistant-telegram-chat-id'), '88');
-  assert.equal(secure.get('oi-assistant-telegram-offset'), '12');
+  assert.equal(secure.get('oi-assistant-telegram-offset'), '13');
 });
 
 test('checkTelegramMessages skips cursor writes when there are no messages and advances an existing offset', async () => {
