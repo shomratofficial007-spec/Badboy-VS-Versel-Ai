@@ -273,7 +273,7 @@ test("updates task lifecycle only for the verified owner", async () => {
     summary: "finished",
   });
   assert.equal(updated, true);
-  assert.match(db.calls[0].sql, /WHERE task_id = \\? AND owner_id = \\?/);
+  assert.match(db.calls[0].sql, /WHERE task_id = \? AND owner_id = \?/);
   assert.deepEqual(db.calls[0].values.slice(-2), ["task-1", "owner-a"]);
 });
 
@@ -282,11 +282,11 @@ test("lists projects and project memories with owner-scoped SQL", async () => {
   db.rows = [{ project_id: "project-a", owner_id: "owner-a" }];
   const storage = createAgentStorage(db);
   assert.equal((await storage.listProjects("owner-a", 500)).length, 1);
-  assert.match(db.calls[0].sql, /WHERE owner_id = \\?/);
+  assert.match(db.calls[0].sql, /WHERE owner_id = \?/);
   assert.deepEqual(db.calls[0].values, ["owner-a", 100]);
 
   assert.equal((await storage.listProjectMemory("project-a", "owner-a", 0)).length, 1);
-  assert.match(db.calls[1].sql, /WHERE project_id = \\? AND owner_id = \\? AND deleted_at IS NULL/);
+  assert.match(db.calls[1].sql, /WHERE project_id = \? AND owner_id = \? AND deleted_at IS NULL/);
   assert.deepEqual(db.calls[1].values, ["project-a", "owner-a", 1]);
 });
 
