@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import {
+// Expo replaces EXPO_OS at bundle time. Set the Node test target before
+// importing the module so this suite exercises the web-safe in-memory branch.
+process.env.EXPO_OS = 'web';
+const {
   clearOwnerToken,
   getOwnerToken,
   restoreOwnerSession,
   saveOwnerToken,
   verifyOwnerToken,
-} from './ownerAuth';
+} = await import('./ownerAuth');
 
 const OWNER_TOKEN = 'a'.repeat(43);
 const originalFetch = globalThis.fetch;
