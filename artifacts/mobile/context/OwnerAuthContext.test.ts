@@ -15,13 +15,12 @@ mock.module('../lib/assistant/ownerAuth.ts', {
 
 const ownerAuthContextPromise = import('./OwnerAuthContext');
 
-function AuthState() {
-  const auth = useOwnerAuth();
-  return React.createElement('output', null, `${auth.ready}:${auth.authenticated}`);
-}
-
 test('OwnerAuthProvider supplies a safe unauthenticated initial state during server rendering', async () => {
   const { OwnerAuthProvider, useOwnerAuth } = await ownerAuthContextPromise;
+  function AuthState() {
+    const auth = useOwnerAuth();
+    return React.createElement('output', null, `${auth.ready}:${auth.authenticated}`);
+  }
   authCalls.length = 0;
   const html = renderToStaticMarkup(
     React.createElement(OwnerAuthProvider, null, React.createElement(AuthState)),
