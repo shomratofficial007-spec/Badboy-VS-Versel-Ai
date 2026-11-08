@@ -235,3 +235,81 @@ test('Settings preserves every roadmap preference and all selectable theme choic
   ocean.onPress();
   assert.deepEqual(settingsUpdates.at(-1), { theme: 'ocean' });
 });
+
+
+test('Settings saves the configured personality draft and uses the safe fallback for whitespace-only input', async () => {
+  const { default: SettingsScreen } = await settingsScreenPromise;
+  pressables.length = 0;
+  settingsUpdates.length = 0;
+  settings.personality = '  Speak naturally in Bangla  ';
+  renderToStaticMarkup(React.createElement(SettingsScreen));
+  pressables.find((item) => item.label.includes('ব্যক্তিত্ব সংরক্ষণ'))?.onPress();
+  assert.deepEqual(settingsUpdates.at(-1), { personality: 'Speak naturally in Bangla' });
+
+  pressables.length = 0;
+  settingsUpdates.length = 0;
+  settings.personality = '   ';
+  renderToStaticMarkup(React.createElement(SettingsScreen));
+  pressables.find((item) => item.label.includes('ব্যক্তিত্ব সংরক্ষণ'))?.onPress();
+  assert.deepEqual(settingsUpdates.at(-1), { personality: 'Warm, clear, and practical.' });
+});
+
+test('Settings updates online AI and auto-improve independently in both directions', async () => {
+  const { default: SettingsScreen } = await settingsScreenPromise;
+  switchHandlers.length = 0;
+  settingsUpdates.length = 0;
+  renderToStaticMarkup(React.createElement(SettingsScreen));
+
+  const onlineAI = switchHandlers.find((item) => item.label === 'অনলাইন AI');
+  const autoImprove = switchHandlers.find((item) => item.label === 'পরামর্শ দেখান');
+  assert.ok(onlineAI);
+  assert.ok(autoImprove);
+  onlineAI.onValueChange(false);
+  autoImprove.onValueChange(true);
+  onlineAI.onValueChange(true);
+  autoImprove.onValueChange(false);
+  assert.deepEqual(settingsUpdates, [
+    { onlineAI: false },
+    { autoImprove: true },
+    { onlineAI: true },
+    { autoImprove: false },
+  ]);
+});
+
+test('Settings supports every theme choice and the default cloud voice reset', async () => {
+  const { default: SettingsScreen } = await settingsScreenPromise;
+  pressables.length = 0;
+  settingsUpdates.length = 0;
+  renderToStaticMarkup(React.createElement(SettingsScreen));
+
+  const themes = [
+    ['Badboy Neon Blue', 'badboy'], ['Badboy Violet', 'neon'], ['Ocean Blue', 'ocean'],
+    ['Purple', 'purple'], ['Emerald', 'emerald'], ['Sunset', 'sunset'], ['Light', 'light'],
+  ] as const;
+  for (const [label, theme] of themes) {
+    const option = pressables.find((item) => item.label.includes(label));
+    assert.ok(option, 'missing theme option: ' + label);
+    option.onPress();
+    assert.deepEqual(settingsUpdates.at(-1), { theme });
+  }
+
+  const cloudVoice = pressables.find((item) => item.label.includes('ডিফল্ট / Cloud voice'));
+  assert.ok(cloudVoice);
+  cloudVoice.onPress();
+  assert.deepEqual(settingsUpdates.at(-1), { voiceIdentifier: null });
+});
+
+test('Settings can switch every Developer Agent engine option without starting an analysis', async () => {
+  settings.developerMode = true;
+  const { default: SettingsScreen } = await settingsScreenPromise;
+  pressables.length = 0;
+  settingsUpdates.length = 0;
+  renderToStaticMarkup(React.createElement(SettingsScreen));
+
+  for (const [label, engine] of [['Badboy Native', 'native'], ['Copilot SDK', 'copilot'], ['Auto / Hybrid', 'auto']] as const) {
+    const option = pressables.find((item) => item.label.includes(label));
+    assert.ok(option, 'missing engine option: ' + label);
+    option.onPress();
+    assert.deepEqual(settingsUpdates.at(-1), { developerEngine: engine });
+  }
+});
