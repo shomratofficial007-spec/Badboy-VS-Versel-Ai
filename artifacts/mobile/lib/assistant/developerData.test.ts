@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createDeveloperDataClient } from "./developerData";
+import { createDeveloperDataClient, getAnalysisProjectNotes } from "./developerData";
 
 test("lists Developer Agent tasks with bounded limits", async () => {
   const calls: Array<{ path: string; method: string }> = [];
@@ -83,4 +83,55 @@ test("deletes memory with a URL-encoded ID", async () => {
     path: "/developer/project-memory?memoryId=memory%20%2F%201",
     method: "DELETE",
   });
+});
+
+
+test("excludes sensitive project notes from AI analysis context", () => {
+  const notes = getAnalysisProjectNotes([
+    {
+      memory_id: "private-1",
+      owner_id: "owner",
+      project_id: "project",
+      category: "preference",
+      content: "Preserve all current features",
+      source: "owner",
+      privacy_level: "private",
+      created_at: "2026-11-08T00:00:00.000Z",
+      updated_at: "2026-11-08T00:00:00.000Z",
+    },
+    {
+      memory_id: "sensitive-1",
+      owner_id: "owner",
+      project_id: "project",
+      category: "secret",
+      content: "Do not send this to an AI provider",
+      source: "owner",
+      privacy_level: "sensitive",
+      created_at: "2026-11-08T00:00:00.000Z",
+      updated_at: "2026-11-08T00:00:00.000Z",
+    },
+    {
+      memory_id: "general-1",
+      owner_id: "owner",
+      project_id: "project",
+      category: "architecture",
+      content: "Cloudflare Worker + D1",
+      source: "owner",
+      privacy_level: "general",
+      created_at: "2026-11-08T00:00:00.000Z",
+      updated_at: "2026-11-08T00:00:00.000Z",
+    },
+  ]);
+  assert.deepEqual(notes, [
+    {
+      category: "preference",
+      content: "Preserve all current features",
+      privacyLevel: "private",
+    },
+    {
+      category: "architecture",
+      content: "Cloudflare Worker + D1",
+      privacyLevel: "general",
+    },
+  ]);
 });
