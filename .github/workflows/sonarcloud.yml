@@ -107,6 +107,42 @@ jobs:
           }
           NODE
 
+      # Prevent critical mobile UI/voice modules from silently returning to zero coverage.
+      - name: Enforce minimum coverage for critical mobile modules
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const report = fs.readFileSync('coverage/lcov.info', 'utf8');
+          const minimums = new Map([
+            ['artifacts/mobile/app/(tabs)/settings.tsx', 50],
+            ['artifacts/mobile/app/(tabs)/memory.tsx', 70],
+            ['artifacts/mobile/app/owner-login.tsx', 85],
+            ['artifacts/mobile/context/OwnerAuthContext.tsx', 70],
+            ['artifacts/mobile/lib/assistant/wakeWord.ts', 95],
+            ['artifacts/mobile/lib/assistant/voice.ts', 40],
+          ]);
+
+          const records = report.split('end_of_record');
+          for (const [expected, minimum] of minimums) {
+            const record = records.find((entry) =>
+              entry.split(/\r?\n/).some((line) =>
+                line.startsWith('SF:') && line.slice(3).replaceAll('\\\\', '/').endsWith(expected)
+              )
+            );
+            if (!record) throw new Error(`LCOV is missing critical mobile source: ${expected}`);
+
+            const lines = [...record.matchAll(/^DA:(\d+),(\d+)/gm)];
+            const covered = lines.filter((match) => Number(match[2]) > 0).length;
+            const total = lines.length;
+            const percent = total ? (covered / total) * 100 : 0;
+            console.log(`Mobile coverage: ${expected} — ${percent.toFixed(2)}% (${covered}/${total}); minimum ${minimum}%`);
+            if (!total || percent < minimum) {
+              throw new Error(`Coverage regression for ${expected}: ${percent.toFixed(2)}% is below ${minimum}%.`);
+            }
+          }
+          NODE
+
       - name: Verify LCOV report exists
         run: test -s coverage/lcov.info
 
