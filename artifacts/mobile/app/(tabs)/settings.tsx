@@ -817,6 +817,24 @@ export default function SettingsScreen() {
                   </Pressable>
                 </View>
               ) : null}
+              <View style={[styles.infoCard, { borderColor: colors.border, backgroundColor: colors.card, marginTop: 10 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <Text style={[styles.label, { color: colors.foreground }]}>Private D1 Task History</Text>
+                  <Pressable onPress={() => void refreshDeveloperTasks()} style={[styles.secondaryButton, { backgroundColor: colors.secondary, paddingVertical: 7, paddingHorizontal: 10 }]}>
+                    <Feather name="refresh-cw" size={13} color={colors.secondaryForeground} />
+                    <Text style={{ color: colors.secondaryForeground, fontSize: 11, fontWeight: '700' }}>Refresh</Text>
+                  </Pressable>
+                </View>
+                {developerTasks.length === 0 ? (
+                  <Text style={[styles.smallNote, { color: colors.mutedForeground, marginTop: 7 }]}>এখনো কোনো Developer Agent task সংরক্ষিত নেই। Analysis চালালে task স্বয়ংক্রিয়ভাবে এখানে আসবে।</Text>
+                ) : developerTasks.slice(0, 5).map((task) => (
+                  <View key={task.task_id} style={{ borderTopWidth: 1, borderColor: colors.border, paddingTop: 7, marginTop: 7 }}>
+                    <Text style={[styles.body, { color: colors.foreground, fontWeight: '700' }]}>{task.title}</Text>
+                    <Text style={[styles.smallNote, { color: colors.mutedForeground }]}>{task.status.toUpperCase()} · {task.engine} · {new Date(task.updated_at).toLocaleString()}</Text>
+                  </View>
+                ))}
+                {developerDataError ? <Text style={[styles.smallNote, { color: colors.destructive, marginTop: 7 }]}>{developerDataError}</Text> : null}
+              </View>
             </View>
 
             {/* Navigation Modules Tabs */}
@@ -939,6 +957,56 @@ export default function SettingsScreen() {
                 {projectBrain.frameworks.map((fw) => (
                   <Text key={fw} style={[styles.smallNote, { color: colors.mutedForeground }]}>• {fw}</Text>
                 ))}
+                <Pressable
+                  onPress={() => void handleSaveProjectBrain()}
+                  disabled={developerDataBusy}
+                  style={[styles.secondaryButton, { backgroundColor: colors.secondary, marginTop: 12, opacity: developerDataBusy ? 0.5 : 1 }]}
+                >
+                  {developerDataBusy ? <ActivityIndicator size="small" color={colors.secondaryForeground} /> : <Feather name="cloud-upload" size={14} color={colors.secondaryForeground} />}
+                  <Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>Private D1-এ Project Brain সংরক্ষণ</Text>
+                </Pressable>
+                {developerProjects.length > 0 ? (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                    {developerProjects.map((project) => (
+                      <Pressable
+                        key={project.project_id}
+                        onPress={() => setSelectedDeveloperProjectId(project.project_id)}
+                        style={{ borderWidth: 1, borderColor: selectedDeveloperProjectId === project.project_id ? colors.primary : colors.border, borderRadius: 10, paddingHorizontal: 9, paddingVertical: 6 }}
+                      >
+                        <Text style={{ color: colors.foreground, fontSize: 11, fontWeight: '600' }}>{project.name}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
+                <Text style={[styles.label, { color: colors.foreground, marginTop: 12 }]}>Private Project Memory</Text>
+                <TextInput
+                  value={developerMemoryDraft}
+                  onChangeText={setDeveloperMemoryDraft}
+                  placeholder="এই Project সম্পর্কে ব্যক্তিগত নোট লিখুন…"
+                  placeholderTextColor={colors.mutedForeground}
+                  multiline
+                  style={[styles.telegramInput, { color: colors.foreground, borderColor: colors.input, minHeight: 64, textAlignVertical: 'top', marginTop: 7 }]}
+                />
+                <Pressable
+                  onPress={() => void handleAddDeveloperMemory()}
+                  disabled={!selectedDeveloperProjectId || !developerMemoryDraft.trim() || developerDataBusy}
+                  style={[styles.primaryButton, { backgroundColor: colors.primary, marginTop: 8, opacity: !selectedDeveloperProjectId || !developerMemoryDraft.trim() || developerDataBusy ? 0.5 : 1 }]}
+                >
+                  <Feather name="plus" size={14} color={colors.primaryForeground} />
+                  <Text style={{ color: colors.primaryForeground, fontWeight: '700' }}>Private Note সংরক্ষণ</Text>
+                </Pressable>
+                {developerMemories.map((memory) => (
+                  <View key={memory.memory_id} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderTopWidth: 1, borderColor: colors.border, paddingTop: 8, marginTop: 8 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.body, { color: colors.foreground }]}>{memory.content}</Text>
+                      <Text style={[styles.smallNote, { color: colors.mutedForeground }]}>{memory.privacy_level} · {new Date(memory.updated_at).toLocaleString()}</Text>
+                    </View>
+                    <Pressable onPress={() => void handleDeleteDeveloperMemory(memory.memory_id)} disabled={developerDataBusy} accessibilityRole="button" accessibilityLabel="Delete private project note">
+                      <Feather name="trash-2" size={15} color={colors.destructive} />
+                    </Pressable>
+                  </View>
+                ))}
+                {developerDataError ? <Text style={[styles.smallNote, { color: colors.destructive, marginTop: 7 }]}>{developerDataError}</Text> : null}
               </View>
             ) : null}
 
