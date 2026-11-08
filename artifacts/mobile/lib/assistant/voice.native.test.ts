@@ -26,6 +26,7 @@ const nativeModule = {
     return { remove: () => { calls.push({ name: 'removeListener', value: event }); listeners.delete(event); } };
   },
   start: (options: unknown) => { calls.push({ name: 'start', value: options }); },
+  stop: () => { calls.push({ name: 'stop' }); },
   abort: () => { calls.push({ name: 'abort' }); },
   getAvailableVoicesAsync: async () => {
     if (voiceError) throw voiceError;
