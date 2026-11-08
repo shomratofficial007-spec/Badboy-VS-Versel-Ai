@@ -105,9 +105,10 @@ mock.module('../lib/assistant/developerEngine.ts', {
   namedExports: { resolveDeveloperEngine: () => ({ engine: 'native', fallback: false }) },
 });
 
-const { default: SettingsScreen } = await import('./(tabs)/settings');
+const settingsScreenPromise = import('./(tabs)/settings');
 
-test('Settings screen renders existing voice, privacy, developer and account controls', () => {
+test('Settings screen renders existing voice, privacy, developer and account controls', async () => {
+  const { default: SettingsScreen } = await settingsScreenPromise;
   const html = renderToStaticMarkup(React.createElement(SettingsScreen));
   assert.match(html, /BADBOY|Badboy/);
   assert.match(html, /Settings|সেটিংস|ব্যক্তিগত/);
