@@ -993,6 +993,9 @@ export default function SettingsScreen() {
                   </View>
                 ) : null}
                 <Text style={[styles.label, { color: colors.foreground, marginTop: 12 }]}>Private Project Memory</Text>
+                <Text style={[styles.smallNote, { color: colors.mutedForeground, marginTop: 4 }]}>
+                  এই নোটগুলো Developer Agent-এর analysis context-এ ব্যবহার হতে পারে। Sensitive হিসেবে চিহ্নিত নোট AI-তে পাঠানো হয় না।
+                </Text>
                 <TextInput
                   value={developerMemoryDraft}
                   onChangeText={setDeveloperMemoryDraft}
