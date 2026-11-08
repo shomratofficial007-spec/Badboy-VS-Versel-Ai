@@ -428,7 +428,7 @@ test('Settings Telegram flow confirms connection, loads inbox, sends a message a
   await alerts.at(-1)?.buttons.find((button) => button.text === 'সংযোগ করুন')?.onPress();
   await new Promise((resolve) => setTimeout(resolve, 0));
   let html = await render();
-  assert.match(html, /সংযুক্ত · এই ডিভাইসে/);
+  assert.match(html, /সংযুক্ত · @badboy_helper/);
   assert.deepEqual(telegramCalls.find((item) => item.method === 'connectTelegramBot')?.args, ['123:abc']);
 
   telegramHandlers.checkTelegramMessages = async () => [{
