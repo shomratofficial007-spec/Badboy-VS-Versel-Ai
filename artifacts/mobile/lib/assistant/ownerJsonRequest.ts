@@ -1,3 +1,5 @@
+import { getOwnerToken } from "./ownerAuth";
+
 const DEFAULT_NATIVE_API_DOMAIN =
   "https://badboy-vs-versel-ai.shomratofficial007.workers.dev";
 
@@ -49,3 +51,5 @@ export function createOwnerJsonRequester(
     return payload;
   };
 }
+
+export const requestOwnerJson = createOwnerJsonRequester(getOwnerToken);
