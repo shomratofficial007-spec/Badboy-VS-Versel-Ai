@@ -767,30 +767,21 @@ test("developer analysis forwards multiple buffered SSE events before the upstre
 });;
 
 
-test("keeps D1 task and project persistence routes unavailable until authentication is wired", async () => {
+test("private Developer Agent D1 routes require configured storage after owner authentication", async () => {
   const paths = [
     "/api/developer/tasks",
     "/api/developer/projects",
-    "/api/developer/project-memory",
+    "/api/developer/project-memory?projectId=project-1",
   ];
   for (const path of paths) {
-    const getContext = {
+    const context = {
       request: new Request(`https://example.com${path}`),
-      env: { AGENT_DB: {} },
+      env: {},
     } as any;
-    const getResponse = await onRequestGet(getContext);
-    assert.equal(getResponse.status, 404);
-
-    const postContext = {
-      request: new Request(`https://example.com${path}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ownerId: "attacker-controlled-owner" }),
-      }),
-      env: { AGENT_DB: {} },
-    } as any;
-    const postResponse = await onRequestPost(postContext);
-    assert.equal(postResponse.status, 404);
+    const response = await onRequestGet(context);
+    assert.equal(response.status, 503);
+    const payload = await response.json() as any;
+    assert.equal(payload.code, "AGENT_STORAGE_NOT_CONFIGURED");
   }
 });
 
@@ -913,12 +904,20 @@ test("requires owner authentication for private API and Developer Agent routes",
   assert.equal(publicHealth.status, 200);
 });
 
-test("keeps D1 routes closed even after the owner is authenticated", async () => {
-  const response = await rawOnRequestGet({
+test("D1 data endpoints are available only after the owner is authenticated and storage is configured", async () => {
+  const unauthorized = await rawOnRequestGet({
+    request: new Request("https://example.com/api/developer/tasks"),
+    env: { BADBOY_OWNER_TOKEN: TEST_OWNER_TOKEN },
+  } as any);
+  assert.equal(unauthorized.status, 401);
+
+  const missingStorage = await rawOnRequestGet({
     request: new Request("https://example.com/api/developer/tasks", {
       headers: { Authorization: `Bearer ${TEST_OWNER_TOKEN}` },
     }),
-    env: { BADBOY_OWNER_TOKEN: TEST_OWNER_TOKEN, AGENT_DB: {} },
+    env: { BADBOY_OWNER_TOKEN: TEST_OWNER_TOKEN },
   } as any);
-  assert.equal(response.status, 404);
+  assert.equal(missingStorage.status, 503);
+  const payload = await missingStorage.json() as any;
+  assert.equal(payload.code, "AGENT_STORAGE_NOT_CONFIGURED");
 });
