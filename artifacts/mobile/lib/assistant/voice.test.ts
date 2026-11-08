@@ -9,6 +9,9 @@ import {
   isDictationAvailable,
   isReadAloudAvailable,
   getSpeechPlaybackTimeoutMs,
+  dictateOnce,
+  checkMicrophonePermission,
+  getAvailableSpeechVoices,
   shouldStopVoiceRecordingForSilence,
   VOICE_SILENCE_DURATION_MS,
 } from './voice.ts';
@@ -84,4 +87,31 @@ test('voice recording auto-stop requires speech followed by sustained silence', 
   assert.equal(shouldStopVoiceRecordingForSilence(-60, true, lastSpeechAt, lastSpeechAt + VOICE_SILENCE_DURATION_MS - 1), false);
   assert.equal(shouldStopVoiceRecordingForSilence(-60, true, lastSpeechAt, lastSpeechAt + VOICE_SILENCE_DURATION_MS), true);
   assert.equal(shouldStopVoiceRecordingForSilence(undefined, true, lastSpeechAt, 20000), false);
+});
+
+test('dictation reports unsupported when no browser recognizer or native provider is available', () => {
+  const originalWindow = globalThis.window;
+  Reflect.deleteProperty(globalThis, 'window');
+  const errors: string[] = [];
+  let done = 0;
+  try {
+    const cancel = dictateOnce({
+      onTranscript: () => assert.fail('unsupported dictation must not emit a transcript'),
+      onError: (error) => errors.push(error ?? ''),
+      onDone: () => { done += 1; },
+    });
+    assert.deepEqual(errors, ['unsupported']);
+    assert.equal(done, 1);
+    cancel();
+    assert.equal(done, 1, 'completion callback is emitted exactly once');
+  } finally {
+    if (originalWindow !== undefined) {
+      Object.defineProperty(globalThis, 'window', { configurable: true, writable: true, value: originalWindow });
+    }
+  }
+});
+
+test('permission and installed-voice helpers return safe fallbacks in a headless runtime', async () => {
+  assert.equal(await checkMicrophonePermission(), 'unsupported');
+  assert.deepEqual(await getAvailableSpeechVoices(), []);
 });
