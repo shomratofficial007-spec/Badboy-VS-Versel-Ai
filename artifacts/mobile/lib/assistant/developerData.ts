@@ -34,6 +34,16 @@ export interface DeveloperProjectMemoryRecord {
   updated_at: string;
 }
 
+export function getAnalysisProjectNotes(memories: DeveloperProjectMemoryRecord[]) {
+  return memories
+    .filter((memory) => memory.privacy_level !== "sensitive")
+    .map((memory) => ({
+      category: memory.category,
+      content: memory.content,
+      privacyLevel: memory.privacy_level,
+    }));
+}
+
 type OwnerJsonRequester = <T>(
   path: string,
   method: "GET" | "POST" | "DELETE",
