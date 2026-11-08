@@ -73,6 +73,39 @@ jobs:
           pnpm --filter @workspace/mobile test
           '
 
+      - name: Verify LCOV contains real execution coverage for protected Worker routes
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const report = fs.readFileSync('coverage/lcov.info', 'utf8');
+          if (!report.trim()) throw new Error('LCOV report is empty.');
+
+          const records = report.split('end_of_record');
+          const required = [
+            'functions/api/[[path]].ts',
+            'functions/api/personalAuth.ts',
+          ];
+
+          for (const expected of required) {
+            const record = records.find((entry) =>
+              entry.split(/\\r?\\n/).some((line) =>
+                line.startsWith('SF:') && line.slice(3).replaceAll('\\\\', '/').endsWith(expected)
+              )
+            );
+            if (!record) throw new Error(`LCOV is missing required source: ${expected}`);
+
+            const lines = [...record.matchAll(/^DA:(\\d+),(\\d+)/gm)];
+            const found = lines.length;
+            const hit = lines.filter((match) => Number(match[2]) > 0).length;
+            if (found === 0 || hit === 0) {
+              throw new Error(`No executed lines recorded for ${expected} (covered ${hit}/${found}).`);
+            }
+            const percent = ((hit / found) * 100).toFixed(2);
+            console.log(`LCOV verified: ${expected} — ${percent}% line coverage (${hit}/${found})`);
+          }
+          NODE
+
       - name: Verify LCOV report exists
         run: test -s coverage/lcov.info
 
