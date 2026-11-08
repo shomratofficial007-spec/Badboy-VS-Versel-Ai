@@ -15,7 +15,7 @@ class RecordingD1 implements D1Database {
         call.values = values;
         return statement;
       },
-      first: async () => null,
+      first: async () => ({ project_id: "canonical-project-id" }),
       all: async () => ({ success: true, results: this.rows }),
       run: async () => ({ success: true, meta: { changes: this.changes } }),
     };
@@ -176,7 +176,7 @@ test("returns an empty task list when D1 has no result rows and clamps small lim
 test("upserts a project with owner-scoped conflict handling and bounded summary", async () => {
   const db = new RecordingD1();
   const storage = createAgentStorage(db);
-  await storage.upsertProject({
+  const canonicalId = await storage.upsertProject({
     projectId: "project-1",
     ownerId: "owner-a",
     projectKey: "badboy",
@@ -260,4 +260,46 @@ test("does not delete another owner's project memory", async () => {
   assert.equal(deleted, false);
   assert.match(db.calls[0].sql, /WHERE memory_id = \? AND owner_id = \?/);
   assert.deepEqual(db.calls[0].values, ["memory-owned-by-owner-b", "owner-a"]);
+});
+
+
+test("updates task lifecycle only for the verified owner", async () => {
+  const db = new RecordingD1();
+  const storage = createAgentStorage(db);
+  const updated = await storage.updateTaskStatus({
+    taskId: "task-1",
+    ownerId: "owner-a",
+    status: "completed",
+    summary: "finished",
+  });
+  assert.equal(updated, true);
+  assert.match(db.calls[0].sql, /WHERE task_id = \\? AND owner_id = \\?/);
+  assert.deepEqual(db.calls[0].values.slice(-2), ["task-1", "owner-a"]);
+});
+
+test("lists projects and project memories with owner-scoped SQL", async () => {
+  const db = new RecordingD1();
+  db.rows = [{ project_id: "project-a", owner_id: "owner-a" }];
+  const storage = createAgentStorage(db);
+  assert.equal((await storage.listProjects("owner-a", 500)).length, 1);
+  assert.match(db.calls[0].sql, /WHERE owner_id = \\?/);
+  assert.deepEqual(db.calls[0].values, ["owner-a", 100]);
+
+  assert.equal((await storage.listProjectMemory("project-a", "owner-a", 0)).length, 1);
+  assert.match(db.calls[1].sql, /WHERE project_id = \\? AND owner_id = \\? AND deleted_at IS NULL/);
+  assert.deepEqual(db.calls[1].values, ["project-a", "owner-a", 1]);
+});
+
+test("returns false when project memory cannot be attached to an owner project", async () => {
+  const db = new RecordingD1();
+  db.changes = 0;
+  const storage = createAgentStorage(db);
+  const inserted = await storage.addProjectMemory({
+    memoryId: "memory-1",
+    ownerId: "owner-a",
+    projectId: "project-owned-by-someone-else",
+    category: "note",
+    content: "private note",
+  });
+  assert.equal(inserted, false);
 });
