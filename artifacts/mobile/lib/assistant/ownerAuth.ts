@@ -1,5 +1,3 @@
-import { fetch as expoFetch } from 'expo/fetch';
-import * as SecureStore from 'expo-secure-store';
 
 const OWNER_TOKEN_KEY = 'badboy-owner-token-v1';
 const DEFAULT_NATIVE_API_DOMAIN = 'https://badboy-vs-versel-ai.shomratofficial007.workers.dev';
@@ -27,6 +25,7 @@ export async function getOwnerToken(): Promise<string | null> {
   if (activeToken) return activeToken;
   if (isWebPlatform()) return null;
   try {
+    const SecureStore = await import('expo-secure-store');
     activeToken = await SecureStore.getItemAsync(OWNER_TOKEN_KEY);
     return activeToken;
   } catch {
@@ -36,6 +35,7 @@ export async function getOwnerToken(): Promise<string | null> {
 
 export async function saveOwnerToken(token: string): Promise<void> {
   if (!isWebPlatform()) {
+    const SecureStore = await import('expo-secure-store');
     await SecureStore.setItemAsync(OWNER_TOKEN_KEY, token);
   }
   activeToken = token;
@@ -44,12 +44,13 @@ export async function saveOwnerToken(token: string): Promise<void> {
 export async function clearOwnerToken(): Promise<void> {
   activeToken = null;
   if (!isWebPlatform()) {
+    const SecureStore = await import('expo-secure-store');
     await SecureStore.deleteItemAsync(OWNER_TOKEN_KEY);
   }
 }
 
 export async function verifyOwnerToken(token: string): Promise<void> {
-  const response = await expoFetch(authApiUrl(), {
+  const response = await fetch(authApiUrl(), {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
   });
