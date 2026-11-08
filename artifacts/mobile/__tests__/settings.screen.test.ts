@@ -9,7 +9,9 @@ const alerts: Array<{ title: string; message: string; buttons: any[] }> = [];
 const signOutCalls: string[] = [];
 const clearChatCalls: string[] = [];
 const settingsUpdates: unknown[] = [];
-const inputHandlers: Array<{ label: string; placeholder: string; onChangeText: (value: string) => void }> = [];
+const inputHandlers: Array<{ label: string; placeholder: string; value?: string; onChangeText: (value: string) => void }> = [];
+let expertReviewDraftValue = '';
+let clearExpertReviewDraftCalls = 0;
 const telegramCalls: Array<{ method: string; args: unknown[] }> = [];
 const developerDataCalls: Array<{ method: string; args: unknown[] }> = [];
 const developerAnalysisCalls: unknown[][] = [];
@@ -43,7 +45,7 @@ const textContent = (node: any): string => {
 const host = (tag: string) => function Host({ children, accessibilityLabel, placeholder, disabled, onPress, onValueChange, onChangeText }: any) {
   if (tag === 'button' && typeof onPress === 'function') pressables.push({ label: accessibilityLabel ?? textContent(children), onPress });
   if (typeof onValueChange === 'function') switchHandlers.push({ label: accessibilityLabel ?? '', onValueChange });
-  if (typeof onChangeText === 'function') inputHandlers.push({ label: accessibilityLabel ?? '', placeholder: placeholder ?? '', onChangeText });
+  if (typeof onChangeText === 'function') inputHandlers.push({ label: accessibilityLabel ?? '', placeholder: placeholder ?? '', value, onChangeText });
   return React.createElement(tag, {
     ...(accessibilityLabel ? { 'aria-label': accessibilityLabel } : {}),
     ...(placeholder ? { placeholder } : {}),
@@ -92,7 +94,7 @@ mock.module('../context/AssistantContext.tsx', {
   namedExports: {
     useAssistant: () => ({
       settings, updateSettings: (value: unknown) => { settingsUpdates.push(value); }, clearChat: async () => { clearChatCalls.push('cleared'); },
-      expertReviewDraft: '', clearExpertReviewDraft: () => {},
+      expertReviewDraft: expertReviewDraftValue, clearExpertReviewDraft: () => { clearExpertReviewDraftCalls += 1; },
     }),
   },
 });
@@ -149,7 +151,7 @@ mock.module('../lib/assistant/developer.ts', {
   namedExports: {
     createGitHubPullRequest: async () => ({}), executeAgentTask: async () => ({}),
     generateDevelopmentPlan: async () => ({}), getGitHubToken: async () => null,
-    getPluginRegistryStatus: async () => ({}), getProjectBrainSummary: async () => ({}),
+    getPluginRegistryStatus: async () => ({}), getProjectBrainSummary: () => ({ name: 'Badboy AI', architecture: 'Worker + Expo', frameworks: ['Expo'], apiEndpoints: [], knownLimitations: [] }),
     removeGitHubToken: async () => {}, runAutoQASuite: async () => ({}),
     saveGitHubToken: async () => {},
   },
@@ -391,9 +393,11 @@ function visit(node: any): string {
   return '';
 }
 
-function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {}) {
+function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {}, options: { runEffects?: boolean } = {}) {
   const slots: unknown[] = [];
   let cursor = 0;
+  let effectsExecuted = false;
+  const effects: Array<() => unknown> = [];
   const internals = (React as any).__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
   assert.ok(internals, 'React hook dispatcher internals are available in the test runtime');
   const dispatcher = {
@@ -409,7 +413,7 @@ function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {
         },
       ];
     },
-    useEffect() {},
+    useEffect(effect: () => unknown) { if (!effectsExecuted) effects.push(effect); },
   };
   const render = async () => {
     cursor = 0;
@@ -420,7 +424,13 @@ function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {
     internals.H = dispatcher;
     try {
       const { default: SettingsScreen } = await settingsScreenPromise;
-      return visit(SettingsScreen());
+      const html = visit(SettingsScreen());
+      if (options.runEffects && !effectsExecuted) {
+        effectsExecuted = true;
+        for (const effect of effects) effect();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      return html;
     } finally {
       internals.H = previous;
     }
@@ -432,6 +442,8 @@ function resetTelegramState() {
   inputHandlers.length = 0;
   developerDataCalls.length = 0;
   developerAnalysisCalls.length = 0;
+  expertReviewDraftValue = '';
+  clearExpertReviewDraftCalls = 0;
   developerAnalysisHandler = async (_prompt, _context, _engine, onChunk) => { onChunk('Native analysis result'); return { taskId: 'task-99' }; };
   developerDataHandlers = {
     listDeveloperTasks: async () => [],
@@ -722,4 +734,33 @@ test('Settings Developer task history refresh displays records and surfaces D1 r
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 1);
   assert.match(await failureRender(), /Task history D1 unavailable/);
+});
+
+
+test('Settings lifecycle loads the owner integrations, handles storage and memory read failures, and consumes Expert Review drafts', async () => {
+  resetTelegramState();
+  settings.developerMode = true;
+  expertReviewDraftValue = 'Review this saved chat draft';
+  telegramHandlers.hasTelegramBot = async () => { throw new Error('secure storage unavailable'); };
+  developerDataHandlers.listDeveloperTasks = async () => { throw new Error('task list unavailable'); };
+  developerDataHandlers.listDeveloperProjects = async () => { throw new Error('project list unavailable'); };
+  developerDataHandlers.listDeveloperProjectMemory = async () => { throw new Error('project memory unavailable'); };
+
+  const render = createSettingsHookHarness({
+    14: 'brain',
+    24: sampleProjectBrain,
+    41: 'project-1',
+  }, { runEffects: true });
+  await render();
+  const html = await render();
+  assert.match(html, /secure storage unavailable/);
+  assert.match(html, /project memory unavailable/);
+  const reviewInput = inputHandlers.find((item) => item.placeholder.includes('Badboy-এর উত্তর'));
+  assert.ok(reviewInput);
+  assert.equal(reviewInput.value, 'Review this saved chat draft');
+  assert.equal(clearExpertReviewDraftCalls, 1);
+  assert.equal(telegramCalls.filter((item) => item.method === 'hasTelegramBot').length, 1);
+  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 1);
+  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperProjects').length, 1);
+  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperProjectMemory').length, 1);
 });
