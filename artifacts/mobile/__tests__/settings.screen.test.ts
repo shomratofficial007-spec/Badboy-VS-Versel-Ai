@@ -455,7 +455,7 @@ test('Settings Telegram flow confirms connection, loads inbox, sends a message a
   await alerts.at(-1)?.buttons.find((button) => button.text === 'বিচ্ছিন্ন করুন')?.onPress();
   await new Promise((resolve) => setTimeout(resolve, 0));
   html = await render();
-  assert.match(html, /Bot token/);
+  assert.match(html, /নিজের bot token দিন/);
   assert.equal(telegramCalls.filter((item) => item.method === 'disconnectTelegramBot').length, 1);
 });
 
