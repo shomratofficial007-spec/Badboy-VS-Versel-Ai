@@ -357,11 +357,12 @@ jobs:
             if [[ -n "$sonar_check" ]]; then
               conclusion="$(printf '%s' "$sonar_check" | jq -r '.conclusion // empty')"
               summary="$(printf '%s' "$sonar_check" | jq -r '.output.summary // empty')"
+              quality_gate_title="$(printf '%s' "$sonar_check" | jq -r '.output.title // empty')"
               if [[ "$conclusion" != "success" ]]; then
                 echo "::error::SonarCloud analysis conclusion is $conclusion."
                 exit 1
               fi
-              if ! grep -qi "Quality Gate passed" <<< "$summary"; then
+              if [[ "$quality_gate_title" != "Quality Gate passed" ]] && ! grep -qi "Quality Gate passed" <<< "$summary"; then
                 echo "::error::SonarCloud summary does not confirm a passed Quality Gate."
                 exit 1
               fi
