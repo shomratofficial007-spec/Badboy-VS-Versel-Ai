@@ -1,6 +1,20 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { handleApiRequest } from "../../../../functions/api/[[path]].ts";
+import { handleApiRequest as rawHandleApiRequest } from "../../../../functions/api/[[path]].ts";
+
+
+const TEST_OWNER_TOKEN = "a".repeat(43);
+
+async function handleApiRequest(request: Request, env: Parameters<typeof rawHandleApiRequest>[1]) {
+  const headers = new Headers(request.headers);
+  if (!headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${TEST_OWNER_TOKEN}`);
+  }
+  return rawHandleApiRequest(
+    new Request(request, { headers }),
+    { ...env, BADBOY_OWNER_TOKEN: env.BADBOY_OWNER_TOKEN ?? TEST_OWNER_TOKEN },
+  );
+}
 
 const originalFetch = globalThis.fetch;
 

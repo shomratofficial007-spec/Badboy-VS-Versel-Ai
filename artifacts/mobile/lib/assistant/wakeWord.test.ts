@@ -1,0 +1,193 @@
+import assert from 'node:assert/strict';
+import { after, before, mock, test } from 'node:test';
+import type { WakeWordEvent, WakeWordStatus } from './wakeWord';
+
+const stopped: WakeWordStatus = { state: 'stopped', enabled: false, modelLoaded: false };
+const listening: WakeWordStatus = { state: 'listening', enabled: true, modelLoaded: true };
+const detected: WakeWordEvent = { phrase: 'hey-badboy', confidence: 0.94, timestamp: 1234 };
+
+const mockPlatform = { OS: 'node' };
+const productionNative = {
+  isSupported: () => true,
+  getStatus: async () => listening,
+  start: async () => listening,
+  stop: async () => stopped,
+};
+const emitterCalls: Array<{ event: string; listener: (value: never) => void; removed: boolean }> = [];
+class FakeEventEmitter {
+  addListener(event: string, listener: (value: never) => void) {
+    const entry = { event, listener, removed: false };
+    emitterCalls.push(entry);
+    return { remove: () => { entry.removed = true; } };
+  }
+}
+
+let wakeWord: typeof import('./wakeWord');
+let createWakeWordBridge: typeof import('./wakeWord').createWakeWordBridge;
+let getOfflineWakeWordStatus: typeof import('./wakeWord').getOfflineWakeWordStatus;
+let isOfflineWakeWordSupported: typeof import('./wakeWord').isOfflineWakeWordSupported;
+let startOfflineWakeWord: typeof import('./wakeWord').startOfflineWakeWord;
+let stopOfflineWakeWord: typeof import('./wakeWord').stopOfflineWakeWord;
+let subscribeToWakeWord: typeof import('./wakeWord').subscribeToWakeWord;
+
+before(async () => {
+  mock.module('react-native', { namedExports: { Platform: mockPlatform } });
+  mock.module('expo-modules-core', {
+    namedExports: {
+      requireNativeModule: (name: string) => {
+        assert.equal(name, 'BadboyWakeWord');
+        return productionNative;
+      },
+      EventEmitter: FakeEventEmitter,
+    },
+  });
+  wakeWord = await import('./wakeWord');
+  createWakeWordBridge = wakeWord.createWakeWordBridge;
+  getOfflineWakeWordStatus = wakeWord.getOfflineWakeWordStatus;
+  isOfflineWakeWordSupported = wakeWord.isOfflineWakeWordSupported;
+  startOfflineWakeWord = wakeWord.startOfflineWakeWord;
+  stopOfflineWakeWord = wakeWord.stopOfflineWakeWord;
+  subscribeToWakeWord = wakeWord.subscribeToWakeWord;
+});
+
+after(() => {
+  mock.reset();
+});
+
+function harness(platformOS = 'android', available = true) {
+  const calls: Array<{ method: string; value?: unknown }> = [];
+  const listeners = new Map<string, (value: never) => void>();
+  let removed = false;
+  const native = {
+    isSupported: () => { calls.push({ method: 'isSupported' }); return true; },
+    getStatus: async () => { calls.push({ method: 'getStatus' }); return listening; },
+    start: async (options?: { threshold?: number }) => { calls.push({ method: 'start', value: options }); return listening; },
+    stop: async () => { calls.push({ method: 'stop' }); return stopped; },
+  };
+  const bridge = createWakeWordBridge({
+    platformOS: () => platformOS,
+    loadNativeModule: () => {
+      calls.push({ method: 'loadNativeModule' });
+      if (!available) throw new Error('native module missing');
+      return native;
+    },
+    createEmitter: () => ({
+      addListener: (event, listener) => {
+        listeners.set(event, listener);
+        calls.push({ method: 'addListener', value: event });
+        return { remove: () => { removed = true; } };
+      },
+    }),
+  });
+  return { bridge, calls, listeners, wasRemoved: () => removed };
+}
+
+test('unsupported platform returns safe status and no-op subscription', async () => {
+  const { bridge } = harness('ios');
+  assert.equal(bridge.isOfflineWakeWordSupported(), false);
+  assert.deepEqual(await bridge.getOfflineWakeWordStatus(), {
+    ...stopped,
+    message: 'Offline wake word is not installed in this app build.',
+  });
+  assert.deepEqual(await bridge.stopOfflineWakeWord(), {
+    ...stopped,
+    message: 'Offline wake word is not installed in this app build.',
+  });
+  let called = false;
+  const subscription = bridge.subscribeToWakeWordStatus(() => { called = true; });
+  subscription.remove();
+  assert.equal(called, false);
+  await assert.rejects(bridge.startOfflineWakeWord(), /unavailable in this app build/);
+});
+
+test('missing native module fails closed without throwing from support/status/stop checks', async () => {
+  const { bridge } = harness('android', false);
+  assert.equal(bridge.isOfflineWakeWordSupported(), false);
+  assert.equal((await bridge.getOfflineWakeWordStatus()).enabled, false);
+  assert.equal((await bridge.stopOfflineWakeWord()).state, 'stopped');
+  await assert.rejects(bridge.startOfflineWakeWord(), /unavailable in this app build/);
+});
+
+test('native support, status, start defaults and explicit threshold are forwarded', async () => {
+  const { bridge, calls } = harness();
+  assert.equal(bridge.isOfflineWakeWordSupported(), true);
+  assert.deepEqual(await bridge.getOfflineWakeWordStatus(), listening);
+  assert.deepEqual(await bridge.startOfflineWakeWord(), listening);
+  assert.deepEqual(await bridge.startOfflineWakeWord(0.72), listening);
+  assert.deepEqual(calls.filter((call) => call.method === 'start').map((call) => call.value), [undefined, { threshold: 0.72 }]);
+  assert.deepEqual(await bridge.stopOfflineWakeWord(), stopped);
+});
+
+test('threshold rejects zero, one, out-of-range and non-finite values before native start', async () => {
+  const { bridge, calls } = harness();
+  for (const threshold of [0, 1, -0.1, 1.1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    await assert.rejects(bridge.startOfflineWakeWord(threshold), RangeError);
+  }
+  assert.equal(calls.some((call) => call.method === 'start'), false);
+});
+
+test('native status subscription forwards events and exposes cleanup', () => {
+  const { bridge, listeners, wasRemoved } = harness();
+  let received: WakeWordStatus | undefined;
+  const subscription = bridge.subscribeToWakeWordStatus((status) => { received = status; });
+  listeners.get('onWakeWordStatus')?.(listening as never);
+  assert.deepEqual(received, listening);
+  subscription.remove();
+  assert.equal(wasRemoved(), true);
+});
+
+test('wake event subscription accepts only the exact Hey Badboy phrase', () => {
+  const { bridge, listeners } = harness();
+  const received: WakeWordEvent[] = [];
+  bridge.subscribeToWakeWord((event) => received.push(event));
+  const listener = listeners.get('onWakeWordDetected');
+  listener?.({ ...detected, phrase: 'other' } as never);
+  listener?.(detected as never);
+  assert.deepEqual(received, [detected]);
+});
+
+test('production exports remain safe when the native module is absent in a headless runtime', async () => {
+  assert.equal(isOfflineWakeWordSupported(), false);
+  assert.equal((await getOfflineWakeWordStatus()).enabled, false);
+  assert.equal((await stopOfflineWakeWord()).state, 'stopped');
+  await assert.rejects(startOfflineWakeWord(), /unavailable in this app build/);
+  let called = false;
+  const subscription = subscribeToWakeWord(() => { called = true; });
+  subscription.remove();
+  assert.equal(called, false);
+});
+
+test('production wake-word exports exercise the native module bridge when Expo is available', async () => {
+  Object.defineProperty(mockPlatform, 'OS', {
+    configurable: true,
+    get: () => { throw new Error('Platform lookup unavailable'); },
+  });
+  assert.equal(isOfflineWakeWordSupported(), false);
+  Object.defineProperty(mockPlatform, 'OS', {
+    configurable: true,
+    writable: true,
+    value: 'android',
+  });
+  emitterCalls.length = 0;
+  assert.equal(isOfflineWakeWordSupported(), true);
+  assert.deepEqual(await getOfflineWakeWordStatus(), listening);
+  assert.deepEqual(await startOfflineWakeWord(), listening);
+  assert.deepEqual(await stopOfflineWakeWord(), stopped);
+
+  let statusReceived: WakeWordStatus | undefined;
+  const statusSubscription = wakeWord.subscribeToWakeWordStatus((status) => {
+    statusReceived = status;
+  });
+  emitterCalls[0]?.listener(listening as never);
+  assert.deepEqual(statusReceived, listening);
+  statusSubscription.remove();
+
+  const events: WakeWordEvent[] = [];
+  const eventSubscription = subscribeToWakeWord((event) => events.push(event));
+  emitterCalls[1]?.listener({ ...detected, phrase: 'not-hey-badboy' } as never);
+  emitterCalls[1]?.listener(detected as never);
+  assert.deepEqual(events, [detected]);
+  eventSubscription.remove();
+  assert.deepEqual(emitterCalls.map((entry) => entry.removed), [true, true]);
+  mockPlatform.OS = 'node';
+});

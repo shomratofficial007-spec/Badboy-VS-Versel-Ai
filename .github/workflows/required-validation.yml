@@ -1,0 +1,390 @@
+# The lockfile refresher commits resolved security pins; frozen installs below validate the committed result.
+# Required check aliases wait for the real upstream workflows; security jobs run their own validation.
+name: Required Validation
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  actions: read
+  checks: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: required-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Lockfile is now committed; downstream installs are frozen and fail on drift.
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify the real Build and Test workflow
+        run: bash .github/scripts/wait-for-workflow-run.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_NAME: Build and Test
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+  mobile-tests:
+    name: Mobile Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify the real Mobile checks workflow
+        run: bash .github/scripts/wait-for-workflow-run.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_NAME: Mobile checks
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+  sonarcloud-analysis:
+    name: SonarCloud Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify the real SonarCloud workflow
+        run: bash .github/scripts/wait-for-workflow-run.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_NAME: SonarCloud Analysis
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+  semgrep-security-scan:
+    name: Semgrep Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify the real Semgrep workflow
+        run: bash .github/scripts/wait-for-workflow-run.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_NAME: Semgrep Security Scan
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+  detekt-kotlin-analysis:
+    name: Detekt Kotlin Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify the real Detekt workflow
+        run: bash .github/scripts/wait-for-workflow-run.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_NAME: Detekt Kotlin Analysis
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+  owasp-zap-baseline:
+    name: OWASP ZAP Baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify the real OWASP ZAP workflow
+        run: bash .github/scripts/wait-for-workflow-run.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_NAME: OWASP ZAP Baseline
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+  sbom:
+    name: SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify the real Mobile SBOM workflow
+        run: bash .github/scripts/wait-for-workflow-run.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_NAME: Mobile SBOM
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+  ai-sdk-validation:
+    name: AI SDK Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify the real AI SDK workflow
+        run: bash .github/scripts/wait-for-workflow-run.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_NAME: AI SDK validation
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.8.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Audit all dependencies; permit only the explicitly disputed deepmerge advisory
+        shell: bash
+        run: |
+          set +e
+          pnpm audit --json > audit.json
+          audit_status=$?
+          set -e
+          AUDIT_STATUS="$audit_status" node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const report = JSON.parse(fs.readFileSync('audit.json', 'utf8'));
+          const allowedDisputed = 'GHSA-gcqx-w48m-w2h4';
+          const findings = [];
+
+          function advisoryIds(vulnerability) {
+            const entries = Array.isArray(vulnerability.via) ? vulnerability.via : [];
+            return entries.flatMap((entry) => {
+              if (typeof entry === 'string') return [];
+              const url = entry?.url ?? '';
+              return url.match(/GHSA-[A-Za-z0-9-]+/g) ?? [];
+            });
+          }
+
+          for (const [name, vulnerability] of Object.entries(report.vulnerabilities ?? {})) {
+            findings.push({
+              name,
+              severity: vulnerability.severity ?? 'unknown',
+              ids: advisoryIds(vulnerability),
+              range: vulnerability.range ?? '',
+            });
+          }
+
+          for (const advisory of Object.values(report.advisories ?? {})) {
+            findings.push({
+              name: advisory.module_name ?? advisory.name ?? 'unknown',
+              severity: advisory.severity ?? 'unknown',
+              ids: advisory.url?.match(/GHSA-[A-Za-z0-9-]+/g) ?? [],
+              range: advisory.vulnerable_versions ?? '',
+            });
+          }
+
+          const accepted = [];
+          const rejected = [];
+          for (const finding of findings) {
+            const ids = [...new Set(finding.ids)];
+            const isDocumentedDispute =
+              finding.name === 'deepmerge' &&
+              finding.severity === 'low' &&
+              ids.includes(allowedDisputed) &&
+              ids.every((id) => id === allowedDisputed);
+
+            console.log(`${isDocumentedDispute ? 'DOCUMENTED DISPUTE' : 'AUDIT FINDING'}: ${finding.name} [${finding.severity}] ${ids.join(', ')} ${finding.range}`);
+            (isDocumentedDispute ? accepted : rejected).push(finding);
+          }
+
+          if (Number(process.env.AUDIT_STATUS) !== 0 && findings.length === 0) {
+            throw new Error('pnpm audit returned a failure but no parseable advisory details were found.');
+          }
+          if (rejected.length) {
+            throw new Error(`Dependency audit found ${rejected.length} unaccepted advisory/advisories.`);
+          }
+          if (accepted.length) {
+            console.log('Accepted only GHSA-gcqx-w48m-w2h4: upstream dispute documented in SECURITY-EXCEPTIONS.md; all other advisories must be absent.');
+          } else {
+            console.log('Dependency audit passed with zero advisories.');
+          }
+          NODE
+
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Scan repository history and working tree for exposed secrets
+        uses: gitleaks/gitleaks-action@v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  license-compliance:
+    name: License Compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.8.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Enforce approved production dependency licenses
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm licenses list --recursive --json --prod > licenses.json
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const report = JSON.parse(fs.readFileSync('licenses.json', 'utf8'));
+          const allowed = new Set([
+            'MIT', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC',
+            '0BSD', 'CC0-1.0', 'Unlicense', 'MPL-2.0', 'Zlib',
+            'OFL-1.1', 'Python-2.0', 'BlueOak-1.0.0',
+            'Unicode-DFS-2016', 'CC-BY-4.0', 'PostgreSQL',
+          ]);
+          const licenses = Object.keys(report);
+          if (!licenses.length) throw new Error('Production license inventory is empty.');
+
+          function isAllowed(expression) {
+            const alternatives = expression
+              .replace(/[()]/g, '')
+              .split(/\s+OR\s+/i);
+            return alternatives.some((alternative) =>
+              alternative.split(/\s+AND\s+/i)
+                .map((id) => id.trim())
+                .filter(Boolean)
+                .every((id) => allowed.has(id))
+            );
+          }
+
+          const rejected = licenses.filter((license) => !isAllowed(license));
+          console.log(`Inspected ${licenses.length} production license expression(s).`);
+          for (const license of rejected) {
+            console.error(`REVIEW REQUIRED: ${license}`);
+            for (const pkg of report[license] ?? []) {
+              console.error(`  - ${pkg.name ?? 'unknown package'} ${(pkg.versions ?? []).join(', ')}`);
+            }
+          }
+          if (rejected.length) {
+            throw new Error(`Unapproved or unknown production license(s): ${rejected.join(', ')}`);
+          }
+          console.log('All production dependency licenses satisfy the approved policy.');
+          NODE
+
+  api-security-tests:
+    name: API Security Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.8.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Run Worker API route, authorization, owner isolation, and request validation tests
+        run: pnpm --filter @workspace/functions test
+
+  d1-migration-validation:
+    name: D1 Migration Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.8.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Apply all D1 migrations to an isolated local database
+        run: pnpm exec wrangler d1 migrations apply badboy-agent-db --local --config wrangler.json
+
+  authentication-tests:
+    name: Authentication Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.8.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Test Worker bearer-token and Access JWT authentication
+        run: pnpm --filter @workspace/functions exec node --experimental-strip-types --test accessAuth.test.ts personalAuth.test.ts
+      - name: Test mobile owner login, secure token storage, and session handling
+        run: pnpm --filter @workspace/mobile test
+
+  coverage-validation:
+    name: Coverage Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+      - name: Wait for the real SonarCloud analysis
+        run: bash .github/scripts/wait-for-workflow-run.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_NAME: SonarCloud Analysis
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      - name: Verify SonarCloud New Code coverage and Quality Gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            checks="$(curl --silent --show-error --fail \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPOSITORY/commits/$PR_HEAD_SHA/check-runs?per_page=100")"
+            sonar_check="$(printf '%s' "$checks" | jq -c '[.check_runs[]? | select(.name == "SonarCloud Code Analysis" and .status == "completed")][0] // empty')"
+
+            if [[ -n "$sonar_check" ]]; then
+              conclusion="$(printf '%s' "$sonar_check" | jq -r '.conclusion // empty')"
+              summary="$(printf '%s' "$sonar_check" | jq -r '.output.summary // empty')"
+              quality_gate_title="$(printf '%s' "$sonar_check" | jq -r '.output.title // empty')"
+              if [[ "$conclusion" != "success" ]]; then
+                echo "::error::SonarCloud analysis conclusion is $conclusion."
+                exit 1
+              fi
+              if [[ "$quality_gate_title" != "Quality Gate passed" ]] && ! grep -qi "Quality Gate passed" <<< "$summary"; then
+                echo "::error::SonarCloud summary does not confirm a passed Quality Gate."
+                exit 1
+              fi
+
+              coverage="$(grep -oE '[0-9]+([.][0-9]+)?% Coverage on New Code' <<< "$summary" | head -n 1 | grep -oE '[0-9]+([.][0-9]+)?' || true)"
+              if [[ ! "$coverage" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+                echo "::error::SonarCloud summary has no parseable New Code coverage value."
+                exit 1
+              fi
+
+              echo "SonarCloud New Code coverage: $coverage%; Quality Gate: passed"
+              if ! awk "BEGIN { exit !($coverage >= 80) }"; then
+                echo "::error::New Code coverage $coverage% is below the required 80%."
+                exit 1
+              fi
+              echo "Coverage Validation passed using the completed SonarCloud check-run summary."
+              exit 0
+            fi
+
+            echo "Waiting for the completed SonarCloud Code Analysis check-run (attempt $attempt/30)."
+            sleep 10
+          done
+
+          echo "::error::Could not retrieve the completed SonarCloud check-run summary."
+          exit 1

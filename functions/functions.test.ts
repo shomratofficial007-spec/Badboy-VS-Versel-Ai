@@ -1,7 +1,61 @@
 import assert from "node:assert";
 import test from "node:test";
 // Node ESM imports require .js extension when pointing to typescript files
-import { onRequestGet, onRequestPost } from "./api/[[path]].ts";
+import { onRequestGet as rawOnRequestGet, onRequestPost as rawOnRequestPost } from "./api/[[path]].ts";
+import { handleDeveloperDataRequest } from "./api/developerData.ts";
+import {
+  buildDeveloperAnalysisMessages,
+  resolveDeveloperAnalysisEngine,
+  validateDeveloperAnalysisPayload,
+} from "./api/developerAgent.ts";
+
+const TEST_OWNER_TOKEN = "a".repeat(43);
+
+function withTestOwner(context: any) {
+  const headers = new Headers(context.request.headers);
+  if (!headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${TEST_OWNER_TOKEN}`);
+  }
+  return {
+    ...context,
+    request: new Request(context.request, { headers }),
+    env: { ...context.env, BADBOY_OWNER_TOKEN: context.env.BADBOY_OWNER_TOKEN ?? TEST_OWNER_TOKEN },
+  };
+}
+
+// Existing endpoint tests exercise authenticated application behavior by default.
+// The dedicated /api/auth/verify tests below call the raw handlers to test credentials.
+const onRequestGet = (context: any) => rawOnRequestGet(withTestOwner(context));
+const onRequestPost = (context: any) =>
+  new URL(context.request.url).pathname.replace(/\/+$/, "") === "/api/auth/verify"
+    ? rawOnRequestPost(context)
+    : rawOnRequestPost(withTestOwner(context));
+
+function testAgentDb(options: {
+  changes?: number;
+  firstRow?: unknown;
+  rows?: unknown[];
+  throwOnPrepare?: boolean;
+} = {}) {
+  const calls: Array<{ sql: string; values: unknown[] }> = [];
+  return {
+    calls,
+    prepare(sql: string) {
+      if (options.throwOnPrepare) throw new Error("D1 connection unavailable.");
+      const call = { sql, values: [] as unknown[] };
+      calls.push(call);
+      const statement: any = {
+        bind(...values: unknown[]) { call.values = values; return statement; },
+        first: async () => Object.prototype.hasOwnProperty.call(options, "firstRow")
+          ? options.firstRow
+          : ({ project_id: "test-project", name: "agent_tasks" }),
+        all: async () => ({ success: true, results: options.rows ?? [] }),
+        run: async () => ({ success: true, meta: { changes: options.changes ?? 1 } }),
+      };
+      return statement;
+    },
+  };
+}
 
 test("onRequestGet - health check endpoint returns status ok", async () => {
   const context = {
@@ -570,7 +624,7 @@ test("onRequestPost - rejects malformed JSON with a consistent error envelope", 
 test("developer health reports Native capability and unavailable Copilot runtime", async () => {
   const context = {
     request: new Request("https://example.com/api/developer/health"),
-    env: { OPENROUTER_API_KEY: "test-key" },
+    env: { OPENROUTER_API_KEY: "test-key", AGENT_DB: testAgentDb() },
   } as any;
   const response = await onRequestGet(context);
   assert.strictEqual(response.status, 200);
@@ -580,6 +634,17 @@ test("developer health reports Native capability and unavailable Copilot runtime
   assert.strictEqual(json.engines.auto.selectedEngine, "native");
   assert.strictEqual(json.capabilities.repositoryRead, false);
   assert.strictEqual(json.capabilities.repositoryWrite, false);
+});
+
+test("developer health does not claim analysis is ready before the D1 migration exists", async () => {
+  const response = await onRequestGet({
+    request: new Request("https://example.com/api/developer/health"),
+    env: { OPENROUTER_API_KEY: "test-key" },
+  } as any);
+  assert.equal(response.status, 503);
+  const payload = await response.json() as any;
+  assert.equal(payload.capabilities.analysis, false);
+  assert.equal(payload.capabilities.taskPersistence, false);
 });
 
 test("developer analysis rejects invalid payloads before contacting providers", async () => {
@@ -596,7 +661,7 @@ test("developer analysis rejects invalid payloads before contacting providers", 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: " " }),
       }),
-      env: { OPENROUTER_API_KEY: "test-key" },
+      env: { OPENROUTER_API_KEY: "test-key", AGENT_DB: testAgentDb() },
     } as any;
     const response = await onRequestPost(context);
     assert.strictEqual(response.status, 400);
@@ -622,7 +687,7 @@ test("developer analysis keeps Copilot unavailable without calling an AI provide
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: "Inspect the repo", requestedEngine: "copilot" }),
       }),
-      env: { OPENROUTER_API_KEY: "test-key" },
+      env: { OPENROUTER_API_KEY: "test-key", AGENT_DB: testAgentDb() },
     } as any;
     const response = await onRequestPost(context);
     assert.strictEqual(response.status, 409);
@@ -659,7 +724,7 @@ test("developer analysis streams Native output with task metadata and safe conte
           requestedEngine: "auto",
         }),
       }),
-      env: { OPENROUTER_API_KEY: "test-key" },
+      env: { OPENROUTER_API_KEY: "test-key", AGENT_DB: testAgentDb() },
     } as any;
     const response = await onRequestPost(context);
     assert.strictEqual(response.status, 200);
@@ -705,7 +770,7 @@ test("developer analysis forwards multiple buffered SSE events before the upstre
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: "Stream safely" }),
       }),
-      env: { OPENROUTER_API_KEY: "test-key" },
+      env: { OPENROUTER_API_KEY: "test-key", AGENT_DB: testAgentDb() },
     } as any;
 
     const response = await onRequestPost(context);
@@ -745,29 +810,582 @@ test("developer analysis forwards multiple buffered SSE events before the upstre
 });;
 
 
-test("keeps D1 task and project persistence routes unavailable until authentication is wired", async () => {
+test("authenticated D1 task creation uses only the server-assigned owner identity", async () => {
+  const db = testAgentDb();
+  const response = await rawOnRequestPost({
+    request: new Request("https://example.com/api/developer/tasks", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${TEST_OWNER_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ title: "Owner scoped task", ownerId: "forged-owner" }),
+    }),
+    env: { BADBOY_OWNER_TOKEN: TEST_OWNER_TOKEN, AGENT_DB: db },
+  } as any);
+  assert.equal(response.status, 201);
+  assert.equal(db.calls[0].values[1], "badboy-personal-owner-v1");
+  assert.equal(db.calls[0].values.includes("forged-owner"), false);
+});
+
+test("private Developer Agent D1 routes require configured storage after owner authentication", async () => {
   const paths = [
+    "/api/developer/tasks",
+    "/api/developer/projects",
+    "/api/developer/project-memory?projectId=project-1",
+  ];
+  for (const path of paths) {
+    const context = {
+      request: new Request(`https://example.com${path}`),
+      env: {},
+    } as any;
+    const response = await onRequestGet(context);
+    assert.equal(response.status, 503);
+    const payload = await response.json() as any;
+    assert.equal(payload.code, "AGENT_STORAGE_NOT_CONFIGURED");
+  }
+});
+
+
+test("personal auth verify route accepts only the configured Worker secret", async () => {
+  const token = "a".repeat(43);
+  const missing = await onRequestPost({
+    request: new Request("https://example.com/api/auth/verify", { method: "POST" }),
+    env: {},
+  } as any);
+  assert.equal(missing.status, 503);
+
+  const rejected = await onRequestPost({
+    request: new Request("https://example.com/api/auth/verify", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${"b".repeat(43)}` },
+    }),
+    env: { BADBOY_OWNER_TOKEN: token },
+  } as any);
+  assert.equal(rejected.status, 401);
+
+  const accepted = await onRequestPost({
+    request: new Request("https://example.com/api/auth/verify", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+    env: { BADBOY_OWNER_TOKEN: token },
+  } as any);
+  assert.equal(accepted.status, 200);
+  assert.deepEqual(await accepted.json(), { authenticated: true });
+});
+
+test("onRequestPost - stops fallback when an upstream returns HTTP 200 without a response body", async () => {
+  const originalFetch = globalThis.fetch;
+  const attemptedModels: string[] = [];
+
+  globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body || "{}"));
+    attemptedModels.push(body.model);
+    return new Response(null, { status: 200 });
+  }) as typeof globalThis.fetch;
+
+  try {
+    const context = {
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "Missing upstream stream body" }),
+      }),
+      env: { OPENROUTER_API_KEY: "test-secret-key" },
+    } as any;
+
+    const response = await onRequestPost(context);
+    assert.strictEqual(response.status, 502);
+    const json = await response.json() as any;
+    assert.strictEqual(json.code, "OPENROUTER_REQUEST_FAILED");
+    assert.deepStrictEqual(attemptedModels, ["openrouter/free"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+
+test("requires owner authentication for private API and Developer Agent routes", async () => {
+  const env = {
+    BADBOY_OWNER_TOKEN: TEST_OWNER_TOKEN,
+    OPENROUTER_API_KEY: "test-openrouter-key",
+    AGENT_DB: {},
+  };
+  const protectedPostPaths = [
+    "/api/assistant/chat",
+    "/api/assistant/transcribe",
+    "/api/assistant/speech",
+    "/api/assistant/speak",
+    "/api/developer/analyze",
+  ];
+  for (const path of protectedPostPaths) {
+    const response = await rawOnRequestPost({
+      request: new Request(`https://example.com${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "Hello" }),
+      }),
+      env,
+    } as any);
+    assert.equal(response.status, 401, `${path} must require the owner token`);
+  }
+
+  const protectedGetPaths = [
+    "/api/developer/health",
     "/api/developer/tasks",
     "/api/developer/projects",
     "/api/developer/project-memory",
   ];
-  for (const path of paths) {
-    const getContext = {
+  for (const path of protectedGetPaths) {
+    const response = await rawOnRequestGet({
       request: new Request(`https://example.com${path}`),
-      env: { AGENT_DB: {} },
-    } as any;
-    const getResponse = await onRequestGet(getContext);
-    assert.equal(getResponse.status, 404);
+      env,
+    } as any);
+    assert.equal(response.status, 401, `${path} must require the owner token`);
+  }
 
-    const postContext = {
+  for (const path of ["/api/developer/tasks", "/api/developer/projects", "/api/developer/project-memory"]) {
+    const response = await rawOnRequestPost({
       request: new Request(`https://example.com${path}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ownerId: "attacker-controlled-owner" }),
+        body: JSON.stringify({ ownerId: "untrusted-client-owner" }),
       }),
-      env: { AGENT_DB: {} },
-    } as any;
-    const postResponse = await onRequestPost(postContext);
-    assert.equal(postResponse.status, 404);
+      env,
+    } as any);
+    assert.equal(response.status, 401, `${path} POST must require the owner token`);
   }
+
+  const publicHealth = await rawOnRequestGet({
+    request: new Request("https://example.com/api/healthz"),
+    env: { OPENROUTER_API_KEY: "test-openrouter-key" },
+  } as any);
+  assert.equal(publicHealth.status, 200);
+});
+
+test("D1 data endpoints are available only after the owner is authenticated and storage is configured", async () => {
+  const unauthorized = await rawOnRequestGet({
+    request: new Request("https://example.com/api/developer/tasks"),
+    env: { BADBOY_OWNER_TOKEN: TEST_OWNER_TOKEN },
+  } as any);
+  assert.equal(unauthorized.status, 401);
+
+  const missingStorage = await rawOnRequestGet({
+    request: new Request("https://example.com/api/developer/tasks", {
+      headers: { Authorization: `Bearer ${TEST_OWNER_TOKEN}` },
+    }),
+    env: { BADBOY_OWNER_TOKEN: TEST_OWNER_TOKEN },
+  } as any);
+  assert.equal(missingStorage.status, 503);
+  const payload = await missingStorage.json() as any;
+  assert.equal(payload.code, "AGENT_STORAGE_NOT_CONFIGURED");
+});
+
+
+test("authenticated Developer Data routes exercise task list and create success branches", async () => {
+  const db = testAgentDb();
+  const listed = await onRequestGet({
+    request: new Request("https://example.com/api/developer/tasks?limit=10"),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(listed.status, 200);
+  assert.deepEqual(await listed.json(), { tasks: [] });
+  assert.match(db.calls[0].sql, /FROM agent_tasks/);
+  assert.equal(db.calls[0].values[0], "badboy-personal-owner-v1");
+  assert.equal(db.calls[0].values[1], 10);
+
+  const created = await onRequestPost({
+    request: new Request("https://example.com/api/developer/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "  Verify owner-scoped task  ",
+        summary: "  Keep existing features  ",
+        parentTaskId: "parent-task",
+        ownerId: "forged-owner",
+      }),
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(created.status, 201);
+  const payload = await created.json() as any;
+  assert.equal(payload.status, "queued");
+  assert.ok(payload.taskId);
+  assert.match(db.calls[1].sql, /INSERT INTO agent_tasks/);
+  assert.equal(db.calls[1].values[1], "badboy-personal-owner-v1");
+  assert.equal(db.calls[1].values.includes("forged-owner"), false);
+  assert.match(db.calls[2].sql, /INSERT INTO agent_task_events/);
+});
+
+test("authenticated Developer Data routes exercise project and project-memory CRUD branches", async () => {
+  const db = testAgentDb();
+  const projects = await onRequestGet({
+    request: new Request("https://example.com/api/developer/projects?limit=1000"),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(projects.status, 200);
+  assert.deepEqual(await projects.json(), { projects: [] });
+  assert.equal(db.calls[0].values[1], 100);
+
+  const savedProject = await onRequestPost({
+    request: new Request("https://example.com/api/developer/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectKey: "  badboy-main  ",
+        name: "  Badboy AI  ",
+        summary: "  Keep local memory and voice  ",
+      }),
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(savedProject.status, 200);
+  assert.deepEqual(await savedProject.json(), {
+    projectId: "test-project",
+    projectKey: "badboy-main",
+    name: "Badboy AI",
+  });
+
+  const memories = await onRequestGet({
+    request: new Request("https://example.com/api/developer/project-memory?projectId=project-1&limit=3"),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(memories.status, 200);
+  assert.deepEqual(await memories.json(), { memories: [] });
+  assert.deepEqual(db.calls[2].values, ["project-1", "badboy-personal-owner-v1", 3]);
+
+  const added = await onRequestPost({
+    request: new Request("https://example.com/api/developer/project-memory", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId: "project-1", category: "project-note",
+        content: "Preserve the wake-word flow", source: "owner",
+      }),
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(added.status, 201);
+  assert.equal((await added.json() as any).saved, true);
+  assert.match(db.calls[3].sql, /INSERT INTO agent_project_memory/);
+
+  const deleted = await onRequestPost({
+    request: new Request("https://example.com/api/developer/project-memory?memoryId=memory-1", {
+      method: "DELETE",
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(deleted.status, 200);
+  assert.deepEqual(await deleted.json(), { deleted: true });
+});
+
+test("authenticated Developer Data validation rejects missing identifiers and invalid privacy", async () => {
+  const db = testAgentDb();
+  const missingProject = await onRequestGet({
+    request: new Request("https://example.com/api/developer/project-memory"),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(missingProject.status, 400);
+  assert.equal((await missingProject.json() as any).code, "PROJECT_ID_REQUIRED");
+
+  const invalidPrivacy = await onRequestPost({
+    request: new Request("https://example.com/api/developer/project-memory", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: "project-1", category: "note", content: "hello", privacyLevel: "public" }),
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(invalidPrivacy.status, 400);
+  assert.equal((await invalidPrivacy.json() as any).code, "INVALID_PRIVACY_LEVEL");
+
+  const missingMemory = await onRequestPost({
+    request: new Request("https://example.com/api/developer/project-memory", { method: "DELETE" }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(missingMemory.status, 400);
+  assert.equal((await missingMemory.json() as any).code, "MEMORY_ID_REQUIRED");
+});
+
+test("authenticated Developer Data maps unsupported content, malformed JSON and storage exceptions safely", async () => {
+  const db = testAgentDb();
+  const unsupported = await onRequestPost({
+    request: new Request("https://example.com/api/developer/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: "{}",
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(unsupported.status, 415);
+
+  const malformed = await onRequestPost({
+    request: new Request("https://example.com/api/developer/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{",
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(malformed.status, 400);
+  assert.equal((await malformed.json() as any).code, "INVALID_JSON_BODY");
+
+  const brokenDb = {
+    prepare() { throw new Error("D1 connection unavailable"); },
+  };
+  const storageFailure = await onRequestGet({
+    request: new Request("https://example.com/api/developer/tasks"),
+    env: { AGENT_DB: brokenDb },
+  } as any);
+  assert.equal(storageFailure.status, 500);
+  assert.equal((await storageFailure.json() as any).code, "DEVELOPER_STORAGE_FAILED");
+});
+
+
+test("Developer Data clamps task limits and rejects invalid status, engine and overlong titles", async () => {
+  const db = testAgentDb();
+  for (const [limit, expected] of [["0", 1], ["999", 100], ["1.5", 25]] as const) {
+    const response = await onRequestGet({
+      request: new Request("https://example.com/api/developer/tasks?limit=" + limit),
+      env: { AGENT_DB: db },
+    } as any);
+    assert.equal(response.status, 200);
+    assert.equal(db.calls.at(-1)?.values[1], expected);
+  }
+
+  for (const body of [
+    { title: "Task", status: "unknown" },
+    { title: "Task", engine: "remote" },
+    { title: "x".repeat(201) },
+  ]) {
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/developer/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      env: { AGENT_DB: db },
+    } as any);
+    assert.equal(response.status, 400);
+  }
+});
+
+test("Developer Data defaults non-string optional task fields and validates project and memory fields", async () => {
+  const db = testAgentDb();
+  const created = await onRequestPost({
+    request: new Request("https://example.com/api/developer/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Task with optional values", summary: 42, parentTaskId: 123 }),
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(created.status, 201);
+  assert.equal(db.calls[0].values[2], "queued");
+  assert.equal(db.calls[0].values[3], "native");
+  assert.equal(db.calls[0].values[5], undefined);
+  assert.equal(db.calls[0].values[6], null);
+
+  const missingProjectKey = await onRequestPost({
+    request: new Request("https://example.com/api/developer/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Badboy AI" }),
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(missingProjectKey.status, 400);
+
+  const memoryDefaults = await onRequestPost({
+    request: new Request("https://example.com/api/developer/project-memory", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: "project-1", category: "note", content: "Private by default", source: 42 }),
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(memoryDefaults.status, 201);
+  assert.equal(db.calls.at(-1)?.values.includes("private"), true);
+  assert.equal(db.calls.at(-1)?.values.includes("user"), true);
+});
+
+test("Developer Data returns not-found for foreign projects and memories without mutating data", async () => {
+  const noProjectDb = testAgentDb({ changes: 0 });
+  const missingProject = await onRequestPost({
+    request: new Request("https://example.com/api/developer/project-memory", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: "foreign-project", category: "note", content: "Do not save" }),
+    }),
+    env: { AGENT_DB: noProjectDb },
+  } as any);
+  assert.equal(missingProject.status, 404);
+  assert.equal((await missingProject.json() as any).code, "PROJECT_NOT_FOUND");
+
+  const noMemoryDb = testAgentDb({ changes: 0 });
+  const missingMemory = await onRequestPost({
+    request: new Request("https://example.com/api/developer/project-memory?memoryId=foreign-memory", {
+      method: "DELETE",
+    }),
+    env: { AGENT_DB: noMemoryDb },
+  } as any);
+  assert.equal(missingMemory.status, 404);
+  assert.equal((await missingMemory.json() as any).code, "MEMORY_NOT_FOUND");
+});
+
+test("Developer Data rejects oversized, non-object and invalid-length request bodies", async () => {
+  const db = testAgentDb();
+  for (const body of ["[]", "null"]) {
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/developer/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      }),
+      env: { AGENT_DB: db },
+    } as any);
+    assert.equal(response.status, 400);
+    assert.equal((await response.json() as any).code, "INVALID_JSON_BODY");
+  }
+
+  const oversized = await onRequestPost({
+    request: new Request("https://example.com/api/developer/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Content-Length": "20001" },
+      body: JSON.stringify({ projectKey: "badboy", name: "Badboy AI" }),
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(oversized.status, 400);
+
+  const invalidLength = await onRequestPost({
+    request: new Request("https://example.com/api/developer/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Content-Length": "not-a-number" },
+      body: JSON.stringify({ projectKey: "badboy", name: "Badboy AI" }),
+    }),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(invalidLength.status, 400);
+});
+
+test("Developer Data maps storage preparation failures to a non-leaking server error", async () => {
+  const db = testAgentDb({ throwOnPrepare: true });
+  const response = await onRequestGet({
+    request: new Request("https://example.com/api/developer/projects"),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(response.status, 500);
+  assert.deepEqual(await response.json(), {
+    code: "DEVELOPER_STORAGE_FAILED",
+    error: "Developer Agent data could not be saved or loaded.",
+  });
+});
+
+
+test("direct Developer Data handler covers all owner-scoped route branches in the Worker test process", async () => {
+  const db = testAgentDb();
+  const base = "https://example.com/api/developer/";
+  const get = (path: string) => handleDeveloperDataRequest(
+    new Request(base + path), { AGENT_DB: db }, "verified-owner",
+  );
+  const post = (path: string, body: unknown) => handleDeveloperDataRequest(
+    new Request(base + path, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    }),
+    { AGENT_DB: db }, "verified-owner",
+  );
+
+  assert.deepEqual(await (await get("tasks?limit=999"))?.json(), { tasks: [] });
+  assert.equal(db.calls.at(-1)?.values[1], 100);
+  const task = await post("tasks", { title: "Direct task", status: "running", engine: "auto", summary: "Summary", parentTaskId: "parent" });
+  assert.equal(task?.status, 201);
+  assert.equal(db.calls.at(-1)?.sql.includes("agent_task_events"), true);
+
+  assert.deepEqual(await (await get("projects"))?.json(), { projects: [] });
+  const project = await post("projects", { projectKey: "direct", name: "Direct project", summary: "Context" });
+  assert.equal(project?.status, 200);
+
+  assert.deepEqual(await (await get("project-memory?projectId=direct-project"))?.json(), { memories: [] });
+  const memory = await post("project-memory", {
+    projectId: "direct-project", category: "project-note", content: "Keep existing features",
+    privacyLevel: "sensitive", source: "owner",
+  });
+  assert.equal(memory?.status, 201);
+
+  const removed = await handleDeveloperDataRequest(
+    new Request(base + "project-memory?memoryId=memory-1", { method: "DELETE" }),
+    { AGENT_DB: db }, "verified-owner",
+  );
+  assert.equal(removed?.status, 200);
+});
+
+test("direct Developer Data handler covers malformed payload, missing IDs and not-found branches", async () => {
+  const db = testAgentDb({ changes: 0 });
+  const base = "https://example.com/api/developer/";
+  const get = (path: string) => handleDeveloperDataRequest(
+    new Request(base + path), { AGENT_DB: db }, "verified-owner",
+  );
+  const post = (path: string, body: string, contentType = "application/json") => handleDeveloperDataRequest(
+    new Request(base + path, { method: "POST", headers: { "Content-Type": contentType }, body }),
+    { AGENT_DB: db }, "verified-owner",
+  );
+
+  assert.equal((await get("project-memory"))?.status, 400);
+  assert.equal((await handleDeveloperDataRequest(
+    new Request(base + "project-memory", { method: "DELETE" }), { AGENT_DB: db }, "verified-owner",
+  ))?.status, 400);
+  assert.equal((await post("tasks", "{}", "text/plain"))?.status, 415);
+  assert.equal((await post("tasks", "[]"))?.status, 400);
+  assert.equal((await post("tasks", JSON.stringify({ title: "Task", status: "bad" })))?.status, 400);
+  assert.equal((await post("tasks", JSON.stringify({ title: "Task", engine: "bad" })))?.status, 400);
+  assert.equal((await post("projects", JSON.stringify({ name: "Missing key" })))?.status, 400);
+  assert.equal((await post("project-memory", JSON.stringify({
+    projectId: "p", category: "note", content: "text", privacyLevel: "public",
+  })))?.status, 400);
+  assert.equal((await post("project-memory", JSON.stringify({
+    projectId: "missing", category: "note", content: "text",
+  })))?.status, 404);
+  const deleted = await handleDeveloperDataRequest(
+    new Request(base + "project-memory?memoryId=missing", { method: "DELETE" }),
+    { AGENT_DB: db }, "verified-owner",
+  );
+  assert.equal(deleted?.status, 404);
+  assert.equal(await handleDeveloperDataRequest(new Request("https://example.com/elsewhere"), { AGENT_DB: db }, "verified-owner"), null);
+});
+
+test("direct Developer Agent helpers cover every engine and payload validation branch", () => {
+  for (const input of [null, [], "not-an-object", 7]) {
+    assert.equal(validateDeveloperAnalysisPayload(input).ok, false);
+  }
+  for (const input of [
+    { prompt: "" }, { prompt: "x".repeat(4001) },
+    { prompt: "Plan", projectContext: 42 },
+    { prompt: "Plan", projectContext: "x".repeat(8001) },
+    { prompt: "Plan", requestedEngine: "unknown" },
+  ]) {
+    assert.equal(validateDeveloperAnalysisPayload(input).ok, false);
+  }
+  const valid = validateDeveloperAnalysisPayload({
+    prompt: "  Preserve existing features  ", projectContext: "  Expo + D1  ", requestedEngine: "auto",
+  });
+  assert.equal(valid.ok, true);
+  if (valid.ok) {
+    assert.deepEqual(valid.value, {
+      prompt: "Preserve existing features", projectContext: "Expo + D1", requestedEngine: "auto",
+    });
+    const messages = buildDeveloperAnalysisMessages(valid.value);
+    assert.match(messages[0].content, /analysis-only/);
+    assert.match(messages[1].content, /Expo \+ D1/);
+    assert.match(messages[1].content, /Preserve existing features/);
+  }
+  const noContext = validateDeveloperAnalysisPayload({ prompt: "  Review  " });
+  assert.equal(noContext.ok, true);
+  if (noContext.ok) assert.match(buildDeveloperAnalysisMessages(noContext.value)[1].content, /^User task:/);
+
+  assert.equal(resolveDeveloperAnalysisEngine("native").status, "ready");
+  assert.equal(resolveDeveloperAnalysisEngine("copilot").status, "unavailable");
+  assert.equal(resolveDeveloperAnalysisEngine("auto").status, "fallback");
 });

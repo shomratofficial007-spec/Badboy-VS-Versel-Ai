@@ -9,6 +9,9 @@ import {
   isDictationAvailable,
   isReadAloudAvailable,
   getSpeechPlaybackTimeoutMs,
+  dictateOnce,
+  checkMicrophonePermission,
+  getAvailableSpeechVoices,
   shouldStopVoiceRecordingForSilence,
   VOICE_SILENCE_DURATION_MS,
 } from './voice.ts';
@@ -84,4 +87,192 @@ test('voice recording auto-stop requires speech followed by sustained silence', 
   assert.equal(shouldStopVoiceRecordingForSilence(-60, true, lastSpeechAt, lastSpeechAt + VOICE_SILENCE_DURATION_MS - 1), false);
   assert.equal(shouldStopVoiceRecordingForSilence(-60, true, lastSpeechAt, lastSpeechAt + VOICE_SILENCE_DURATION_MS), true);
   assert.equal(shouldStopVoiceRecordingForSilence(undefined, true, lastSpeechAt, 20000), false);
+});
+
+test('dictation reports unsupported when no browser recognizer or native provider is available', () => {
+  const originalWindow = globalThis.window;
+  Reflect.deleteProperty(globalThis, 'window');
+  const errors: string[] = [];
+  let done = 0;
+  try {
+    const cancel = dictateOnce({
+      onTranscript: () => assert.fail('unsupported dictation must not emit a transcript'),
+      onError: (error) => errors.push(error ?? ''),
+      onDone: () => { done += 1; },
+    });
+    assert.deepEqual(errors, ['unsupported']);
+    assert.equal(done, 1);
+    cancel();
+    assert.equal(done, 1, 'completion callback is emitted exactly once');
+  } finally {
+    if (originalWindow !== undefined) {
+      Object.defineProperty(globalThis, 'window', { configurable: true, writable: true, value: originalWindow });
+    }
+  }
+});
+
+test('permission and installed-voice helpers return safe fallbacks in a headless runtime', async () => {
+  assert.equal(await checkMicrophonePermission(), 'unsupported');
+  assert.deepEqual(await getAvailableSpeechVoices(), []);
+});
+
+test('Web Speech API streams interim/final transcripts, detects Hey Badboy and finishes once', () => {
+  const originalWindow = globalThis.window;
+  let instance: any;
+  class FakeRecognition {
+    lang = '';
+    interimResults = false;
+    maxAlternatives = 0;
+    onresult: any = null;
+    onerror: any = null;
+    onend: any = null;
+    onstart: any = null;
+    started = false;
+    stopped = false;
+    aborted = false;
+    start() { this.started = true; }
+    stop() { this.stopped = true; }
+    abort() { this.aborted = true; }
+    constructor() { instance = this; }
+  }
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true, writable: true,
+    value: { SpeechRecognition: FakeRecognition, isSecureContext: true },
+  });
+  const transcripts: Array<[string, boolean]> = [];
+  const errors: string[] = [];
+  let wakeCount = 0;
+  let doneCount = 0;
+  try {
+    const cancel = dictateOnce({
+      lang: 'bn-BD',
+      onTranscript: (text, final) => transcripts.push([text, final]),
+      onWakeWordDetected: () => { wakeCount += 1; },
+      onError: (error) => errors.push(error ?? ''),
+      onDone: () => { doneCount += 1; },
+    });
+    assert.equal(instance.started, true);
+    assert.equal(instance.lang, 'bn-BD');
+    instance.onresult({
+      resultIndex: 0,
+      results: [{ isFinal: false, length: 1, 0: { transcript: 'Hey Badboy' } }],
+    });
+    instance.onresult({
+      resultIndex: 0,
+      results: [{ isFinal: true, length: 1, 0: { transcript: 'Hey Badboy, কেমন আছো?' } }],
+    });
+    assert.deepEqual(transcripts, [
+      ['Hey Badboy', false],
+      ['Hey Badboy, কেমন আছো?', true],
+    ]);
+    assert.equal(wakeCount, 2);
+    assert.equal(instance.stopped, true);
+    assert.equal(doneCount, 1);
+    instance.onend();
+    cancel();
+    assert.equal(doneCount, 1);
+    assert.equal(instance.aborted, true);
+    assert.deepEqual(errors, []);
+  } finally {
+    if (originalWindow !== undefined) {
+      Object.defineProperty(globalThis, 'window', { configurable: true, writable: true, value: originalWindow });
+    } else {
+      Reflect.deleteProperty(globalThis, 'window');
+    }
+  }
+});
+
+test('Web Speech API suppresses benign post-transcript silence and reports real errors', () => {
+  const originalWindow = globalThis.window;
+  let instance: any;
+  class FakeRecognition {
+    lang = '';
+    interimResults = false;
+    maxAlternatives = 0;
+    onresult: any = null;
+    onerror: any = null;
+    onend: any = null;
+    start() {}
+    stop() {}
+    abort() {}
+    constructor() { instance = this; }
+  }
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true, writable: true,
+    value: { SpeechRecognition: FakeRecognition, isSecureContext: false },
+  });
+  try {
+    const errors: string[] = [];
+    let done = 0;
+    dictateOnce({
+      onTranscript: () => {},
+      onError: (error) => errors.push(error ?? ''),
+      onDone: () => { done += 1; },
+    });
+    instance.onresult({
+      resultIndex: 0,
+      results: [{ isFinal: false, length: 1, 0: { transcript: 'hello' } }],
+    });
+    instance.onerror({ error: 'no-speech' });
+    assert.deepEqual(errors, []);
+    assert.equal(done, 1);
+
+    let secondInstance: any;
+    class ErrorRecognition extends FakeRecognition {
+      constructor() { super(); secondInstance = this; }
+    }
+    (globalThis as any).window.SpeechRecognition = ErrorRecognition;
+    const secondErrors: string[] = [];
+    let secondDone = 0;
+    dictateOnce({
+      onTranscript: () => {},
+      onError: (error) => secondErrors.push(error ?? ''),
+      onDone: () => { secondDone += 1; },
+    });
+    secondInstance.onerror({ error: 'network' });
+    assert.deepEqual(secondErrors, ['network']);
+    assert.equal(secondDone, 1);
+  } finally {
+    if (originalWindow !== undefined) {
+      Object.defineProperty(globalThis, 'window', { configurable: true, writable: true, value: originalWindow });
+    } else {
+      Reflect.deleteProperty(globalThis, 'window');
+    }
+  }
+});
+
+test('Web Speech API startup exceptions are converted to start_failed and completion', () => {
+  const originalWindow = globalThis.window;
+  class BrokenRecognition {
+    lang = '';
+    interimResults = false;
+    maxAlternatives = 0;
+    onresult: any = null;
+    onerror: any = null;
+    onend: any = null;
+    start() { throw new Error('recognizer startup failed'); }
+    stop() {}
+    abort() {}
+  }
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true, writable: true,
+    value: { SpeechRecognition: BrokenRecognition, isSecureContext: true },
+  });
+  try {
+    const errors: string[] = [];
+    let done = 0;
+    dictateOnce({
+      onTranscript: () => {},
+      onError: (error) => errors.push(error ?? ''),
+      onDone: () => { done += 1; },
+    });
+    assert.deepEqual(errors, ['start_failed']);
+    assert.equal(done, 1);
+  } finally {
+    if (originalWindow !== undefined) {
+      Object.defineProperty(globalThis, 'window', { configurable: true, writable: true, value: originalWindow });
+    } else {
+      Reflect.deleteProperty(globalThis, 'window');
+    }
+  }
 });

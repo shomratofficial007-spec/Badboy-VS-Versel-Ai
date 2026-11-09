@@ -1,4 +1,7 @@
 import { buildDeveloperAnalysisMessages, resolveDeveloperAnalysisEngine, validateDeveloperAnalysisPayload } from "./developerAgent.ts";
+import { authenticatePersonalOwner } from "./personalAuth.ts";
+import { handleDeveloperDataRequest } from "./developerData.ts";
+import { createAgentStorage, type D1Database } from "./agentStorage.ts";
 // Cloudflare Pages Function: /api/* routes backed by OpenRouter.
 // Directs /api/assistant/chat requests to OpenRouter with streaming SSE.
 
@@ -16,11 +19,13 @@ const RETRYABLE_UPSTREAM_STATUSES = new Set([404, 408, 429, 500, 502, 503, 504])
 interface Env {
   OPENROUTER_API_KEY?: string;
   GROQ_API_KEY?: string;
+  BADBOY_OWNER_TOKEN?: string;
+  AGENT_DB?: D1Database;
 }
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
 };
 
@@ -86,6 +91,7 @@ function jsonResponse(data: unknown, status = 200) {
     status,
     headers: {
       "Content-Type": "application/json",
+      "Cache-Control": "no-store",
       ...CORS_HEADERS,
     },
   });
@@ -644,7 +650,7 @@ async function handleSpeechRequest(request: Request, env: Env): Promise<Response
   }, 503);
 }
 
-async function handleDeveloperAnalysisRequest(request: Request, env: Env): Promise<Response> {
+async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerId: string): Promise<Response> {
   const parsedBody = await readJsonBody(request, MAX_DEVELOPER_REQUEST_BYTES);
   if ("response" in parsedBody) return parsedBody.response;
 
@@ -679,8 +685,39 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env): Promi
     );
   }
 
+  if (!env.AGENT_DB) {
+    return jsonResponse({
+      code: "AGENT_STORAGE_NOT_CONFIGURED",
+      error: "Developer Agent task persistence is not configured.",
+    }, 503);
+  }
+
+  const storage = createAgentStorage(env.AGENT_DB);
   const taskId = crypto.randomUUID();
   const engine = resolution.activeEngine ?? "native";
+  try {
+    await storage.createTask({
+      taskId,
+      ownerId,
+      status: "running",
+      engine,
+      title: validation.value.prompt.slice(0, 200),
+      summary: validation.value.projectContext.slice(0, 4000),
+    });
+    await storage.appendTaskEvent({
+      eventId: crypto.randomUUID(),
+      taskId,
+      ownerId,
+      eventType: "task_started",
+      payload: { engine, requestedEngine: validation.value.requestedEngine },
+    });
+  } catch {
+    return jsonResponse({
+      code: "DEVELOPER_TASK_PERSISTENCE_FAILED",
+      error: "Developer Agent could not create its private task record.",
+    }, 503);
+  }
+
   console.info(JSON.stringify({
     component: "badboy-developer-agent",
     event: "task_started",
@@ -697,6 +734,11 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env): Promi
     );
     upstream = routed.response;
   } catch {
+    await storage.updateTaskStatus({ taskId, ownerId, status: "failed" }).catch(() => false);
+    await storage.appendTaskEvent({
+      eventId: crypto.randomUUID(), taskId, ownerId,
+      eventType: "task_failed", payload: { reason: "upstream_network_error" },
+    }).catch(() => false);
     console.info(JSON.stringify({
       component: "badboy-developer-agent",
       event: "task_failed",
@@ -716,6 +758,11 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env): Promi
 
   if (!upstream.ok || !upstream.body) {
     const status = upstream.status === 429 ? 429 : 502;
+    await storage.updateTaskStatus({ taskId, ownerId, status: "failed" }).catch(() => false);
+    await storage.appendTaskEvent({
+      eventId: crypto.randomUUID(), taskId, ownerId,
+      eventType: "task_failed", payload: { upstreamStatus: upstream.status },
+    }).catch(() => false);
     console.info(JSON.stringify({
       component: "badboy-developer-agent",
       event: "task_failed",
@@ -743,6 +790,17 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env): Promi
       const send = (payload: string) =>
         controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
       send(JSON.stringify({ taskId, engine, status: "started" }));
+      let accumulatedOutput = "";
+      const completeTask = async () => {
+        const updated = await storage.updateTaskStatus({
+          taskId, ownerId, status: "completed", summary: accumulatedOutput.slice(0, 4000),
+        });
+        if (!updated) throw new Error("Task record could not be finalized.");
+        await storage.appendTaskEvent({
+          eventId: crypto.randomUUID(), taskId, ownerId,
+          eventType: "task_completed", payload: { outputLength: accumulatedOutput.length },
+        });
+      };
       try {
         let pending = "";
         while (true) {
@@ -756,9 +814,11 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env): Promi
             pending = pending.slice(boundary + 2);
             const parsed = extractDeltas(event);
             for (const content of parsed.texts) {
+              accumulatedOutput = (accumulatedOutput + content).slice(0, 4000);
               send(JSON.stringify({ content, taskId, engine }));
             }
             if (parsed.done) {
+              await completeTask();
               send(JSON.stringify({ taskId, engine, status: "completed" }));
               send("[DONE]");
               controller.close();
@@ -771,9 +831,11 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env): Promi
         if (pending.trim()) {
           const parsed = extractDeltas(pending);
           for (const content of parsed.texts) {
+            accumulatedOutput = (accumulatedOutput + content).slice(0, 4000);
             send(JSON.stringify({ content, taskId, engine }));
           }
         }
+        await completeTask();
         send(JSON.stringify({ taskId, engine, status: "completed" }));
         send("[DONE]");
         console.info(JSON.stringify({
@@ -784,6 +846,11 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env): Promi
         }));
         controller.close();
       } catch {
+        await storage.updateTaskStatus({ taskId, ownerId, status: "failed" }).catch(() => false);
+        await storage.appendTaskEvent({
+          eventId: crypto.randomUUID(), taskId, ownerId,
+          eventType: "task_failed", payload: { reason: "stream_interrupted" },
+        }).catch(() => false);
         console.info(JSON.stringify({
           component: "badboy-developer-agent",
           event: "task_failed",
@@ -830,26 +897,61 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
 
+  // Keep only service health and the credential verifier public. Every other
+  // Security invariant: verify the personal owner token before any API or private D1/Developer Agent data access.
+  if (request.method === "POST" && pathname === "/api/auth/verify") {
+    const auth = await authenticatePersonalOwner(request, env);
+    if (!auth.ok) return auth.response;
+    return jsonResponse({ authenticated: true }, 200);
+  }
+
+  const isPublicHealthCheck = request.method === "GET" &&
+    (pathname === "/api/healthz" || pathname === "/api/health");
+  let verifiedOwnerId: string | null = null;
+  if (!isPublicHealthCheck) {
+    const auth = await authenticatePersonalOwner(request, env);
+    if (!auth.ok) return auth.response;
+    verifiedOwnerId = auth.identity.ownerId;
+  }
+
+  if (verifiedOwnerId) {
+    const dataResponse = await handleDeveloperDataRequest(request, env, verifiedOwnerId);
+    if (dataResponse) return dataResponse;
+  }
+
   if (request.method === "GET") {
     if (pathname === "/api/developer/health") {
       const nativeAvailable = Boolean(env.OPENROUTER_API_KEY?.trim());
+      let taskPersistenceAvailable = false;
+      if (env.AGENT_DB) {
+        try {
+          const table = await env.AGENT_DB.prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'agent_tasks' LIMIT 1",
+          ).first<{ name: string }>();
+          taskPersistenceAvailable = Boolean(table?.name);
+        } catch {
+          taskPersistenceAvailable = false;
+        }
+      }
+      const analysisAvailable = nativeAvailable && taskPersistenceAvailable;
       return jsonResponse({
-        status: nativeAvailable ? "ready" : "degraded",
+        status: analysisAvailable ? "ready" : "degraded",
         engines: {
           native: { available: nativeAvailable },
           copilot: {
             available: false,
             reason: "Isolated Copilot CLI runtime and authentication are not yet validated.",
           },
-          auto: { available: nativeAvailable, selectedEngine: nativeAvailable ? "native" : null },
+          auto: { available: analysisAvailable, selectedEngine: analysisAvailable ? "native" : null },
         },
         capabilities: {
-          analysis: nativeAvailable,
+          analysis: analysisAvailable,
+          taskPersistence: taskPersistenceAvailable,
           repositoryRead: false,
           repositoryWrite: false,
           workflowDispatch: false,
         },
-      }, nativeAvailable ? 200 : 503);
+      }, analysisAvailable ? 200 : 503);
     }
     if (pathname === "/api/healthz" || pathname === "/api/health") {
       const chatConfigured = Boolean(env.OPENROUTER_API_KEY?.trim());
@@ -881,7 +983,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   }
 
   if (request.method === "POST" && pathname === "/api/developer/analyze") {
-    return handleDeveloperAnalysisRequest(request, env);
+    return handleDeveloperAnalysisRequest(request, env, verifiedOwnerId ?? "");
   }
 
   if (request.method === "POST" && pathname === "/api/assistant/transcribe") {
@@ -1049,6 +1151,10 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 };
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
+  return handleApiRequest(context.request, context.env);
+};
+
+export const onRequestDelete: PagesFunction<Env> = async (context) => {
   return handleApiRequest(context.request, context.env);
 };
 

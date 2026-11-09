@@ -19,14 +19,30 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install Syft with retry for transient release-host errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          installed=false
+          for attempt in 1 2 3 4 5; do
+            echo "Syft installation attempt $attempt/5"
+            if curl --fail --location --retry 3 --retry-all-errors --retry-delay 5 \
+                --silent --show-error https://get.anchore.io/syft -o /tmp/install-syft.sh \
+              && sh /tmp/install-syft.sh -b /usr/local/bin; then
+              installed=true
+              break
+            fi
+            sleep 10
+          done
+          if [ "$installed" != true ]; then
+            echo "::error::Syft could not be installed after 5 attempts."
+            exit 1
+          fi
+          syft version
+
       - name: Generate SPDX JSON SBOM with Syft
-        uses: anchore/sbom-action@v0
-        with:
-          path: .
-          format: spdx-json
-          output-file: badboy-mobile-sbom.spdx.json
-          upload-artifact: false
-          upload-release-assets: false
+        run: syft dir:. --output spdx-json=badboy-mobile-sbom.spdx.json
+        shell: bash
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v4

@@ -16,8 +16,21 @@ import {
   View,
 } from 'react-native';
 import { useAssistant } from '@/context/AssistantContext';
+import { useOwnerAuth } from '@/context/OwnerAuthContext';
 import { VOICE_LANGUAGES, getAvailableSpeechVoices, speak, stopSpeaking, type AvailableSpeechVoice } from '@/lib/assistant/voice';
 import { streamDeveloperAnalysis, streamReply } from '@/lib/assistant/api';
+import {
+  addDeveloperProjectMemory,
+  deleteDeveloperProjectMemory,
+  getAnalysisProjectNotes,
+  listDeveloperProjectMemory,
+  listDeveloperProjects,
+  listDeveloperTasks,
+  saveDeveloperProject,
+  type DeveloperProjectMemoryRecord,
+  type DeveloperProjectRecord,
+  type DeveloperTaskRecord,
+} from '@/lib/assistant/developerData';
 import { buildExpertReviewPrompt, inspectBadboyRepository, type RepositoryEvidence } from '@/lib/assistant/expertReview';
 import { useColors } from '@/hooks/useColors';
 import {
@@ -60,6 +73,7 @@ export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { settings, updateSettings, clearChat, expertReviewDraft, clearExpertReviewDraft } = useAssistant();
+  const { signOut } = useOwnerAuth();
   const [personalityDraft, setPersonalityDraft] = useState(settings.personality);
   const [botTokenDraft, setBotTokenDraft] = useState('');
   const [telegramConnected, setTelegramConnected] = useState(false);
@@ -105,6 +119,92 @@ export default function SettingsScreen() {
   const [developerAnalysisEngine, setDeveloperAnalysisEngine] = useState('');
   const [developerAnalysisFallback, setDeveloperAnalysisFallback] = useState('');
   const [developerAnalysisTaskId, setDeveloperAnalysisTaskId] = useState('');
+  const [developerTasks, setDeveloperTasks] = useState<DeveloperTaskRecord[]>([]);
+  const [developerProjects, setDeveloperProjects] = useState<DeveloperProjectRecord[]>([]);
+  const [selectedDeveloperProjectId, setSelectedDeveloperProjectId] = useState('');
+  const [developerMemories, setDeveloperMemories] = useState<DeveloperProjectMemoryRecord[]>([]);
+  const [developerMemoryDraft, setDeveloperMemoryDraft] = useState('');
+  const [developerDataBusy, setDeveloperDataBusy] = useState(false);
+  const [developerDataError, setDeveloperDataError] = useState<string | null>(null);
+
+  const refreshDeveloperTasks = async () => {
+    try {
+      setDeveloperTasks(await listDeveloperTasks());
+    } catch (cause) {
+      setDeveloperDataError(cause instanceof Error ? cause.message : 'Developer task history লোড করা যায়নি।');
+    }
+  };
+
+  const refreshDeveloperProjects = async () => {
+    try {
+      const projects = await listDeveloperProjects();
+      setDeveloperProjects(projects);
+      if (!selectedDeveloperProjectId && projects[0]) {
+        setSelectedDeveloperProjectId(projects[0].project_id);
+      }
+    } catch (cause) {
+      setDeveloperDataError(cause instanceof Error ? cause.message : 'Project তালিকা লোড করা যায়নি।');
+    }
+  };
+
+  const handleSaveProjectBrain = async () => {
+    if (!projectBrain || developerDataBusy) return;
+    setDeveloperDataBusy(true);
+    setDeveloperDataError(null);
+    try {
+      const project = await saveDeveloperProject({
+        projectKey: 'badboy-main',
+        name: projectBrain.name,
+        summary: [
+          projectBrain.architecture,
+          ...projectBrain.frameworks,
+          ...projectBrain.apiEndpoints,
+          ...projectBrain.knownLimitations,
+        ].join('\\n').slice(0, 4000),
+      });
+      setSelectedDeveloperProjectId(project.projectId);
+      await refreshDeveloperProjects();
+    } catch (cause) {
+      setDeveloperDataError(cause instanceof Error ? cause.message : 'Project Brain D1-এ সংরক্ষণ করা যায়নি।');
+    } finally {
+      setDeveloperDataBusy(false);
+    }
+  };
+
+  const handleAddDeveloperMemory = async () => {
+    if (!selectedDeveloperProjectId || !developerMemoryDraft.trim() || developerDataBusy) return;
+    setDeveloperDataBusy(true);
+    setDeveloperDataError(null);
+    try {
+      await addDeveloperProjectMemory({
+        projectId: selectedDeveloperProjectId,
+        category: 'project-note',
+        content: developerMemoryDraft.trim(),
+        source: 'owner',
+        privacyLevel: 'private',
+      });
+      setDeveloperMemoryDraft('');
+      setDeveloperMemories(await listDeveloperProjectMemory(selectedDeveloperProjectId));
+    } catch (cause) {
+      setDeveloperDataError(cause instanceof Error ? cause.message : 'Private project memory সংরক্ষণ করা যায়নি।');
+    } finally {
+      setDeveloperDataBusy(false);
+    }
+  };
+
+  const handleDeleteDeveloperMemory = async (memoryId: string) => {
+    if (developerDataBusy) return;
+    setDeveloperDataBusy(true);
+    setDeveloperDataError(null);
+    try {
+      await deleteDeveloperProjectMemory(memoryId);
+      setDeveloperMemories((previous) => previous.filter((item) => item.memory_id !== memoryId));
+    } catch (cause) {
+      setDeveloperDataError(cause instanceof Error ? cause.message : 'Project memory মুছে ফেলা যায়নি।');
+    } finally {
+      setDeveloperDataBusy(false);
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -127,9 +227,25 @@ export default function SettingsScreen() {
     setProjectBrain(getProjectBrainSummary());
     setQaResult(runAutoQASuite());
     setPlugins(getPluginRegistryStatus());
+    void listDeveloperTasks().then((tasks) => { if (active) setDeveloperTasks(tasks); }).catch(() => {});
+    void listDeveloperProjects().then((projects) => {
+      if (active) {
+        setDeveloperProjects(projects);
+        if (projects[0]) setSelectedDeveloperProjectId((current) => current || projects[0].project_id);
+      }
+    }).catch(() => {});
 
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!selectedDeveloperProjectId) return;
+    let active = true;
+    listDeveloperProjectMemory(selectedDeveloperProjectId)
+      .then((memories) => { if (active) setDeveloperMemories(memories); })
+      .catch((cause) => { if (active) setDeveloperDataError(cause instanceof Error ? cause.message : 'Project memory লোড করা যায়নি।'); });
+    return () => { active = false; };
+  }, [selectedDeveloperProjectId]);
 
   useEffect(() => {
     if (expertReviewDraft.trim()) {
@@ -191,10 +307,18 @@ export default function SettingsScreen() {
     setDeveloperAnalysisBusy(true);
     try {
       const brain = getProjectBrainSummary();
+      const projectMemories = selectedDeveloperProjectId
+        ? await listDeveloperProjectMemory(selectedDeveloperProjectId)
+        : [];
+      const analysisContext = {
+        ...brain,
+        developerAgentProjectId: selectedDeveloperProjectId || null,
+        privateProjectNotes: getAnalysisProjectNotes(projectMemories),
+      };
       let report = '';
       const result = await streamDeveloperAnalysis(
         prompt,
-        JSON.stringify(brain, null, 2),
+        JSON.stringify(analysisContext, null, 2),
         requestedEngine,
         (chunk) => {
           report += chunk;
@@ -209,6 +333,7 @@ export default function SettingsScreen() {
       );
     } finally {
       setDeveloperAnalysisBusy(false);
+      void refreshDeveloperTasks();
     }
   };
 
@@ -701,6 +826,24 @@ export default function SettingsScreen() {
                   </Pressable>
                 </View>
               ) : null}
+              <View style={[styles.infoCard, { borderColor: colors.border, backgroundColor: colors.card, marginTop: 10 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <Text style={[styles.label, { color: colors.foreground }]}>Private D1 Task History</Text>
+                  <Pressable onPress={() => void refreshDeveloperTasks()} style={[styles.secondaryButton, { backgroundColor: colors.secondary, paddingVertical: 7, paddingHorizontal: 10 }]}>
+                    <Feather name="refresh-cw" size={13} color={colors.secondaryForeground} />
+                    <Text style={{ color: colors.secondaryForeground, fontSize: 11, fontWeight: '700' }}>Refresh</Text>
+                  </Pressable>
+                </View>
+                {developerTasks.length === 0 ? (
+                  <Text style={[styles.smallNote, { color: colors.mutedForeground, marginTop: 7 }]}>এখনো কোনো Developer Agent task সংরক্ষিত নেই। Analysis চালালে task স্বয়ংক্রিয়ভাবে এখানে আসবে।</Text>
+                ) : developerTasks.slice(0, 5).map((task) => (
+                  <View key={task.task_id} style={{ borderTopWidth: 1, borderColor: colors.border, paddingTop: 7, marginTop: 7 }}>
+                    <Text style={[styles.body, { color: colors.foreground, fontWeight: '700' }]}>{task.title}</Text>
+                    <Text style={[styles.smallNote, { color: colors.mutedForeground }]}>{task.status.toUpperCase()} · {task.engine} · {new Date(task.updated_at).toLocaleString()}</Text>
+                  </View>
+                ))}
+                {developerDataError ? <Text style={[styles.smallNote, { color: colors.destructive, marginTop: 7 }]}>{developerDataError}</Text> : null}
+              </View>
             </View>
 
             {/* Navigation Modules Tabs */}
@@ -823,6 +966,59 @@ export default function SettingsScreen() {
                 {projectBrain.frameworks.map((fw) => (
                   <Text key={fw} style={[styles.smallNote, { color: colors.mutedForeground }]}>• {fw}</Text>
                 ))}
+                <Pressable
+                  onPress={() => void handleSaveProjectBrain()}
+                  disabled={developerDataBusy}
+                  style={[styles.secondaryButton, { backgroundColor: colors.secondary, marginTop: 12, opacity: developerDataBusy ? 0.5 : 1 }]}
+                >
+                  {developerDataBusy ? <ActivityIndicator size="small" color={colors.secondaryForeground} /> : <Feather name="upload" size={14} color={colors.secondaryForeground} />}
+                  <Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>Private D1-এ Project Brain সংরক্ষণ</Text>
+                </Pressable>
+                {developerProjects.length > 0 ? (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                    {developerProjects.map((project) => (
+                      <Pressable
+                        key={project.project_id}
+                        onPress={() => setSelectedDeveloperProjectId(project.project_id)}
+                        style={{ borderWidth: 1, borderColor: selectedDeveloperProjectId === project.project_id ? colors.primary : colors.border, borderRadius: 10, paddingHorizontal: 9, paddingVertical: 6 }}
+                      >
+                        <Text style={{ color: colors.foreground, fontSize: 11, fontWeight: '600' }}>{project.name}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
+                <Text style={[styles.label, { color: colors.foreground, marginTop: 12 }]}>Private Project Memory</Text>
+                <Text style={[styles.smallNote, { color: colors.mutedForeground, marginTop: 4 }]}>
+                  এই নোটগুলো Developer Agent-এর analysis context-এ ব্যবহার হতে পারে। Sensitive হিসেবে চিহ্নিত নোট AI-তে পাঠানো হয় না।
+                </Text>
+                <TextInput
+                  value={developerMemoryDraft}
+                  onChangeText={setDeveloperMemoryDraft}
+                  placeholder="এই Project সম্পর্কে ব্যক্তিগত নোট লিখুন…"
+                  placeholderTextColor={colors.mutedForeground}
+                  multiline
+                  style={[styles.telegramInput, { color: colors.foreground, borderColor: colors.input, minHeight: 64, textAlignVertical: 'top', marginTop: 7 }]}
+                />
+                <Pressable
+                  onPress={() => void handleAddDeveloperMemory()}
+                  disabled={!selectedDeveloperProjectId || !developerMemoryDraft.trim() || developerDataBusy}
+                  style={[styles.primaryButton, { backgroundColor: colors.primary, marginTop: 8, opacity: !selectedDeveloperProjectId || !developerMemoryDraft.trim() || developerDataBusy ? 0.5 : 1 }]}
+                >
+                  <Feather name="plus" size={14} color={colors.primaryForeground} />
+                  <Text style={{ color: colors.primaryForeground, fontWeight: '700' }}>Private Note সংরক্ষণ</Text>
+                </Pressable>
+                {developerMemories.map((memory) => (
+                  <View key={memory.memory_id} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderTopWidth: 1, borderColor: colors.border, paddingTop: 8, marginTop: 8 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.body, { color: colors.foreground }]}>{memory.content}</Text>
+                      <Text style={[styles.smallNote, { color: colors.mutedForeground }]}>{memory.privacy_level} · {new Date(memory.updated_at).toLocaleString()}</Text>
+                    </View>
+                    <Pressable onPress={() => void handleDeleteDeveloperMemory(memory.memory_id)} disabled={developerDataBusy} accessibilityRole="button" accessibilityLabel="Delete private project note">
+                      <Feather name="trash-2" size={15} color={colors.destructive} />
+                    </Pressable>
+                  </View>
+                ))}
+                {developerDataError ? <Text style={[styles.smallNote, { color: colors.destructive, marginTop: 7 }]}>{developerDataError}</Text> : null}
               </View>
             ) : null}
 
@@ -1154,6 +1350,17 @@ export default function SettingsScreen() {
       >
         <Feather name="trash-2" size={16} color={colors.destructive} />
         <Text style={{ color: colors.destructive, fontWeight: '700' }}>চ্যাট ইতিহাস মুছুন</Text>
+      </Pressable>
+
+      <Pressable
+        onPress={() => Alert.alert('Owner Login থেকে বের হবেন?', 'আবার Badboy ব্যবহার করতে Owner Token দিতে হবে। ফোনের Chat History ও Memory মুছবে না।', [
+          { text: 'বাতিল', style: 'cancel' },
+          { text: 'Sign Out', style: 'destructive', onPress: () => void signOut().catch((cause) => Alert.alert('Sign Out ব্যর্থ', cause instanceof Error ? cause.message : 'SecureStore থেকে Token মুছতে সমস্যা হয়েছে।')) },
+        ])}
+        style={[styles.dangerButton, { borderColor: colors.border }]}
+      >
+        <Feather name="log-out" size={16} color={colors.destructive} />
+        <Text style={{ color: colors.destructive, fontWeight: '700' }}>Owner Sign Out</Text>
       </Pressable>
     </ScrollView>
   );

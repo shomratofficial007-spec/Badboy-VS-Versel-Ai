@@ -43,9 +43,12 @@ jobs:
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run workspace tests and generate LCOV coverage
+      # Keep both test suites inside the same c8 process tree. The previous
+      # workflow ran mobile tests after c8 exited, so mobile source files were
+      # included by --all but received no execution coverage in LCOV.
+      - name: Run Worker and mobile tests with LCOV coverage
         run: >-
-          pnpm dlx c8@10.1.3
+          npx --yes --package=c8@10.1.3 --package=monocart-coverage-reports@2 c8 --experimental-monocart
           --reporter=lcov
           --reporter=text
           --all
@@ -56,14 +59,119 @@ jobs:
           --include='artifacts/mobile/**/*.ts'
           --include='artifacts/mobile/**/*.tsx'
           --exclude='**/*.test.ts'
+          --exclude='**/*.d.ts'
           --exclude='**/*.spec.ts'
-          -- pnpm -r --if-present run test
+          --
+          sh -c '
+          node --experimental-strip-types --experimental-test-isolation=none --test
+          functions/functions.test.ts
+          functions/developerAgent.test.ts
+          functions/agentStorage.test.ts
+          functions/accessAuth.test.ts
+          functions/personalAuth.test.ts
+          functions/developerData.test.ts
+          &&
+          pnpm --filter @workspace/mobile test
+          '
+
+      - name: Verify LCOV contains real execution coverage for protected Worker routes
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const report = fs.readFileSync('coverage/lcov.info', 'utf8');
+          if (!report.trim()) throw new Error('LCOV report is empty.');
+
+          const records = report.split('end_of_record');
+          const required = [
+            'functions/api/[[path]].ts',
+            'functions/api/personalAuth.ts',
+          ];
+
+          for (const expected of required) {
+            const record = records.find((entry) =>
+              entry.split(/\r?\n/).some((line) =>
+                line.startsWith('SF:') && line.slice(3).replaceAll('\\', '/').endsWith(expected)
+              )
+            );
+            if (!record) throw new Error(`LCOV is missing required source: ${expected}`);
+
+            const lines = [...record.matchAll(/^DA:(\d+),(\d+)/gm)];
+            const found = lines.length;
+            const hit = lines.filter((match) => Number(match[2]) > 0).length;
+            if (found === 0 || hit === 0) {
+              throw new Error(`No executed lines recorded for ${expected} (covered ${hit}/${found}).`);
+            }
+            const percent = ((hit / found) * 100).toFixed(2);
+            console.log(`LCOV verified: ${expected} — ${percent}% line coverage (${hit}/${found})`);
+          }
+          NODE
+
+      # Prevent critical mobile UI/voice modules from silently returning to zero coverage.
+      - name: Enforce minimum coverage for critical mobile modules
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const report = fs.readFileSync('coverage/lcov.info', 'utf8');
+          const minimums = new Map([
+            ['artifacts/mobile/app/(tabs)/settings.tsx', 50],
+            ['artifacts/mobile/app/(tabs)/memory.tsx', 70],
+            ['artifacts/mobile/app/owner-login.tsx', 85],
+            ['artifacts/mobile/context/OwnerAuthContext.tsx', 70],
+            ['artifacts/mobile/lib/assistant/wakeWord.ts', 95],
+            ['artifacts/mobile/lib/assistant/voice.ts', 40],
+          ]);
+
+          const records = report.split('end_of_record');
+          for (const [expected, minimum] of minimums) {
+            const record = records.find((entry) =>
+              entry.split(/\r?\n/).some((line) =>
+                line.startsWith('SF:') && line.slice(3).replaceAll('\\\\', '/').endsWith(expected)
+              )
+            );
+            if (!record) throw new Error(`LCOV is missing critical mobile source: ${expected}`);
+
+            const lines = [...record.matchAll(/^DA:(\d+),(\d+)/gm)];
+            const covered = lines.filter((match) => Number(match[2]) > 0).length;
+            const total = lines.length;
+            const percent = total ? (covered / total) * 100 : 0;
+            console.log(`Mobile coverage: ${expected} — ${percent.toFixed(2)}% (${covered}/${total}); minimum ${minimum}%`);
+            if (!total || percent < minimum) {
+              throw new Error(`Coverage regression for ${expected}: ${percent.toFixed(2)}% is below ${minimum}%.`);
+            }
+          }
+          NODE
 
       - name: Verify LCOV report exists
         run: test -s coverage/lcov.info
 
+      # Preserve the exact report as an auditable artifact even if the remote
+      # SonarCloud service rejects analysis (for example, Automatic Analysis on).
+      - name: Upload LCOV coverage report
+        if: ${{ always() && hashFiles('coverage/lcov.info') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-${{ github.event.pull_request.number || 'main' }}-coverage-lcov
+          path: coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Verify SonarCloud analysis credentials
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::error::SONAR_TOKEN is missing. Add it as a repository Actions secret."
+            exit 1
+          fi
+          echo "SONAR_TOKEN is present (value is never printed)."
+
       - name: Analyze with SonarCloud
         uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6
+        # Verbose scanner output proves whether LCOV was discovered/imported.
+        with:
+          args: -X
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io

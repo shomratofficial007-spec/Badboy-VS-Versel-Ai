@@ -32,9 +32,11 @@ jobs:
 
       - name: Download pinned Detekt CLI
         run: |
-          curl --fail --location --proto '=https' --proto-redir '=https' --silent --show-error \
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 5 --retry-max-time 180 \
+            --proto '=https' --proto-redir '=https' --silent --show-error \
             https://github.com/detekt/detekt/releases/download/v1.23.8/detekt-cli-1.23.8-all.jar \
             --output detekt-cli.jar
+          test -s detekt-cli.jar
 
       - name: Analyze Kotlin sources
         run: |

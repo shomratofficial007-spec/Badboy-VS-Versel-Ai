@@ -9,13 +9,14 @@
     "serve": "node server/serve.js",
     "deploy": "wrangler pages deploy ./dist --project-name voice-memory-assistant-net",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test lib/assistant/*.test.ts"
+    "test": "node --experimental-test-module-mocks --import tsx --test lib/assistant/*.test.ts context/*.test.ts __tests__/*.test.ts"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
     "@expo-google-fonts/inter": "^0.4.0",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native/metro-config": "0.86.3",
     "@stardazed/streams-text-encoding": "^1.0.2",
     "@tanstack/react-query": "catalog:",
     "@types/react": "~19.2.2",
@@ -54,8 +55,8 @@
     "react-native-worklets": "0.10.1",
     "tsx": "catalog:",
     "typescript": "~6.0.3",
-    "zod": "catalog:",
-    "zod-validation-error": "^3.4.0"
+    "zod": "^4.6.6",
+    "zod-validation-error": "^4.0.1"
   },
   "dependencies": {
     "expo-audio": "~57.0.5",
