@@ -7,7 +7,6 @@ import android.os.*
 import androidx.core.app.NotificationCompat
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.DataType
-import java.io.FileInputStream
 import java.nio.MappedByteBuffer
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -63,10 +62,15 @@ class BadboyWakeWordService : Service() {
   if(lock?.isHeld==true)lock.release()
   wakeLock=null
  }
- private fun modelBuffer():MappedByteBuffer{val fd=assets.openFd("wake.tflite");return FileInputStream(fd.fileDescriptor).channel.map(FileChannel.MapMode.READ_ONLY,fd.startOffset,fd.length)}
+ private fun modelBuffer():MappedByteBuffer{
+  val descriptor=assets.openFd("wake.tflite")
+  return descriptor.createInputStream().use{input->
+   input.channel.map(FileChannel.MapMode.READ_ONLY,descriptor.startOffset,descriptor.length)
+  }
+ }
  private fun detect(){
-  Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
   try{
+   Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
    if(stopRequested)return
    model=Interpreter(modelBuffer(),Interpreter.Options().setNumThreads(2))
    model!!.allocateTensors()
