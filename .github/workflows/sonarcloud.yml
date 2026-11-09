@@ -63,7 +63,7 @@ jobs:
           --exclude='**/*.spec.ts'
           --
           sh -c '
-          pnpm dlx tsx@4.20.6 --test --experimental-test-isolation=none
+          NODE_OPTIONS=--experimental-test-isolation=none node --experimental-strip-types --test
           functions/functions.test.ts
           functions/developerAgent.test.ts
           functions/agentStorage.test.ts
