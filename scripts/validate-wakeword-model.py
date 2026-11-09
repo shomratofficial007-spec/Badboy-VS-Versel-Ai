@@ -11,7 +11,7 @@ from tflite_runtime.interpreter import Interpreter
 
 
 def main() -> int:
-    model_path = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "models/hey-badboy/wake.tflite")
+    model_path = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "artifacts/mobile/modules/badboy-wakeword/android/src/main/assets/wake.tflite")
     if not model_path.is_file():
         raise SystemExit(f"Wake-word model not found: {model_path}")
 
