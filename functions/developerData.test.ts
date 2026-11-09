@@ -221,3 +221,227 @@ test("returns a safe storage error when D1 operations fail", async () => {
   assert.equal(response?.status, 500);
   assert.equal((await response?.json() as { code: string }).code, "DEVELOPER_STORAGE_FAILED");
 });
+
+
+test("covers task limit fallback and clamping boundaries", async () => {
+  for (const [query, expected] of [
+    ["", 25],
+    ["0", 1],
+    ["101", 100],
+    ["1.5", 25],
+    ["-2", 1],
+    ["9007199254740992", 25],
+  ] as const) {
+    const db = new FakeD1();
+    const response = await handleDeveloperDataRequest(
+      request(`tasks?limit=${query}`),
+      { AGENT_DB: db },
+      OWNER,
+    );
+    assert.equal(response?.status, 200);
+    assert.equal(db.calls[0].values[1], expected);
+  }
+});
+
+test("rejects malformed declared lengths and oversized request bodies", async () => {
+  const db = new FakeD1();
+  for (const contentLength of ["-1", "20x", "20001"]) {
+    const response = await handleDeveloperDataRequest(
+      new Request("https://example.com/api/developer/tasks", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": contentLength,
+        },
+        body: "{}",
+      }),
+      { AGENT_DB: db },
+      OWNER,
+    );
+    assert.equal(response?.status, 400);
+    assert.equal((await response?.json() as { code: string }).code, "INVALID_JSON_BODY");
+  }
+
+  const oversized = await handleDeveloperDataRequest(
+    new Request("https://example.com/api/developer/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "x".repeat(20_001) }),
+    }),
+    { AGENT_DB: db },
+    OWNER,
+  );
+  assert.equal(oversized?.status, 400);
+  assert.equal((await oversized?.json() as { code: string }).code, "INVALID_JSON_BODY");
+});
+
+test("rejects JSON values that are not objects and trims task fields", async () => {
+  const db = new FakeD1();
+  for (const body of ["null", "[]", '"text"', "42"]) {
+    const response = await handleDeveloperDataRequest(
+      new Request("https://example.com/api/developer/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      }),
+      { AGENT_DB: db },
+      OWNER,
+    );
+    assert.equal(response?.status, 400);
+    assert.equal((await response?.json() as { code: string }).code, "INVALID_JSON_BODY");
+  }
+
+  const saved = await handleDeveloperDataRequest(
+    request("tasks", "POST", {
+      title: "  Trim this title  ",
+      summary: "s".repeat(4_100),
+      parentTaskId: "parent-1",
+      status: "running",
+      engine: "auto",
+    }),
+    { AGENT_DB: db },
+    OWNER,
+  );
+  assert.equal(saved?.status, 201);
+  assert.equal(db.calls[0].values[3], "Trim this title");
+  assert.equal((db.calls[0].values[4] as string).length, 4_000);
+  assert.equal(db.calls[0].values[5], "parent-1");
+});
+
+test("rejects invalid task engine and overlong required fields", async () => {
+  const db = new FakeD1();
+  const invalidEngine = await handleDeveloperDataRequest(
+    request("tasks", "POST", { title: "Task", engine: "remote" }),
+    { AGENT_DB: db },
+    OWNER,
+  );
+  assert.equal(invalidEngine?.status, 400);
+  assert.equal((await invalidEngine?.json() as { code: string }).code, "INVALID_TASK");
+
+  const longTitle = await handleDeveloperDataRequest(
+    request("tasks", "POST", { title: "t".repeat(201) }),
+    { AGENT_DB: db },
+    OWNER,
+  );
+  assert.equal(longTitle?.status, 400);
+  assert.equal((await longTitle?.json() as { code: string }).code, "INVALID_DEVELOPER_DATA");
+});
+
+test("validates project fields and trims optional project summaries", async () => {
+  const db = new FakeD1();
+  for (const body of [
+    { projectKey: " ", name: "Valid name" },
+    { projectKey: "valid", name: "n".repeat(201) },
+    { projectKey: "k".repeat(161), name: "Valid name" },
+  ]) {
+    const response = await handleDeveloperDataRequest(
+      request("projects", "POST", body),
+      { AGENT_DB: db },
+      OWNER,
+    );
+    assert.equal(response?.status, 400);
+    assert.equal((await response?.json() as { code: string }).code, "INVALID_DEVELOPER_DATA");
+  }
+
+  const saved = await handleDeveloperDataRequest(
+    request("projects", "POST", {
+      projectKey: "  badboy  ",
+      name: "  Badboy AI  ",
+      summary: "s".repeat(4_100),
+    }),
+    { AGENT_DB: db },
+    OWNER,
+  );
+  assert.equal(saved?.status, 200);
+  assert.deepEqual((await saved?.json()), {
+    projectId: "canonical-project-id",
+    projectKey: "badboy",
+    name: "Badboy AI",
+  });
+  assert.equal((db.calls[0].values[4] as string).length, 4_000);
+});
+
+test("covers project-memory validation and missing identifiers", async () => {
+  const db = new FakeD1();
+  const missingProject = await handleDeveloperDataRequest(
+    request("project-memory"),
+    { AGENT_DB: db },
+    OWNER,
+  );
+  assert.equal(missingProject?.status, 400);
+  assert.equal((await missingProject?.json() as { code: string }).code, "PROJECT_ID_REQUIRED");
+
+  const missingMemory = await handleDeveloperDataRequest(
+    new Request("https://example.com/api/developer/project-memory", { method: "DELETE" }),
+    { AGENT_DB: db },
+    OWNER,
+  );
+  assert.equal(missingMemory?.status, 400);
+  assert.equal((await missingMemory?.json() as { code: string }).code, "MEMORY_ID_REQUIRED");
+
+  const invalidPrivacy = await handleDeveloperDataRequest(
+    request("project-memory", "POST", {
+      projectId: "project-1",
+      category: "note",
+      content: "Content",
+      privacyLevel: "public",
+    }),
+    { AGENT_DB: db },
+    OWNER,
+  );
+  assert.equal(invalidPrivacy?.status, 400);
+  assert.equal((await invalidPrivacy?.json() as { code: string }).code, "INVALID_PRIVACY_LEVEL");
+
+  const invalidContent = await handleDeveloperDataRequest(
+    request("project-memory", "POST", {
+      projectId: "project-1",
+      category: "note",
+      content: " ",
+    }),
+    { AGENT_DB: db },
+    OWNER,
+  );
+  assert.equal(invalidContent?.status, 400);
+  assert.equal((await invalidContent?.json() as { code: string }).code, "INVALID_DEVELOPER_DATA");
+});
+
+test("accepts supported project-memory privacy levels and default source", async () => {
+  for (const privacyLevel of ["private", "sensitive", "general"]) {
+    const db = new FakeD1();
+    const response = await handleDeveloperDataRequest(
+      request("project-memory", "POST", {
+        projectId: "project-1",
+        category: "  architecture  ",
+        content: "  Keep existing features  ",
+        privacyLevel,
+      }),
+      { AGENT_DB: db },
+      OWNER,
+    );
+    assert.equal(response?.status, 201);
+    assert.equal(db.calls[0].values[3], "architecture");
+    assert.equal(db.calls[0].values[4], "Keep existing features");
+    assert.equal(db.calls[0].values[5], "user");
+    assert.equal(db.calls[0].values[6], privacyLevel);
+  }
+});
+
+test("returns a safe storage error when project and memory queries fail", async () => {
+  for (const [path, method, body] of [
+    ["projects", "GET", undefined],
+    ["projects", "POST", { projectKey: "badboy", name: "Badboy" }],
+    ["project-memory?projectId=p1", "GET", undefined],
+    ["project-memory", "POST", { projectId: "p1", category: "note", content: "value" }],
+    ["project-memory?memoryId=m1", "DELETE", undefined],
+  ] as const) {
+    const db = new FakeD1();
+    db.throwOnPrepare = true;
+    const response = await handleDeveloperDataRequest(
+      request(path, method, body),
+      { AGENT_DB: db },
+      OWNER,
+    );
+    assert.equal(response?.status, 500, `${method} ${path}`);
+    assert.equal((await response?.json() as { code: string }).code, "DEVELOPER_STORAGE_FAILED");
+  }
+});
