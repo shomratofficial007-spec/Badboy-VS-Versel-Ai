@@ -40,6 +40,7 @@ import {
   speak,
   stopSpeaking,
   shouldStopVoiceRecordingForSilence,
+  shouldFinalizeStoppedVoiceRecording,
   VOICE_SILENCE_THRESHOLD_DBFS,
 } from '@/lib/assistant/voice';
 import type { ChatMessage } from '@/lib/assistant/types';
@@ -102,6 +103,7 @@ export default function ChatScreen() {
   const audioRecorder = useAudioRecorder(VOICE_RECORDING_OPTIONS);
   const audioRecorderState = useAudioRecorderState(audioRecorder, 250);
   const audioRecordingStartedRef = useRef(false);
+  const audioRecordingObservedRef = useRef(false);
   const transcriptionInFlightRef = useRef(false);
   const speechDetectedRef = useRef(false);
   const lastVoiceActivityAtRef = useRef(0);
@@ -389,6 +391,7 @@ export default function ChatScreen() {
     if (!audioRecordingStartedRef.current || transcriptionInFlightRef.current) return;
     transcriptionInFlightRef.current = true;
     audioRecordingStartedRef.current = false;
+    audioRecordingObservedRef.current = false;
     let recordingUri: string | null = null;
 
     try {
@@ -422,7 +425,17 @@ export default function ChatScreen() {
   }, [audioRecorder, resumeWakeWord, selectedLang, sendMessage, settings.autoSubmitVoice]);
 
   useEffect(() => {
-    if (Platform.OS === 'web' || !audioRecordingStartedRef.current || !audioRecorderState.isRecording) return;
+    if (Platform.OS === 'web' || !audioRecordingStartedRef.current || transcriptionInFlightRef.current) return;
+    if (shouldFinalizeStoppedVoiceRecording(
+      audioRecordingStartedRef.current,
+      audioRecordingObservedRef.current,
+      audioRecorderState.isRecording,
+    )) {
+      void finishRecordedVoice();
+      return;
+    }
+    if (!audioRecorderState.isRecording) return;
+    audioRecordingObservedRef.current = true;
     const meter = audioRecorderState.metering;
     if (typeof meter !== 'number' || !Number.isFinite(meter)) return;
 
@@ -446,6 +459,7 @@ export default function ChatScreen() {
     return () => {
       if (!audioRecordingStartedRef.current) return;
       audioRecordingStartedRef.current = false;
+      audioRecordingObservedRef.current = false;
       void audioRecorder
         .stop()
         .then(() => {
@@ -498,6 +512,7 @@ export default function ChatScreen() {
         await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
         await audioRecorder.prepareToRecordAsync();
         transcriptionInFlightRef.current = false;
+        audioRecordingObservedRef.current = false;
         speechDetectedRef.current = false;
         lastVoiceActivityAtRef.current = Date.now();
         audioRecordingStartedRef.current = true;
@@ -507,6 +522,7 @@ export default function ChatScreen() {
         setListening(true);
       } catch (cause) {
         audioRecordingStartedRef.current = false;
+        audioRecordingObservedRef.current = false;
         setListening(false);
         await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
         setError(
