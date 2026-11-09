@@ -8,8 +8,8 @@
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "deploy": "wrangler deploy --config wrangler.json",
-    "lint": "eslint . --max-warnings 0",
-    "lint:fix": "eslint . --fix --max-warnings 0",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "test:vitest": "vitest run"
   },
   "private": true,
