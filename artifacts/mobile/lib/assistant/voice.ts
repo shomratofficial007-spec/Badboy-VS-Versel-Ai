@@ -623,6 +623,15 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
 export const VOICE_SILENCE_THRESHOLD_DBFS = -45;
 export const VOICE_SILENCE_DURATION_MS = 1400;
 
+/** Finalize a recording only after it was observed running and then stopped. */
+export function shouldFinalizeStoppedVoiceRecording(
+  recordingStarted: boolean,
+  recordingObservedActive: boolean,
+  isRecording: boolean,
+): boolean {
+  return recordingStarted && recordingObservedActive && !isRecording;
+}
+
 /** True only after speech was detected and the microphone stayed below the
  * configured dBFS threshold for the complete silence window. */
 export function shouldStopVoiceRecordingForSilence(
