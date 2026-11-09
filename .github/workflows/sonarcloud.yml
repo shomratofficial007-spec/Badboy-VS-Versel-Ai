@@ -168,7 +168,7 @@ jobs:
           echo "SONAR_TOKEN is present (value is never printed)."
 
       - name: Analyze with SonarCloud
-        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6
+        uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65 # v8.4.1
         # Verbose scanner output proves whether LCOV was discovered/imported.
         with:
           args: -X
