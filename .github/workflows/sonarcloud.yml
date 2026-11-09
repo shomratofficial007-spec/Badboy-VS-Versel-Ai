@@ -48,7 +48,7 @@ jobs:
       # included by --all but received no execution coverage in LCOV.
       - name: Run Worker and mobile tests with LCOV coverage
         run: >-
-          pnpm dlx --package=c8@10.1.3 --package=monocart-coverage-reports@2 c8 --experimental-monocart
+          npx --yes --package=c8@10.1.3 --package=monocart-coverage-reports@2 c8 --experimental-monocart
           --reporter=lcov
           --reporter=text
           --all
