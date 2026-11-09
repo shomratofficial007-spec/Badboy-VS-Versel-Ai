@@ -96,7 +96,9 @@ test('Owner Login submit handler completes after successful owner authentication
   pressHandlers.length = 0;
   signInCalls.length = 0;
   rejectSignIn = false;
-  renderToStaticMarkup(React.createElement(OwnerLoginScreen));
+  hookState.length = 0;
+  pressHandlers.length = 0;
+  renderOwnerLogin(OwnerLoginScreen);
   await pressHandlers[0]();
   assert.deepEqual(signInCalls, ['']);
 });
@@ -107,6 +109,7 @@ test('Owner Login ignores a second submit while an authentication request is pen
   signInCalls.length = 0;
   rejectSignIn = false;
   holdSignIn = true;
+  pressHandlers.length = 0;
 
   renderOwnerLogin(OwnerLoginScreen);
   const firstSubmit = pressHandlers[0]();
