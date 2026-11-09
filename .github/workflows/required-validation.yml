@@ -167,11 +167,11 @@ jobs:
             });
           }
 
-          for (const [id, advisory] of Object.entries(report.advisories ?? {})) {
+          for (const advisory of Object.values(report.advisories ?? {})) {
             findings.push({
               name: advisory.module_name ?? advisory.name ?? 'unknown',
               severity: advisory.severity ?? 'unknown',
-              ids: [id, ...(advisory.url?.match(/GHSA-[A-Za-z0-9-]+/g) ?? [])],
+              ids: advisory.url?.match(/GHSA-[A-Za-z0-9-]+/g) ?? [],
               range: advisory.vulnerable_versions ?? '',
             });
           }
