@@ -1,19 +1,60 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
-import {
+import { after, test } from 'node:test';
+import type { WakeWordEvent, WakeWordStatus } from './wakeWord';
+
+const stopped: WakeWordStatus = { state: 'stopped', enabled: false, modelLoaded: false };
+const listening: WakeWordStatus = { state: 'listening', enabled: true, modelLoaded: true };
+const detected: WakeWordEvent = { phrase: 'hey-badboy', confidence: 0.94, timestamp: 1234 };
+
+let nativeAvailable = false;
+const globalWithRequire = globalThis as typeof globalThis & {
+  require?: (id: string) => unknown;
+};
+const originalRequire = globalWithRequire.require;
+const productionNative = {
+  isSupported: () => true,
+  getStatus: async () => listening,
+  start: async () => listening,
+  stop: async () => stopped,
+};
+const emitterCalls: Array<{ event: string; listener: (value: never) => void; removed: boolean }> = [];
+class FakeEventEmitter {
+  addListener(event: string, listener: (value: never) => void) {
+    const entry = { event, listener, removed: false };
+    emitterCalls.push(entry);
+    return { remove: () => { entry.removed = true; } };
+  }
+}
+globalWithRequire.require = (id: string) => {
+  if (id === 'react-native') return { Platform: { OS: nativeAvailable ? 'android' : 'node' } };
+  if (id === 'expo-modules-core') {
+    if (!nativeAvailable) throw new Error('Native module unavailable in this test.');
+    return {
+      requireNativeModule: (name: string) => {
+        assert.equal(name, 'BadboyWakeWord');
+        return productionNative;
+      },
+      EventEmitter: FakeEventEmitter,
+    };
+  }
+  if (originalRequire) return originalRequire(id);
+  throw new Error(`Unexpected module request: ${id}`);
+};
+
+const wakeWord = await import('./wakeWord');
+const {
   createWakeWordBridge,
   getOfflineWakeWordStatus,
   isOfflineWakeWordSupported,
   startOfflineWakeWord,
   stopOfflineWakeWord,
   subscribeToWakeWord,
-  type WakeWordEvent,
-  type WakeWordStatus,
-} from './wakeWord';
+} = wakeWord;
 
-const stopped: WakeWordStatus = { state: 'stopped', enabled: false, modelLoaded: false };
-const listening: WakeWordStatus = { state: 'listening', enabled: true, modelLoaded: true };
-const detected: WakeWordEvent = { phrase: 'hey-badboy', confidence: 0.94, timestamp: 1234 };
+after(() => {
+  if (originalRequire) globalWithRequire.require = originalRequire;
+  else delete globalWithRequire.require;
+});
 
 function harness(platformOS = 'android', available = true) {
   const calls: Array<{ method: string; value?: unknown }> = [];
@@ -119,65 +160,27 @@ test('production exports remain safe when the native module is absent in a headl
 });
 
 test('production wake-word exports exercise the native module bridge when Expo is available', async () => {
-  const globalWithRequire = globalThis as typeof globalThis & {
-    require?: (id: string) => unknown;
-  };
-  const originalRequire = globalWithRequire.require;
-  const emitterCalls: Array<{ event: string; listener: (value: never) => void; removed: boolean }> = [];
-  const native = {
-    isSupported: () => true,
-    getStatus: async () => listening,
-    start: async () => listening,
-    stop: async () => stopped,
-  };
-  class FakeEventEmitter {
-    addListener(event: string, listener: (value: never) => void) {
-      const entry = { event, listener, removed: false };
-      emitterCalls.push(entry);
-      return { remove: () => { entry.removed = true; } };
-    }
-  }
+  nativeAvailable = true;
+  emitterCalls.length = 0;
+  assert.equal(isOfflineWakeWordSupported(), true);
+  assert.deepEqual(await getOfflineWakeWordStatus(), listening);
+  assert.deepEqual(await startOfflineWakeWord(), listening);
+  assert.deepEqual(await stopOfflineWakeWord(), stopped);
 
-  globalWithRequire.require = (id: string) => {
-    if (id === 'react-native') return { Platform: { OS: 'android' } };
-    if (id === 'expo-modules-core') {
-      return {
-        requireNativeModule: (name: string) => {
-          assert.equal(name, 'BadboyWakeWord');
-          return native;
-        },
-        EventEmitter: FakeEventEmitter,
-      };
-    }
-    if (originalRequire) return originalRequire(id);
-    throw new Error(`Unexpected module request: ${id}`);
-  };
+  let statusReceived: WakeWordStatus | undefined;
+  const statusSubscription = wakeWord.subscribeToWakeWordStatus((status) => {
+    statusReceived = status;
+  });
+  emitterCalls[0]?.listener(listening as never);
+  assert.deepEqual(statusReceived, listening);
+  statusSubscription.remove();
 
-  try {
-    const imported = await import('./wakeWord.ts?native-bridge-test');
-    const production = (imported.default ?? imported) as typeof import('./wakeWord');
-    assert.equal(production.isOfflineWakeWordSupported(), true);
-    assert.deepEqual(await production.getOfflineWakeWordStatus(), listening);
-    assert.deepEqual(await production.startOfflineWakeWord(), listening);
-    assert.deepEqual(await production.stopOfflineWakeWord(), stopped);
-
-    let statusReceived: WakeWordStatus | undefined;
-    const statusSubscription = production.subscribeToWakeWordStatus((status) => {
-      statusReceived = status;
-    });
-    emitterCalls[0]?.listener(listening as never);
-    assert.deepEqual(statusReceived, listening);
-    statusSubscription.remove();
-
-    const events: WakeWordEvent[] = [];
-    const eventSubscription = production.subscribeToWakeWord((event) => events.push(event));
-    emitterCalls[1]?.listener({ ...detected, phrase: 'not-hey-badboy' } as never);
-    emitterCalls[1]?.listener(detected as never);
-    assert.deepEqual(events, [detected]);
-    eventSubscription.remove();
-    assert.deepEqual(emitterCalls.map((entry) => entry.removed), [true, true]);
-  } finally {
-    if (originalRequire) globalWithRequire.require = originalRequire;
-    else delete globalWithRequire.require;
-  }
+  const events: WakeWordEvent[] = [];
+  const eventSubscription = subscribeToWakeWord((event) => events.push(event));
+  emitterCalls[1]?.listener({ ...detected, phrase: 'not-hey-badboy' } as never);
+  emitterCalls[1]?.listener(detected as never);
+  assert.deepEqual(events, [detected]);
+  eventSubscription.remove();
+  assert.deepEqual(emitterCalls.map((entry) => entry.removed), [true, true]);
+  nativeAvailable = false;
 });
