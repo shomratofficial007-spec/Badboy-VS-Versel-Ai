@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { after, test } from 'node:test';
+import { after, before, test } from 'node:test';
 import type { WakeWordEvent, WakeWordStatus } from './wakeWord';
 
 const stopped: WakeWordStatus = { state: 'stopped', enabled: false, modelLoaded: false };
@@ -41,15 +41,23 @@ globalWithRequire.require = (id: string) => {
   throw new Error(`Unexpected module request: ${id}`);
 };
 
-const wakeWord = await import('./wakeWord');
-const {
-  createWakeWordBridge,
-  getOfflineWakeWordStatus,
-  isOfflineWakeWordSupported,
-  startOfflineWakeWord,
-  stopOfflineWakeWord,
-  subscribeToWakeWord,
-} = wakeWord;
+let wakeWord: typeof import('./wakeWord');
+let createWakeWordBridge: typeof import('./wakeWord').createWakeWordBridge;
+let getOfflineWakeWordStatus: typeof import('./wakeWord').getOfflineWakeWordStatus;
+let isOfflineWakeWordSupported: typeof import('./wakeWord').isOfflineWakeWordSupported;
+let startOfflineWakeWord: typeof import('./wakeWord').startOfflineWakeWord;
+let stopOfflineWakeWord: typeof import('./wakeWord').stopOfflineWakeWord;
+let subscribeToWakeWord: typeof import('./wakeWord').subscribeToWakeWord;
+
+before(async () => {
+  wakeWord = await import('./wakeWord');
+  createWakeWordBridge = wakeWord.createWakeWordBridge;
+  getOfflineWakeWordStatus = wakeWord.getOfflineWakeWordStatus;
+  isOfflineWakeWordSupported = wakeWord.isOfflineWakeWordSupported;
+  startOfflineWakeWord = wakeWord.startOfflineWakeWord;
+  stopOfflineWakeWord = wakeWord.stopOfflineWakeWord;
+  subscribeToWakeWord = wakeWord.subscribeToWakeWord;
+});
 
 after(() => {
   if (originalRequire) globalWithRequire.require = originalRequire;
