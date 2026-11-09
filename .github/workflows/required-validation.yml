@@ -18,7 +18,7 @@ jobs:
     name: Refresh security-patched dependency lockfile
     if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
       contents: write
     steps:
