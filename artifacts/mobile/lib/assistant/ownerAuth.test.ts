@@ -66,6 +66,32 @@ test('uses SecureStore on native when EXPO_OS is omitted by a custom build', asy
   }
 });
 
+test('uses SecureStore when Expo explicitly identifies Android', async () => {
+  const originalExpoOs = process.env.EXPO_OS;
+  try {
+    process.env.EXPO_OS = 'android';
+    await saveOwnerToken(OWNER_TOKEN);
+    assert.equal(secureStoreToken, OWNER_TOKEN);
+    assert.equal(await restoreOwnerSession(), true);
+  } finally {
+    if (originalExpoOs === undefined) delete process.env.EXPO_OS;
+    else process.env.EXPO_OS = originalExpoOs;
+  }
+});
+
+test('keeps web sessions in memory without writing the native SecureStore', async () => {
+  const originalExpoOs = process.env.EXPO_OS;
+  try {
+    process.env.EXPO_OS = 'web';
+    await saveOwnerToken(OWNER_TOKEN);
+    assert.equal(secureStoreToken, null);
+    assert.equal(await getOwnerToken(), OWNER_TOKEN);
+  } finally {
+    if (originalExpoOs === undefined) delete process.env.EXPO_OS;
+    else process.env.EXPO_OS = originalExpoOs;
+  }
+});
+
 test('verifies a valid owner token through the Worker endpoint', async () => {
   let requestedUrl = '';
   let authorization = '';
