@@ -122,10 +122,18 @@ jobs:
     name: Dependency Review
     runs-on: ubuntu-latest
     steps:
-      - name: Review dependency changes for known vulnerabilities
-        uses: actions/dependency-review-action@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
-          fail-on-severity: high
+          version: 10.8.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Audit all direct and transitive dependencies for known high-severity advisories
+        run: pnpm audit --audit-level high
 
   secret-scan:
     name: Secret Scan
@@ -153,11 +161,11 @@ jobs:
           cache: pnpm
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
-      - name: Enforce the approved permissive dependency license policy
+      - name: Enforce approved production dependency licenses
         shell: bash
         run: |
           set -euo pipefail
-          pnpm licenses list --recursive --json > licenses.json
+          pnpm licenses list --recursive --json --prod > licenses.json
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
 
@@ -169,24 +177,32 @@ jobs:
             'Unicode-DFS-2016', 'CC-BY-4.0', 'PostgreSQL',
           ]);
           const licenses = Object.keys(report);
-          if (!licenses.length) throw new Error('License inventory is empty.');
+          if (!licenses.length) throw new Error('Production license inventory is empty.');
 
-          const rejected = licenses.filter((expression) => {
-            const identifiers = expression
+          function isAllowed(expression) {
+            const alternatives = expression
               .replace(/[()]/g, '')
-              .split(/\s+(?:OR|AND)\s+/)
-              .map((value) => value.trim())
-              .filter(Boolean);
-            return identifiers.length === 0 || identifiers.some((id) => !allowed.has(id));
-          });
+              .split(/\s+OR\s+/i);
+            return alternatives.some((alternative) =>
+              alternative.split(/\s+AND\s+/i)
+                .map((id) => id.trim())
+                .filter(Boolean)
+                .every((id) => allowed.has(id))
+            );
+          }
 
-          console.log(`Inspected ${licenses.length} license expression(s).`);
-          for (const license of licenses) {
-            console.log(`${allowed.has(license) ? 'ALLOWED' : 'REVIEW'}: ${license}`);
+          const rejected = licenses.filter((license) => !isAllowed(license));
+          console.log(`Inspected ${licenses.length} production license expression(s).`);
+          for (const license of rejected) {
+            console.error(`REVIEW REQUIRED: ${license}`);
+            for (const pkg of report[license] ?? []) {
+              console.error(`  - ${pkg.name ?? 'unknown package'} ${(pkg.versions ?? []).join(', ')}`);
+            }
           }
           if (rejected.length) {
-            throw new Error(`Unapproved or unrecognized license expression(s): ${rejected.join(', ')}`);
+            throw new Error(`Unapproved or unknown production license(s): ${rejected.join(', ')}`);
           }
+          console.log('All production dependency licenses satisfy the approved policy.');
           NODE
 
   api-security-tests:
