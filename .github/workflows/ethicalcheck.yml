@@ -44,7 +44,7 @@ jobs:
               -H "Accept: application/vnd.github+json" \
               "$comments_url" -o "$RUNNER_TEMP/pr-comments.json"
 
-            target_url="$(PR_HEAD_SHA="$PR_HEAD_SHA" COMMENTS_FILE="$RUNNER_TEMP/pr-comments.json" GH_TOKEN="$GH_TOKEN" REPOSITORY="$REPOSITORY" node --input-type=module <<'NODE'
+            target_url="$(PR_HEAD_SHA="$PR_HEAD_SHA" PR_BASE_SHA="$PR_BASE_SHA" COMMENTS_FILE="$RUNNER_TEMP/pr-comments.json" GH_TOKEN="$GH_TOKEN" REPOSITORY="$REPOSITORY" node --input-type=module <<'NODE'
           import fs from 'node:fs';
 
           const sha = process.env.PR_HEAD_SHA ?? '';
