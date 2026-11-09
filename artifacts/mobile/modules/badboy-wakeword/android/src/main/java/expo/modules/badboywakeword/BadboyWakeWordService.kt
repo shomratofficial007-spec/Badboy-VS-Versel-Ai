@@ -28,19 +28,26 @@ class BadboyWakeWordService : Service() {
  private val filters=mutableListOf<Biquad>()
  override fun onCreate(){super.onCreate();getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("badboy_wake","Hey Badboy",NotificationManager.IMPORTANCE_LOW))}
  override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int{
-  threshold=(intent?.getDoubleExtra("threshold",0.696)?:0.696).toFloat()
-  val n=NotificationCompat.Builder(this,"badboy_wake").setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Hey Badboy সক্রিয়").setContentText("বলুন: Hey Badboy").setOngoing(true).build()
-  if(Build.VERSION.SDK_INT>=29)startForeground(7401,n,ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE) else startForeground(7401,n)
-  synchronized(this){
-   if(workerThread?.isAlive==true){
-    BadboyWakeWordBridge.update(if(running) "listening" else "starting",running)
-    return START_STICKY
+  try{
+   threshold=(intent?.getDoubleExtra("threshold",0.696)?:0.696).toFloat()
+   val n=NotificationCompat.Builder(this,"badboy_wake").setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Hey Badboy সক্রিয়").setContentText("বলুন: Hey Badboy").setOngoing(true).build()
+   if(Build.VERSION.SDK_INT>=29)startForeground(7401,n,ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE) else startForeground(7401,n)
+   synchronized(this){
+    if(workerThread?.isAlive==true){
+     BadboyWakeWordBridge.update(if(running) "listening" else "starting",running)
+     return START_STICKY
+    }
+    stopRequested=false
+    acquireWakeLock()
+    workerThread=Thread({detect()},"BadboyWakeWord").also{it.start()}
    }
-   stopRequested=false
-   acquireWakeLock()
-   workerThread=Thread({detect()},"BadboyWakeWord").also{it.start()}
+   return START_STICKY
+  }catch(cause:Exception){
+   running=false
+   BadboyWakeWordBridge.update("error",false,cause.message?: "Wake word service could not start.")
+   stopSelf()
+   return START_NOT_STICKY
   }
-  return START_STICKY
  }
  @Synchronized private fun acquireWakeLock(){
   val pm=getSystemService(POWER_SERVICE) as PowerManager
