@@ -9,7 +9,7 @@ export interface YouTubeIntent {
 }
 
 const GENERAL_MUSIC_PATTERNS = [
-  /^\s*(?:গান\s*শোনাও|গান\s*প্লে\s*করুন|গান\_বাজাও|প্লে\s*আ\s*সং|play\s+a\s+song|play\s+music|music\s+please|গান\s*প্লে|gan\s*shunao|gan\s*shunaw|play\s*song|gan\s*play\s*koro)\s*$/i,
+  /^\s*(?:গান\s*শোনাও|গান\s*প্লে\s*করুন|গান_বাজাও|প্লে\s*আ\s*সং|play\s+a\s+song|play\s+music|music\s+please|গান\s*প্লে|gan\s*shunao|gan\s*shunaw|play\s*song|gan\s*play\s*koro)\s*$/i,
   /^\s*(?:আমাকে\s*)?(?:একটি|একটা)?\s*(?:গান|মিউজিক|gan|music)\s*(?:শোনাও|চালান|প্লে\s*করুন|বাজাও|shunao|play|play\s*koro)\s*$/i,
 ];
 

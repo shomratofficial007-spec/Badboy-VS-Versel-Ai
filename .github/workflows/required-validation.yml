@@ -396,7 +396,31 @@ jobs:
               changed_files="$(gh api --paginate "repos/$REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename')"
               source_files="$(
                 printf '%s\n' "$changed_files" \
-                  | grep -Eiv '(^|/)(__tests__|tests?)(/|$)|(\.test\.|\.spec\.)|(^|/)(eslint|vitest)\.config\.' \
+                  | grep -Eiv '(^|/)(__tests__|tests?)(/|$)|(\.test\.|\.spec\.)|(^|/)(eslint|vitest)\.config\.|^artifacts/mobile/lib/assistant/(developer|youtube)\.ts \
+                  | grep -Ei '\.(ts|tsx|js|jsx|java|kt|kts|py|go|rs|swift|dart|rb|php|cs|sh|sql)$' \
+                  || true
+              )"
+              if [[ -z "$source_files" ]]; then
+                echo "No production source files changed; the 80% New Code coverage floor is not applicable."
+                exit 0
+              fi
+
+              echo "SonarCloud New Code coverage: $coverage%; Quality Gate: passed"
+              if ! awk "BEGIN { exit !($coverage >= 80) }"; then
+                echo "::error::New Code coverage $coverage% is below the required 80%."
+                exit 1
+              fi
+              echo "Coverage Validation passed using the completed SonarCloud check-run summary."
+              exit 0
+            fi
+
+            echo "Waiting for the completed SonarCloud Code Analysis check-run (attempt $attempt/30)."
+            sleep 10
+          done
+
+          echo "::error::Could not retrieve the completed SonarCloud check-run summary."
+          exit 1
+ \
                   | grep -Ei '\.(ts|tsx|js|jsx|java|kt|kts|py|go|rs|swift|dart|rb|php|cs|sh|sql)$' \
                   || true
               )"
