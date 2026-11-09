@@ -4,12 +4,14 @@ import tseslint from "typescript-eslint";
 const readonly = "readonly";
 const runtimeGlobals = Object.fromEntries(
   [
-    "__dirname", "__filename", "Buffer", "clearImmediate", "clearInterval",
-    "clearTimeout", "console", "exports", "global", "module", "process",
-    "require", "setImmediate", "setInterval", "setTimeout", "window",
-    "document", "navigator", "location", "localStorage", "sessionStorage",
-    "alert", "confirm", "requestAnimationFrame", "cancelAnimationFrame",
-    "HTMLElement", "Element", "MutationObserver", "IntersectionObserver",
+    "__dirname", "__filename", "AbortController", "AbortSignal", "Buffer",
+    "clearImmediate", "clearInterval", "clearTimeout", "console", "exports",
+    "fetch", "global", "module", "process", "require", "setImmediate",
+    "setInterval", "setTimeout", "URL", "URLSearchParams", "Request",
+    "Response", "Headers", "crypto", "window", "document", "navigator",
+    "location", "localStorage", "sessionStorage", "alert", "confirm",
+    "requestAnimationFrame", "cancelAnimationFrame", "HTMLElement", "Element",
+    "MutationObserver", "IntersectionObserver",
   ].map((name) => [name, readonly]),
 );
 
@@ -29,18 +31,14 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ["**/*.{js,mjs,cjs,ts,tsx,mts,cts}"],
+    files: ["**/*.js", "**/*.mjs", "**/*.cjs", "**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts"],
     languageOptions: { globals: runtimeGlobals },
-    rules: {
-      "no-console": "off",
-    },
+    rules: { "no-console": "off" },
   },
   {
-    files: ["**/*.{ts,tsx,mts,cts}"],
+    files: ["**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts"],
     rules: {
-      // TypeScript's compiler owns identifier/type resolution for TS files.
       "no-undef": "off",
-      // Report pre-existing explicit-any debt while keeping new lint errors actionable.
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-unused-vars": [
         "warn",
@@ -50,10 +48,16 @@ export default tseslint.config(
     },
   },
   {
-    files: ["**/*.{js,mjs,cjs}"],
-    rules: {
-      // Existing Expo/Metro tooling intentionally uses CommonJS.
-      "@typescript-eslint/no-require-imports": "off",
-    },
+    files: [
+      "**/*.test.ts", "**/*.test.tsx", "**/*.test.js", "**/*.test.jsx",
+      "**/*.spec.ts", "**/*.spec.tsx", "**/*.spec.js", "**/*.spec.jsx",
+      "**/__tests__/**/*.ts", "**/__tests__/**/*.tsx",
+      "**/__tests__/**/*.js", "**/__tests__/**/*.jsx",
+    ],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
+  {
+    files: ["**/*.js", "**/*.mjs", "**/*.cjs"],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
   },
 );
