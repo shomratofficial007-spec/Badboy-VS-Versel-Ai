@@ -396,7 +396,7 @@ jobs:
               changed_files="$(gh api --paginate "repos/$REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename')"
               source_files="$(
                 printf '%s\n' "$changed_files" \
-                  | grep -Eiv '(^|/)(__tests__|tests?)(/|$)|(\.test\.|\.spec\.)|(^|/)(eslint|vitest)\.config\.|^artifacts/mobile/lib/assistant/(developer|youtube)\.ts \
+                  | grep -Eiv '(^|/)(__tests__|tests?)(/|$)|(\.test\.|\.spec\.)|(^|/)(eslint|vitest)\.config\.|^artifacts/mobile/lib/assistant/(developer|youtube)\.ts$' \
                   | grep -Ei '\.(ts|tsx|js|jsx|java|kt|kts|py|go|rs|swift|dart|rb|php|cs|sh|sql)$' \
                   || true
               )"
