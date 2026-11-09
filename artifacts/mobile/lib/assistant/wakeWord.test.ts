@@ -1,16 +1,12 @@
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
+import { after, before, mock, test } from 'node:test';
 import type { WakeWordEvent, WakeWordStatus } from './wakeWord';
 
 const stopped: WakeWordStatus = { state: 'stopped', enabled: false, modelLoaded: false };
 const listening: WakeWordStatus = { state: 'listening', enabled: true, modelLoaded: true };
 const detected: WakeWordEvent = { phrase: 'hey-badboy', confidence: 0.94, timestamp: 1234 };
 
-let nativeAvailable = false;
-const globalWithRequire = globalThis as typeof globalThis & {
-  require?: (id: string) => unknown;
-};
-const originalRequire = globalWithRequire.require;
+const mockPlatform = { OS: 'node' };
 const productionNative = {
   isSupported: () => true,
   getStatus: async () => listening,
@@ -25,21 +21,6 @@ class FakeEventEmitter {
     return { remove: () => { entry.removed = true; } };
   }
 }
-globalWithRequire.require = (id: string) => {
-  if (id === 'react-native') return { Platform: { OS: nativeAvailable ? 'android' : 'node' } };
-  if (id === 'expo-modules-core') {
-    if (!nativeAvailable) throw new Error('Native module unavailable in this test.');
-    return {
-      requireNativeModule: (name: string) => {
-        assert.equal(name, 'BadboyWakeWord');
-        return productionNative;
-      },
-      EventEmitter: FakeEventEmitter,
-    };
-  }
-  if (originalRequire) return originalRequire(id);
-  throw new Error(`Unexpected module request: ${id}`);
-};
 
 let wakeWord: typeof import('./wakeWord');
 let createWakeWordBridge: typeof import('./wakeWord').createWakeWordBridge;
@@ -50,6 +31,16 @@ let stopOfflineWakeWord: typeof import('./wakeWord').stopOfflineWakeWord;
 let subscribeToWakeWord: typeof import('./wakeWord').subscribeToWakeWord;
 
 before(async () => {
+  mock.module('react-native', { namedExports: { Platform: mockPlatform } });
+  mock.module('expo-modules-core', {
+    namedExports: {
+      requireNativeModule: (name: string) => {
+        assert.equal(name, 'BadboyWakeWord');
+        return productionNative;
+      },
+      EventEmitter: FakeEventEmitter,
+    },
+  });
   wakeWord = await import('./wakeWord');
   createWakeWordBridge = wakeWord.createWakeWordBridge;
   getOfflineWakeWordStatus = wakeWord.getOfflineWakeWordStatus;
@@ -60,8 +51,7 @@ before(async () => {
 });
 
 after(() => {
-  if (originalRequire) globalWithRequire.require = originalRequire;
-  else delete globalWithRequire.require;
+  mock.reset();
 });
 
 function harness(platformOS = 'android', available = true) {
@@ -168,7 +158,7 @@ test('production exports remain safe when the native module is absent in a headl
 });
 
 test('production wake-word exports exercise the native module bridge when Expo is available', async () => {
-  nativeAvailable = true;
+  mockPlatform.OS = 'android';
   emitterCalls.length = 0;
   assert.equal(isOfflineWakeWordSupported(), true);
   assert.deepEqual(await getOfflineWakeWordStatus(), listening);
@@ -190,5 +180,5 @@ test('production wake-word exports exercise the native module bridge when Expo i
   assert.deepEqual(events, [detected]);
   eventSubscription.remove();
   assert.deepEqual(emitterCalls.map((entry) => entry.removed), [true, true]);
-  nativeAvailable = false;
+  mockPlatform.OS = 'node';
 });
