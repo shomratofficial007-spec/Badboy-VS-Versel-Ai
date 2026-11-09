@@ -1,3 +1,4 @@
+# The lockfile refresher commits resolved security pins; frozen installs below validate the committed result.
 # Required check aliases wait for the real upstream workflows; security jobs run their own validation.
 name: Required Validation
 
