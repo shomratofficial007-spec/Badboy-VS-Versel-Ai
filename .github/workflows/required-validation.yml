@@ -37,12 +37,31 @@ jobs:
     timeout-minutes: 7
     steps:
       - uses: actions/checkout@v7
+      - name: Check whether mobile validation is in scope
+        id: mobile-scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed_files="$(gh api --paginate "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files" --jq '.[].filename')"
+          if grep -Eq '^(artifacts/mobile/|\.github/workflows/android-apk\.yml$|artifacts/mobile/eas\.json$|artifacts/mobile/app\.json$|functions/|wrangler\.json$|artifacts/mobile/wrangler\.json$|lib/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|\.github/workflows/mobile-checks\.yml$)' <<< "${changed_files}"; then
+            echo "required=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "required=false" >> "${GITHUB_OUTPUT}"
+          fi
       - name: Verify the real Mobile checks workflow
+        if: steps.mobile-scope.outputs.required == 'true'
         run: bash .github/scripts/wait-for-workflow-run.sh
         env:
           GH_TOKEN: ${{ github.token }}
           WORKFLOW_NAME: Mobile checks
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      - name: Skip mobile workflow for unrelated changes
+        if: steps.mobile-scope.outputs.required != 'true'
+        run: echo "No mobile-scoped files changed; the Mobile checks workflow is not required for this PR."
 
   sonarcloud-analysis:
     name: SonarCloud Analysis
