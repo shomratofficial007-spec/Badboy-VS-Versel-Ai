@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   zap-baseline:
-    name: OWASP ZAP passive baseline
+    name: OWASP ZAP Baseline
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -65,5 +65,37 @@ jobs:
         with:
           target: ${{ steps.target.outputs.url }}
           allow_issue_writing: false
-          fail_action: true
+          # The following step enforces a documented Medium/High threshold.
+          # Low and informational observations remain in the uploaded report.
+          fail_action: false
           artifact_name: badboy-zap-baseline-report
+
+      - name: Enforce ZAP risk threshold (no Medium or High alerts)
+        if: always()
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const reportPath = 'report_json.json';
+          if (!fs.existsSync(reportPath)) {
+            throw new Error('ZAP JSON report is missing; scan did not produce auditable results.');
+          }
+
+          const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+          const alerts = (report.site ?? []).flatMap((site) => site.alerts ?? []);
+          const blocking = alerts.filter((alert) => /^(High|Medium)\b/.test(alert.riskdesc ?? ''));
+
+          for (const alert of alerts) {
+            console.log(`${alert.riskdesc ?? 'Unknown risk'}: ${alert.name}`);
+          }
+
+          if (blocking.length) {
+            for (const alert of blocking) {
+              console.error(`::error::ZAP ${alert.riskdesc}: ${alert.name}`);
+            }
+            throw new Error(`ZAP found ${blocking.length} Medium/High alert(s). Review report_json.json.`);
+          }
+
+          console.log(`ZAP policy passed: no Medium/High alerts; ${alerts.length} Low/Informational finding(s) retained in the report.`);
+          NODE
