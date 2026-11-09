@@ -15,4 +15,5 @@ android {
 dependencies {
   implementation project(':expo-modules-core')
   implementation 'org.tensorflow:tensorflow-lite:2.17.0'
+  testImplementation 'junit:junit:4.13.2'
 }
