@@ -8,6 +8,7 @@ on:
 
 permissions:
   actions: read
+  checks: read
   contents: read
   pull-requests: read
 
@@ -340,43 +341,49 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       - name: Verify SonarCloud New Code coverage and Quality Gate
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_PROJECT_KEY: shomratofficial007-spec_Badboy-VS-Versel-Ai
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          SONAR_HOST_URL: https://sonarcloud.io
+          GH_TOKEN: ${{ github.token }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -z "$SONAR_TOKEN" ]]; then
-            echo "::error::SONAR_TOKEN is missing; cannot verify remote coverage."
-            exit 1
-          fi
-
           for attempt in $(seq 1 30); do
-            measures="$(curl --silent --show-error --fail --user "$SONAR_TOKEN:" \
-              "$SONAR_HOST_URL/api/measures/component?component=$SONAR_PROJECT_KEY&metricKeys=new_coverage&pullRequest=$PR_NUMBER" || true)"
-            gate_response="$(curl --silent --show-error --fail --user "$SONAR_TOKEN:" \
-              "$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=$SONAR_PROJECT_KEY&pullRequest=$PR_NUMBER" || true)"
-            coverage="$(printf '%s' "$measures" | jq -r '.component.measures[]? | select(.metric == "new_coverage") | .value' | head -n 1)"
-            gate="$(printf '%s' "$gate_response" | jq -r '.projectStatus.status // empty')"
+            checks="$(curl --silent --show-error --fail \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPOSITORY/commits/$PR_HEAD_SHA/check-runs?per_page=100")"
+            sonar_check="$(printf '%s' "$checks" | jq -c '[.check_runs[]? | select(.name == "SonarCloud Code Analysis" and .status == "completed")][0] // empty')"
 
-            if [[ "$coverage" =~ ^[0-9]+([.][0-9]+)?$ && -n "$gate" ]]; then
-              echo "SonarCloud New Code coverage: $coverage%; Quality Gate: $gate"
-              if [[ "$gate" != "OK" ]]; then
-                echo "::error::SonarCloud Quality Gate is $gate."
+            if [[ -n "$sonar_check" ]]; then
+              conclusion="$(printf '%s' "$sonar_check" | jq -r '.conclusion // empty')"
+              summary="$(printf '%s' "$sonar_check" | jq -r '.output.summary // empty')"
+              if [[ "$conclusion" != "success" ]]; then
+                echo "::error::SonarCloud analysis conclusion is $conclusion."
                 exit 1
               fi
+              if ! grep -qi "Quality Gate passed" <<< "$summary"; then
+                echo "::error::SonarCloud summary does not confirm a passed Quality Gate."
+                exit 1
+              fi
+
+              coverage="$(grep -oE '[0-9]+([.][0-9]+)?% Coverage on New Code' <<< "$summary" | head -n 1 | grep -oE '[0-9]+([.][0-9]+)?' || true)"
+              if [[ ! "$coverage" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+                echo "::error::SonarCloud summary has no parseable New Code coverage value."
+                exit 1
+              fi
+
+              echo "SonarCloud New Code coverage: $coverage%; Quality Gate: passed"
               if ! awk "BEGIN { exit !($coverage >= 80) }"; then
                 echo "::error::New Code coverage $coverage% is below the required 80%."
                 exit 1
               fi
-              echo "Coverage Validation passed with the remote SonarCloud result."
+              echo "Coverage Validation passed using the completed SonarCloud check-run summary."
               exit 0
             fi
 
-            echo "SonarCloud analysis is still processing (attempt $attempt/30)."
+            echo "Waiting for the completed SonarCloud Code Analysis check-run (attempt $attempt/30)."
             sleep 10
           done
 
-          echo "::error::Could not retrieve the completed SonarCloud PR coverage and Quality Gate."
+          echo "::error::Could not retrieve the completed SonarCloud check-run summary."
           exit 1
