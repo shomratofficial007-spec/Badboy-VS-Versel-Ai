@@ -9,9 +9,13 @@ class FakeD1 implements D1Database {
   firstRow: unknown = { project_id: "canonical-project-id" };
   changes = 1;
   throwOnPrepare = false;
+  throwNonError = false;
 
   prepare(sql: string): D1PreparedStatement {
-    if (this.throwOnPrepare) throw new Error("D1 connection unavailable.");
+    if (this.throwOnPrepare) {
+      if (this.throwNonError) throw "non-error storage failure";
+      throw new Error("D1 connection unavailable.");
+    }
     const call = { sql, values: [] as unknown[] };
     this.calls.push(call);
     const statement = {
@@ -444,4 +448,102 @@ test("returns a safe storage error when project and memory queries fail", async 
     assert.equal(response?.status, 500, `${method} ${path}`);
     assert.equal((await response?.json() as { code: string }).code, "DEVELOPER_STORAGE_FAILED");
   }
+});
+
+
+test("covers alternate content-type rejection across all write routes", async () => {
+  const db = new FakeD1();
+  for (const path of ["tasks", "projects", "project-memory"]) {
+    const response = await handleDeveloperDataRequest(
+      new Request(`https://example.com/api/developer/${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: "{}",
+      }),
+      { AGENT_DB: db },
+      OWNER,
+    );
+    assert.equal(response?.status, 415);
+    assert.equal((await response?.json() as { code: string }).code, "UNSUPPORTED_MEDIA_TYPE");
+  }
+  assert.equal(db.calls.length, 0);
+});
+
+test("covers task defaults and non-string optional fields", async () => {
+  const db = new FakeD1();
+  const response = await handleDeveloperDataRequest(
+    request("tasks", "POST", {
+      title: "Defaulted task",
+      summary: 123,
+      parentTaskId: 456,
+    }),
+    { AGENT_DB: db },
+    OWNER,
+  );
+  assert.equal(response?.status, 201);
+  assert.equal(db.calls[0].values[2], "queued");
+  assert.equal(db.calls[0].values[3], "native");
+  assert.equal(db.calls[0].values[5], null);
+  assert.equal(db.calls[0].values[6], null);
+});
+
+test("covers non-string project summaries and project list limit clamping", async () => {
+  const db = new FakeD1();
+  const list = await handleDeveloperDataRequest(
+    request("projects?limit=250"),
+    { AGENT_DB: db },
+    OWNER,
+  );
+  assert.equal(list?.status, 200);
+  assert.equal(db.calls[0].values[1], 100);
+
+  const saved = await handleDeveloperDataRequest(
+    request("projects", "POST", {
+      projectKey: "badboy",
+      name: "Badboy AI",
+      summary: 123,
+    }),
+    { AGENT_DB: db },
+    OWNER,
+  );
+  assert.equal(saved?.status, 200);
+  assert.equal(db.calls[1].values[4], "");
+});
+
+test("covers project memory source normalization and memory list limit clamping", async () => {
+  const db = new FakeD1();
+  const list = await handleDeveloperDataRequest(
+    request("project-memory?projectId=project-1&limit=0"),
+    { AGENT_DB: db },
+    OWNER,
+  );
+  assert.equal(list?.status, 200);
+  assert.equal(db.calls[0].values[2], 1);
+
+  const saved = await handleDeveloperDataRequest(
+    request("project-memory", "POST", {
+      projectId: "project-1",
+      category: "note",
+      content: "Remember this",
+      source: "  developer  ",
+    }),
+    { AGENT_DB: db },
+    OWNER,
+  );
+  assert.equal(saved?.status, 201);
+  assert.equal(db.calls[1].values[4], "developer");
+  assert.equal(db.calls[1].values[5], "private");
+});
+
+test("returns the safe storage failure for non-Error thrown values", async () => {
+  const db = new FakeD1();
+  db.throwOnPrepare = true;
+  db.throwNonError = true;
+  const response = await handleDeveloperDataRequest(
+    request("projects"),
+    { AGENT_DB: db },
+    OWNER,
+  );
+  assert.equal(response?.status, 500);
+  assert.equal((await response?.json() as { code: string }).code, "DEVELOPER_STORAGE_FAILED");
 });
