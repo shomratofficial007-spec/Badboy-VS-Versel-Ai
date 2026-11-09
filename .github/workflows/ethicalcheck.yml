@@ -1,5 +1,4 @@
-# Replaces the retired/unresolvable EthicalCheck action with an OWASP ZAP
-# passive baseline scan against this PR's Cloudflare Preview Worker.
+# OWASP ZAP passive baseline scan against the current PR's Cloudflare Preview Worker.
 name: OWASP ZAP Baseline
 
 on:
@@ -20,10 +19,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Wait for Cloudflare preview security headers
+      - name: Resolve the correct scan target
+        id: target
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REF: ${{ github.head_ref }}
+        shell: bash
+        run: |
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            branch_slug="${HEAD_REF//\//-}"
+            target_url="https://${branch_slug}-badboy-vs-versel-ai.shomratofficial007.workers.dev"
+          else
+            target_url="https://badboy-vs-versel-ai.shomratofficial007.workers.dev"
+          fi
+          echo "url=$target_url" >> "$GITHUB_OUTPUT"
+          echo "ZAP target resolved for event: $EVENT_NAME"
+
+      - name: Wait for the correct Cloudflare Preview security headers
         if: github.event_name == 'pull_request'
         env:
-          TARGET_URL: https://fix-pr-67-list-footer-null-type-badboy-vs-versel-ai.shomratofficial007.workers.dev
+          TARGET_URL: ${{ steps.target.outputs.url }}
         shell: bash
         run: |
           for attempt in $(seq 1 30); do
@@ -36,19 +51,19 @@ jobs:
               && printf '%s\n' "$headers" | grep -qi '^x-frame-options:' \
               && printf '%s\n' "$headers" | grep -qi '^strict-transport-security:' \
               && printf '%s\n' "$headers" | grep -qi '^x-content-type-options:'; then
-              echo "Cloudflare preview is serving the expected security headers."
+              echo "Current PR preview is serving the expected security headers."
               exit 0
             fi
-            echo "Preview deployment not ready yet (attempt $attempt/30); waiting 10 seconds."
+            echo "Current PR preview not ready or headers incomplete (attempt $attempt/30); waiting 10 seconds."
             sleep 10
           done
-          echo "Cloudflare preview did not expose the expected security headers."
+          echo "::error::Current PR preview did not expose the expected security headers."
           exit 1
 
-      - name: Scan Badboy Cloudflare Preview
+      - name: Scan the resolved Cloudflare target
         uses: zaproxy/action-baseline@v0.15.0
         with:
-          target: ${{ github.event_name == 'pull_request' && 'https://fix-pr-67-list-footer-null-type-badboy-vs-versel-ai.shomratofficial007.workers.dev' || 'https://badboy-vs-versel-ai.shomratofficial007.workers.dev' }}
+          target: ${{ steps.target.outputs.url }}
           allow_issue_writing: false
-          fail_action: false
+          fail_action: true
           artifact_name: badboy-zap-baseline-report
