@@ -78,7 +78,10 @@ export async function verifyOwnerToken(token: string): Promise<void> {
 }
 
 export async function restoreOwnerSession(): Promise<boolean> {
-  // Native sessions are restored from SecureStore. Web sessions intentionally
-  // remain in memory only; every private request still sends the bearer token.
+  // Re-read native persistence at app startup instead of trusting this module's
+  // in-memory cache. This makes a fresh JS runtime restore test meaningful and
+  // detects a token that was cleared from SecureStore outside this module.
+  if (isWebPlatform()) return Boolean(activeToken);
+  activeToken = null;
   return Boolean(await getOwnerToken());
 }
