@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import math
 import pathlib
 import sys
 
@@ -36,9 +37,8 @@ def main() -> int:
     if output_detail["dtype"] != np.float32:
         raise SystemExit(f"Unexpected output dtype: {output_detail['dtype']}; expected float32")
 
-    output_elements = int(np.prod(output_shape))
-    if output_elements not in (1, 2):
-        raise SystemExit(f"Unsupported output shape: {output_shape}; expected 1 or 2 float values")
+    if output_shape != (1, 1):
+        raise SystemExit(f"Unexpected output shape: {output_shape}; the exported model contract is (1, 1) logit")
 
     rng = np.random.default_rng(20261110)
     test_inputs = (
@@ -49,9 +49,11 @@ def main() -> int:
         interpreter.set_tensor(int(input_detail["index"]), features)
         interpreter.invoke()
         result = interpreter.get_tensor(int(output_detail["index"]))
-        if result.size != output_elements or not np.isfinite(result).all():
+        if result.size != 1 or not np.isfinite(result).all():
             raise SystemExit(f"Inference produced an invalid output for {label}: {result!r}")
-        print(f"PASS: {label}; input={input_shape}; output={output_shape}; values={result.reshape(-1).tolist()}")
+        logit = float(result.reshape(-1)[0])
+        probability = 1.0 / (1.0 + math.exp(-logit)) if logit >= 0 else math.exp(logit) / (1.0 + math.exp(logit))
+        print(f"PASS: {label}; input={input_shape}; output={output_shape}; logit={logit:.6f}; sigmoid_probability={probability:.6f}")
 
     print(f"PASS: real TFLite CPU inference completed for {model_path} ({model_path.stat().st_size} bytes).")
     return 0
