@@ -90,6 +90,10 @@ jobs:
             printf '\nnetworkTimeout=120000\n' >> "$PROPERTIES"
           fi
 
+      - name: Run Android native unit tests
+        working-directory: artifacts/mobile/android
+        run: ./gradlew --no-daemon testDebugUnitTest
+
       - name: Build installable debug APK with embedded JavaScript
         working-directory: artifacts/mobile/android
         env:
