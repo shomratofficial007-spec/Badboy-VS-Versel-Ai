@@ -90,9 +90,10 @@ jobs:
               deployment.success && deployment.url && deployment.commit
             );
 
-            // CI/workflow-only changes cannot affect the Worker runtime.
-            // If Cloudflare has not posted a preview comment, verify the full
-            // PR diff against its base before selecting the production Worker.
+            // Mobile-only changes do not alter the Cloudflare Worker. If the
+            // Workers integration has not posted a preview comment, compare
+            // the complete PR diff against its base and scan the production
+            // Worker only when every changed path is client-side or CI config.
             if (!latestSuccessful && baseSha) {
               const compareUrl = `https://api.github.com/repos/${repository}/compare/${baseSha}...${sha}`;
               const response = await fetch(compareUrl, {
@@ -108,11 +109,12 @@ jobs:
               const comparison = await response.json();
               const files = comparison.files ?? [];
               const workerUnaffected = files.length > 0 && files.every((file) =>
+                file.filename.startsWith('artifacts/mobile/') ||
                 file.filename.startsWith('.github/')
               );
               if (workerUnaffected) {
                 process.stderr.write(
-                  `PR changes are limited to CI/workflow files; Worker runtime is unchanged. Scanning production Worker. Changed files: ${files.map((file) => file.filename).join(', ')}.\\n`
+                  `PR changes are limited to mobile client/CI files; Worker runtime is unchanged. Scanning the production Worker for API/security regression coverage. Changed files: ${files.map((file) => file.filename).join(', ')}.\\n`
                 );
                 process.stdout.write('https://badboy-vs-versel-ai.shomratofficial007.workers.dev');
                 process.exit(0);
@@ -139,6 +141,8 @@ jobs:
               for (const file of files) {
                 if (
                   file.filename.startsWith('.github/') ||
+                  // Mobile app changes do not modify the Cloudflare Worker runtime.
+                  file.filename.startsWith('artifacts/mobile/') ||
                   file.filename === 'SECURITY-EXCEPTIONS.md' ||
                   file.filename === 'pnpm-lock.yaml' ||
                   file.filename === 'pnpm-workspace.yaml'

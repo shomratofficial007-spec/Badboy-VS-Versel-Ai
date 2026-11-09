@@ -29,11 +29,11 @@ function RootLayoutNav() {
   }
 
   return (
-    <Stack screenOptions={{ headerBackTitle: 'Back' }}>
+    <Stack screenOptions={{ headerShown: false, headerBackTitle: 'Back' }}>
       {authenticated ? (
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false, title: 'Badboy AI' }} />
       ) : (
-        <Stack.Screen name="owner-login" options={{ headerShown: false }} />
+        <Stack.Screen name="owner-login" options={{ headerShown: false, title: 'Owner Login' }} />
       )}
     </Stack>
   );
