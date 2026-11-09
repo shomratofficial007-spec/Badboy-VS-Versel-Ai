@@ -115,6 +115,7 @@ test('Owner Login ignores a second submit while an authentication request is pen
   const firstSubmit = pressHandlers[0]();
   assert.equal(typeof resolvePendingSignIn, 'function');
 
+  pressHandlers.length = 0;
   renderOwnerLogin(OwnerLoginScreen);
   assert.equal(pressHandlers.length, 1);
   await pressHandlers[0]();
