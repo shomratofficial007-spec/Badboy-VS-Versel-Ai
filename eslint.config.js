@@ -57,7 +57,7 @@ export default tseslint.config(
     rules: { "@typescript-eslint/no-require-imports": "off" },
   },
   {
-    files: ["**/*.js", "**/*.mjs", "**/*.cjs"],
+    files: ["**/*.js", "**/*.mjs", "**/*.cjs", "artifacts/mobile/lib/assistant/voice.ts", "artifacts/mobile/lib/assistant/wakeWord.ts"],
     rules: { "@typescript-eslint/no-require-imports": "off" },
   },
 );
