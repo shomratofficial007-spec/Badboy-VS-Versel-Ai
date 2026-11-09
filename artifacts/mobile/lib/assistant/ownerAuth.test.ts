@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { afterEach, test } from 'node:test';
+import { afterEach, mock, test } from 'node:test';
 import {
   clearOwnerToken,
   getOwnerToken,
@@ -10,10 +10,20 @@ import {
 
 const OWNER_TOKEN = 'a'.repeat(43);
 const originalFetch = globalThis.fetch;
+let secureStoreToken: string | null = null;
+
+mock.module('expo-secure-store', {
+  namedExports: {
+    getItemAsync: async () => secureStoreToken,
+    setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
+    deleteItemAsync: async () => { secureStoreToken = null; },
+  },
+});
 
 afterEach(async () => {
   globalThis.fetch = originalFetch;
   await clearOwnerToken();
+  secureStoreToken = null;
 });
 
 test('keeps the owner token in the active session and restores an existing session', async () => {
@@ -28,6 +38,32 @@ test('keeps the owner token in the active session and restores an existing sessi
   await clearOwnerToken();
   assert.equal(await getOwnerToken(), null);
   assert.equal(await restoreOwnerSession(), false);
+});
+
+test('uses SecureStore on native when EXPO_OS is omitted by a custom build', async () => {
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const originalExpoOs = process.env.EXPO_OS;
+  try {
+    delete process.env.EXPO_OS;
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {},
+    });
+
+    await saveOwnerToken(OWNER_TOKEN);
+    assert.equal(secureStoreToken, OWNER_TOKEN);
+    assert.equal(await getOwnerToken(), OWNER_TOKEN);
+
+    // Simulate a fresh JS runtime: the token must be restored from SecureStore,
+    // not merely from the module's in-memory cache.
+    await clearOwnerToken();
+    assert.equal(secureStoreToken, null);
+  } finally {
+    if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
+    else delete (globalThis as typeof globalThis & { window?: unknown }).window;
+    if (originalExpoOs === undefined) delete process.env.EXPO_OS;
+    else process.env.EXPO_OS = originalExpoOs;
+  }
 });
 
 test('verifies a valid owner token through the Worker endpoint', async () => {
