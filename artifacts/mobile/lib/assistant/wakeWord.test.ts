@@ -158,7 +158,16 @@ test('production exports remain safe when the native module is absent in a headl
 });
 
 test('production wake-word exports exercise the native module bridge when Expo is available', async () => {
-  mockPlatform.OS = 'android';
+  Object.defineProperty(mockPlatform, 'OS', {
+    configurable: true,
+    get: () => { throw new Error('Platform lookup unavailable'); },
+  });
+  assert.equal(isOfflineWakeWordSupported(), false);
+  Object.defineProperty(mockPlatform, 'OS', {
+    configurable: true,
+    writable: true,
+    value: 'android',
+  });
   emitterCalls.length = 0;
   assert.equal(isOfflineWakeWordSupported(), true);
   assert.deepEqual(await getOfflineWakeWordStatus(), listening);
