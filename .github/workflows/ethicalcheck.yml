@@ -141,6 +141,8 @@ jobs:
               for (const file of files) {
                 if (
                   file.filename.startsWith('.github/') ||
+                  // Mobile app changes do not modify the Cloudflare Worker runtime.
+                  file.filename.startsWith('artifacts/mobile/') ||
                   file.filename === 'SECURITY-EXCEPTIONS.md' ||
                   file.filename === 'pnpm-lock.yaml' ||
                   file.filename === 'pnpm-workspace.yaml'
