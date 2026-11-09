@@ -14,8 +14,8 @@ const GENERAL_MUSIC_PATTERNS = [
 ];
 
 export function isGeneralMusicRequest(text: string): boolean {
-  if (!text) return false;
   const trimmed = text.trim();
+  if (!trimmed) return false;
   return GENERAL_MUSIC_PATTERNS.some((pattern) => pattern.test(trimmed));
 }
 
