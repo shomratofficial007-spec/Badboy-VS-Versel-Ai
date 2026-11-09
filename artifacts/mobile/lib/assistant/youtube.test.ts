@@ -14,6 +14,8 @@ test('isGeneralMusicRequest - identifies general music requests in Bangla and Ba
   assert.strictEqual(isGeneralMusicRequest('play a song'), true);
   assert.strictEqual(isGeneralMusicRequest('gan play koro'), true);
   assert.strictEqual(isGeneralMusicRequest('আজকের আবহাওয়া কেমন'), false);
+  assert.strictEqual(isGeneralMusicRequest(''), false);
+  assert.strictEqual(isGeneralMusicRequest('   '), false);
 });
 
 test('cleanSongQuery - strips Banglish filler phrases and isolates song name', () => {
