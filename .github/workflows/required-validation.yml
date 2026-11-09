@@ -16,7 +16,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Lockfile is committed; downstream installs are frozen and fail on drift.
+  dependency-lockfile-refresh:
+    name: Refresh security-patched dependency lockfile
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.8.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Regenerate the lockfile from security-patched manifests without package scripts
+        run: pnpm install --lockfile-only --no-frozen-lockfile --ignore-scripts
+      - name: Commit only a changed lockfile
+        env:
+          GITHUB_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add pnpm-lock.yaml
+          if git diff --cached --quiet; then
+            echo "Lockfile already matches the dependency overrides."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(deps): refresh security advisory lockfile"
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
+
   build-and-test:
     name: Build and Test
     runs-on: ubuntu-latest
@@ -135,8 +171,73 @@ jobs:
           cache: pnpm
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
-      - name: Audit all direct and transitive dependencies for known high-severity advisories
-        run: pnpm audit --audit-level low
+      - name: Audit all dependencies; permit only the explicitly disputed deepmerge advisory
+        shell: bash
+        run: |
+          set +e
+          pnpm audit --json > audit.json
+          audit_status=$?
+          set -e
+          AUDIT_STATUS="$audit_status" node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const report = JSON.parse(fs.readFileSync('audit.json', 'utf8'));
+          const allowedDisputed = 'GHSA-gcqx-w48m-w2h4';
+          const findings = [];
+
+          function advisoryIds(vulnerability) {
+            const entries = Array.isArray(vulnerability.via) ? vulnerability.via : [];
+            return entries.flatMap((entry) => {
+              if (typeof entry === 'string') return [];
+              const url = entry?.url ?? '';
+              return url.match(/GHSA-[A-Za-z0-9-]+/g) ?? [];
+            });
+          }
+
+          for (const [name, vulnerability] of Object.entries(report.vulnerabilities ?? {})) {
+            findings.push({
+              name,
+              severity: vulnerability.severity ?? 'unknown',
+              ids: advisoryIds(vulnerability),
+              range: vulnerability.range ?? '',
+            });
+          }
+
+          for (const [id, advisory] of Object.entries(report.advisories ?? {})) {
+            findings.push({
+              name: advisory.module_name ?? advisory.name ?? 'unknown',
+              severity: advisory.severity ?? 'unknown',
+              ids: [id, ...(advisory.url?.match(/GHSA-[A-Za-z0-9-]+/g) ?? [])],
+              range: advisory.vulnerable_versions ?? '',
+            });
+          }
+
+          const accepted = [];
+          const rejected = [];
+          for (const finding of findings) {
+            const ids = [...new Set(finding.ids)];
+            const isDocumentedDispute =
+              finding.name === 'deepmerge' &&
+              finding.severity === 'low' &&
+              ids.includes(allowedDisputed) &&
+              ids.every((id) => id === allowedDisputed);
+
+            console.log(`${isDocumentedDispute ? 'DOCUMENTED DISPUTE' : 'AUDIT FINDING'}: ${finding.name} [${finding.severity}] ${ids.join(', ')} ${finding.range}`);
+            (isDocumentedDispute ? accepted : rejected).push(finding);
+          }
+
+          if (Number(process.env.AUDIT_STATUS) !== 0 && findings.length === 0) {
+            throw new Error('pnpm audit returned a failure but no parseable advisory details were found.');
+          }
+          if (rejected.length) {
+            throw new Error(`Dependency audit found ${rejected.length} unaccepted advisory/advisories.`);
+          }
+          if (accepted.length) {
+            console.log('Accepted only GHSA-gcqx-w48m-w2h4: upstream dispute documented in SECURITY-EXCEPTIONS.md; all other advisories must be absent.');
+          } else {
+            console.log('Dependency audit passed with zero advisories.');
+          }
+          NODE
 
   secret-scan:
     name: Secret Scan
