@@ -10,9 +10,6 @@
     "deploy": "wrangler deploy --config wrangler.json"
   },
   "private": true,
-  "dependencies": {
-    "@replit/connectors-sdk": "^0.4.3"
-  },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250216.0",
     "prettier": "^3.9.6",

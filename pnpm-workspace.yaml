@@ -14,23 +14,14 @@
 #
 # If you absolutely need to install a package before the 1-day window has
 # passed (e.g. an urgent security bugfix), you can add it to the
-# `minimumReleaseAgeExclude` allowlist below. Only consider doing this for
-# packages released by trusted organizations with an impeccable security
-# posture (e.g. Replit packsges, react from Meta, typescript from Microsoft). Even then,
-# remove the exclusion once the 1-day window has passed.
-#
-# Example:
-#   minimumReleaseAgeExclude:
-#     - react
-#     - typescript
+# minimumReleaseAgeExclude allowlist below. Only consider this for trusted
+# packages, and remove the exclusion once the 1-day window has passed.
 #
 # ============================================================================
 minimumReleaseAge: 1440
 
 minimumReleaseAgeExclude:
   # Exclude @replit scoped packages from the minimum release age check.
-  # These are published by Replit and trusted — the supply-chain attack vector
-  # this setting guards against does not apply to our own packages.
   - '@replit/*'
   - stripe-replit-sync
 
@@ -63,7 +54,7 @@ catalog:
   tailwind-merge: ^3.3.1
   tailwindcss: ^4.1.14
   tsx: ^4.21.0
-  vite: ^7.3.2
+  vite: ^7.3.7
   wouter: ^3.3.5
   zod: ^3.25.76
 
@@ -76,6 +67,16 @@ onlyBuiltDependencies:
   - unrs-resolver
 
 overrides:
+  # Reproducible, patched transitive dependencies from the November 2026 audit.
+  proxy-addr: 2.0.8
+  brace-expansion: 5.0.11
+  node-forge: 1.4.2
+  source-map-js: 1.2.2
+  markdown-it: 14.3.3
+  body-parser: 2.4.0
+  undici: 7.30.1
+  decode-uri-component: 0.5.1
+
   # replit uses linux-x64 only, we can exclude all other platforms
   "esbuild>@esbuild/darwin-arm64": "-"
   "esbuild>@esbuild/darwin-x64": "-"
@@ -97,11 +98,11 @@ overrides:
   "esbuild>@esbuild/win32-arm64": "-"
   "esbuild>@esbuild/win32-ia32": "-"
   "esbuild>@esbuild/win32-x64": "-"
-  "esbuild>@esbuild/aix-ppc64": '-'
-  "esbuild>@esbuild/android-arm": '-'
-  "esbuild>@esbuild/android-arm64": '-'
-  "esbuild>@esbuild/android-x64": '-'
-  "esbuild>@esbuild/openharmony-arm64": '-'
+  "esbuild>@esbuild/aix-ppc64": "-"
+  "esbuild>@esbuild/android-arm": "-"
+  "esbuild>@esbuild/android-arm64": "-"
+  "esbuild>@esbuild/android-x64": "-"
+  "esbuild>@esbuild/openharmony-arm64": "-"
   "lightningcss>lightningcss-android-arm64": "-"
   "lightningcss>lightningcss-darwin-arm64": "-"
   "lightningcss>lightningcss-darwin-x64": "-"
@@ -160,4 +161,4 @@ overrides:
   "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
   esbuild: "0.28.2"
   # orval pins js-yaml to an exact version older than the CVE fix (>=4.3.2)
-  js-yaml: '4.3.2'
+  js-yaml: "4.3.2"
