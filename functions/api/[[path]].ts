@@ -898,7 +898,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   }
 
   // Keep only service health and the credential verifier public. Every other
-  // API route, including Developer Agent data, requires the owner key.
+  // Security invariant: verify the personal owner token before any API or private D1/Developer Agent data access.
   if (request.method === "POST" && pathname === "/api/auth/verify") {
     const auth = await authenticatePersonalOwner(request, env);
     if (!auth.ok) return auth.response;
