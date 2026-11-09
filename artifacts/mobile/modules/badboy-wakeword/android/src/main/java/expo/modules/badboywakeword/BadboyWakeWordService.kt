@@ -84,8 +84,8 @@ class BadboyWakeWordService : Service() {
    }
    val outputTensor=model!!.getOutputTensor(0)
    val outputShape=outputTensor.shape()
-   require(outputTensor.numElements() in 1..2 && outputTensor.dataType()==DataType.FLOAT32){
-    "Unsupported TFLite output: shape=${outputShape.contentToString()}, type=${outputTensor.dataType()}, elements=${outputTensor.numElements()}"
+   require(outputShape.contentEquals(intArrayOf(1,1)) && outputTensor.dataType()==DataType.FLOAT32){
+    "TFLite output mismatch: expected FLOAT32 [1, 1] logit, got shape=${outputShape.contentToString()}, type=${outputTensor.dataType()}"
    }
    listOf(0.5098,0.6013,0.8999,2.5629).forEach{filters.add(Biquad.hp(100.0,it,rate.toDouble()))}
    filters.add(Biquad.notch(50.0,30.0,rate.toDouble()));filters.add(Biquad.notch(60.0,30.0,rate.toDouble()))
@@ -129,18 +129,7 @@ class BadboyWakeWordService : Service() {
   model!!.run(arrayOf(features(x)),output)
   output.rewind()
   val values=FloatArray(outputTensor.numElements()){output.float}
-  val p=when(values.size){
-   1->WakeWordOutput.logitToProbability(values[0])
-   2->{
-    val sum=values.sum()
-    if(values.all{it in 0f..1f} && abs(sum-1f)<0.05f)values[1]
-    else{
-     val high=max(values[0],values[1]).toDouble()
-     (exp(values[1].toDouble()-high)/(exp(values[0].toDouble()-high)+exp(values[1].toDouble()-high))).toFloat()
-    }
-   }
-   else->0f
-  }
+  val p=WakeWordOutput.logitToProbability(values[0])
   ema=.5*p+.5*ema
   if(ema>=threshold)streak++ else streak=0
   val now=System.currentTimeMillis()
