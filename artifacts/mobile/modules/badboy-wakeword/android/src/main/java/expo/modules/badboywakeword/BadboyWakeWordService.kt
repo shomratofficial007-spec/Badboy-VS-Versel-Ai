@@ -126,7 +126,7 @@ class BadboyWakeWordService : Service() {
   output.rewind()
   val values=FloatArray(outputTensor.numElements()){output.float}
   val p=when(values.size){
-   1->{val value=values[0];if(value in 0f..1f)value else (1/(1+exp(-value.toDouble()))).toFloat()}
+   1->WakeWordOutput.logitToProbability(values[0])
    2->{
     val sum=values.sum()
     if(values.all{it in 0f..1f} && abs(sum-1f)<0.05f)values[1]
