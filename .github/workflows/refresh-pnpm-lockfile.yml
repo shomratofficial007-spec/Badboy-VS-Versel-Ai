@@ -2,7 +2,7 @@ name: Refresh pnpm lockfile
 
 on:
   push:
-    branches: [feat/vercel-ai-sdk-core]
+    branches: [feat/vercel-ai-sdk-core, chore/eslint-vitest-typescript-ci]
     paths:
       - "artifacts/**/package.json"
       - "package.json"
