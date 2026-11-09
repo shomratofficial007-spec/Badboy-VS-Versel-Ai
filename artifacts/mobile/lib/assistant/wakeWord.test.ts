@@ -154,7 +154,8 @@ test('production wake-word exports exercise the native module bridge when Expo i
   };
 
   try {
-    const production = await import('./wakeWord.ts?native-bridge-test');
+    const imported = await import('./wakeWord.ts?native-bridge-test');
+    const production = (imported.default ?? imported) as typeof import('./wakeWord');
     assert.equal(production.isOfflineWakeWordSupported(), true);
     assert.deepEqual(await production.getOfflineWakeWordStatus(), listening);
     assert.deepEqual(await production.startOfflineWakeWord(), listening);
