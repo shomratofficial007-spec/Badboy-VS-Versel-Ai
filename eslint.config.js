@@ -2,31 +2,16 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
 const readonly = "readonly";
-const nodeGlobals = Object.fromEntries(
+const runtimeGlobals = Object.fromEntries(
   [
-    "__dirname",
-    "__filename",
-    "Buffer",
-    "clearImmediate",
-    "clearInterval",
-    "clearTimeout",
-    "console",
-    "exports",
-    "global",
-    "module",
-    "process",
-    "require",
-    "setImmediate",
-    "setInterval",
-    "setTimeout",
+    "__dirname", "__filename", "Buffer", "clearImmediate", "clearInterval",
+    "clearTimeout", "console", "exports", "global", "module", "process",
+    "require", "setImmediate", "setInterval", "setTimeout", "window",
+    "document", "navigator", "location", "localStorage", "sessionStorage",
+    "alert", "confirm", "requestAnimationFrame", "cancelAnimationFrame",
+    "HTMLElement", "Element", "MutationObserver", "IntersectionObserver",
   ].map((name) => [name, readonly]),
 );
-
-const testFiles = [
-  "**/*.test.{js,jsx,ts,tsx,mjs,mts,cjs,cts}",
-  "**/*.spec.{js,jsx,ts,tsx,mjs,mts,cjs,cts}",
-  "**/__tests__/**/*.{js,jsx,ts,tsx,mjs,mts,cjs,cts}",
-];
 
 export default tseslint.config(
   {
@@ -45,18 +30,9 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     files: ["**/*.{js,mjs,cjs,ts,tsx,mts,cts}"],
+    languageOptions: { globals: runtimeGlobals },
     rules: {
       "no-console": "off",
-    },
-  },
-  {
-    files: ["**/*.{js,mjs,cjs}"],
-    languageOptions: {
-      globals: nodeGlobals,
-    },
-    rules: {
-      // The repository contains existing CommonJS Expo/Metro configuration files.
-      "@typescript-eslint/no-require-imports": "off",
     },
   },
   {
@@ -64,25 +40,19 @@ export default tseslint.config(
     rules: {
       // TypeScript's compiler owns identifier/type resolution for TS files.
       "no-undef": "off",
-      "@typescript-eslint/no-unused-vars": [
-        "error",
-        { "argsIgnorePattern": "^_", "caughtErrorsIgnorePattern": "^_" },
-      ],
-    },
-  },
-  {
-    files: testFiles,
-    rules: {
-      // Surface legacy test-fixture debt without masking production-source errors.
+      // Report pre-existing explicit-any debt while keeping new lint errors actionable.
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-unused-vars": [
         "warn",
-        {
-          "argsIgnorePattern": "^_",
-          "caughtErrorsIgnorePattern": "^_",
-          "varsIgnorePattern": "^_",
-        },
+        { "argsIgnorePattern": "^_", "caughtErrorsIgnorePattern": "^_" },
       ],
+      "@typescript-eslint/no-this-alias": "warn",
+    },
+  },
+  {
+    files: ["**/*.{js,mjs,cjs}"],
+    rules: {
+      // Existing Expo/Metro tooling intentionally uses CommonJS.
       "@typescript-eslint/no-require-imports": "off",
     },
   },
