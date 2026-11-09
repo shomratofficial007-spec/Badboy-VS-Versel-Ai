@@ -13,6 +13,7 @@ import {
   checkMicrophonePermission,
   getAvailableSpeechVoices,
   shouldStopVoiceRecordingForSilence,
+  shouldFinalizeStoppedVoiceRecording,
   VOICE_SILENCE_DURATION_MS,
 } from './voice.ts';
 
@@ -87,6 +88,13 @@ test('voice recording auto-stop requires speech followed by sustained silence', 
   assert.equal(shouldStopVoiceRecordingForSilence(-60, true, lastSpeechAt, lastSpeechAt + VOICE_SILENCE_DURATION_MS - 1), false);
   assert.equal(shouldStopVoiceRecordingForSilence(-60, true, lastSpeechAt, lastSpeechAt + VOICE_SILENCE_DURATION_MS), true);
   assert.equal(shouldStopVoiceRecordingForSilence(undefined, true, lastSpeechAt, 20000), false);
+});
+
+test('voice recording finalizes after the recorder stops at its hard duration limit', () => {
+  assert.equal(shouldFinalizeStoppedVoiceRecording(false, true, false), false);
+  assert.equal(shouldFinalizeStoppedVoiceRecording(true, false, false), false);
+  assert.equal(shouldFinalizeStoppedVoiceRecording(true, true, true), false);
+  assert.equal(shouldFinalizeStoppedVoiceRecording(true, true, false), true);
 });
 
 test('dictation reports unsupported when no browser recognizer or native provider is available', () => {
