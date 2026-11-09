@@ -63,7 +63,7 @@ jobs:
           --exclude='**/*.spec.ts'
           --
           sh -c '
-          NODE_OPTIONS=--experimental-test-isolation=none node --experimental-strip-types --test
+          node --experimental-strip-types --experimental-test-isolation=none --test
           functions/functions.test.ts
           functions/developerAgent.test.ts
           functions/agentStorage.test.ts
