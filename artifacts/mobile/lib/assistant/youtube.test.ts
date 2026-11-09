@@ -9,6 +9,7 @@ import {
 
 test('isGeneralMusicRequest - identifies general music requests in Bangla and Banglish', () => {
   assert.strictEqual(isGeneralMusicRequest('গান শোনাও'), true);
+  assert.strictEqual(isGeneralMusicRequest('গান_বাজাও'), true);
   assert.strictEqual(isGeneralMusicRequest('gan shunao'), true);
   assert.strictEqual(isGeneralMusicRequest('play a song'), true);
   assert.strictEqual(isGeneralMusicRequest('gan play koro'), true);
