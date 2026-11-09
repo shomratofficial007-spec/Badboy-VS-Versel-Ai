@@ -1,11 +1,21 @@
-
 const OWNER_TOKEN_KEY = 'badboy-owner-token-v1';
 const DEFAULT_NATIVE_API_DOMAIN = 'https://badboy-vs-versel-ai.shomratofficial007.workers.dev';
 
 let activeToken: string | null = null;
 
 function isWebPlatform(): boolean {
-  return process.env.EXPO_OS === 'web' || process.env.EXPO_OS === undefined;
+  const expoOs = process.env.EXPO_OS;
+  if (expoOs) return expoOs === 'web';
+
+  // EXPO_OS is normally inlined by Expo. Some custom/native builds omit it;
+  // React Native has a window object but no browser location.origin.
+  // Node-based tests have no window and should use the in-memory web path.
+  return !(
+    typeof window !== 'undefined' &&
+    (typeof window.location === 'undefined' ||
+      typeof window.location.origin !== 'string' ||
+      !window.location.origin.startsWith('http'))
+  );
 }
 
 function authApiUrl() {
@@ -68,8 +78,7 @@ export async function verifyOwnerToken(token: string): Promise<void> {
 }
 
 export async function restoreOwnerSession(): Promise<boolean> {
-  // A token that was verified before and saved in SecureStore keeps the local
-  // app available offline. Every server request still revalidates it, so a
-  // revoked/rotated token cannot access private server data.
+  // Native sessions are restored from SecureStore. Web sessions intentionally
+  // remain in memory only; every private request still sends the bearer token.
   return Boolean(await getOwnerToken());
 }
