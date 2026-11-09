@@ -42,6 +42,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add pnpm-lock.yaml
-            git commit -m "fix: refresh pnpm lockfile for AI SDK dependencies"
+            git commit -m "build: refresh pnpm lockfile for quality tooling"
+            git pull --rebase origin "$GITHUB_REF_NAME"
             git push
           fi
