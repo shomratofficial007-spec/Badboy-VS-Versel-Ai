@@ -303,9 +303,9 @@ test("rejects JSON values that are not objects and trims task fields", async () 
     OWNER,
   );
   assert.equal(saved?.status, 201);
-  assert.equal(db.calls[0].values[3], "Trim this title");
-  assert.equal((db.calls[0].values[4] as string).length, 4_000);
-  assert.equal(db.calls[0].values[5], "parent-1");
+  assert.equal(db.calls[0].values[4], "Trim this title");
+  assert.equal((db.calls[0].values[5] as string).length, 4_000);
+  assert.equal(db.calls[0].values[6], "parent-1");
 });
 
 test("rejects invalid task engine and overlong required fields", async () => {
@@ -419,10 +419,10 @@ test("accepts supported project-memory privacy levels and default source", async
       OWNER,
     );
     assert.equal(response?.status, 201);
-    assert.equal(db.calls[0].values[3], "architecture");
-    assert.equal(db.calls[0].values[4], "Keep existing features");
-    assert.equal(db.calls[0].values[5], "user");
-    assert.equal(db.calls[0].values[6], privacyLevel);
+    assert.equal(db.calls[0].values[2], "architecture");
+    assert.equal(db.calls[0].values[3], "Keep existing features");
+    assert.equal(db.calls[0].values[4], "user");
+    assert.equal(db.calls[0].values[5], privacyLevel);
   }
 });
 
