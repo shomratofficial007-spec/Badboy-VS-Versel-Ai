@@ -26,6 +26,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         shell: bash
@@ -47,6 +48,7 @@ jobs:
           import fs from 'node:fs';
 
           const sha = process.env.PR_HEAD_SHA ?? '';
+          const baseSha = process.env.PR_BASE_SHA ?? '';
           const token = process.env.GH_TOKEN ?? '';
           const repository = process.env.REPOSITORY ?? '';
           const comments = JSON.parse(fs.readFileSync(process.env.COMMENTS_FILE, 'utf8'));
@@ -87,6 +89,37 @@ jobs:
             const latestSuccessful = deployments.find((deployment) =>
               deployment.success && deployment.url && deployment.commit
             );
+
+            // Mobile-only changes do not alter the Cloudflare Worker. If the
+            // Workers integration has not posted a preview comment, compare
+            // the complete PR diff against its base and scan the production
+            // Worker only when every changed path is client-side or CI config.
+            if (!latestSuccessful && baseSha) {
+              const compareUrl = `https://api.github.com/repos/${repository}/compare/${baseSha}...${sha}`;
+              const response = await fetch(compareUrl, {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  Accept: 'application/vnd.github+json',
+                  'X-GitHub-Api-Version': '2022-11-28',
+                },
+              });
+              if (!response.ok) {
+                throw new Error(`GitHub PR diff verification returned ${response.status}; cannot select a ZAP target.`);
+              }
+              const comparison = await response.json();
+              const files = comparison.files ?? [];
+              const workerUnaffected = files.length > 0 && files.every((file) =>
+                file.filename.startsWith('artifacts/mobile/') ||
+                file.filename.startsWith('.github/')
+              );
+              if (workerUnaffected) {
+                process.stderr.write(
+                  `PR changes are limited to mobile client/CI files; Worker runtime is unchanged. Scanning the production Worker for API/security regression coverage. Changed files: ${files.map((file) => file.filename).join(', ')}.\\n`
+                );
+                process.stdout.write('https://badboy-vs-versel-ai.shomratofficial007.workers.dev');
+                process.exit(0);
+              }
+            }
 
             if (latestSuccessful) {
               const compareUrl = `https://api.github.com/repos/${repository}/compare/${latestSuccessful.commit}...${sha}`;
