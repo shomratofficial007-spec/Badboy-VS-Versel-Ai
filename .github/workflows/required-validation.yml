@@ -171,7 +171,7 @@ jobs:
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
       - name: Audit all direct and transitive dependencies for known high-severity advisories
-        run: pnpm audit --audit-level high
+        run: pnpm audit --audit-level low
 
   secret-scan:
     name: Secret Scan
