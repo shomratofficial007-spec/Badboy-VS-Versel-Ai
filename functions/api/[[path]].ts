@@ -393,49 +393,53 @@ async function handleTranscriptionRequest(request: Request, env: Env): Promise<R
 
   try {
     const upstreamAbort = createUpstreamAbortSignal(request);
-    const upstream = await fetch(`${OPENROUTER_BASE_URL}/audio/transcriptions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${openrouterApiKey}`,
-        "Content-Type": "application/json",
-        "X-Title": "Badboy Voice Memory Assistant",
-      },
-      body: JSON.stringify({
-        model: "openai/whisper-1",
-        input_audio: {
-          data: audioBase64,
-          format,
+    try {
+      const upstream = await fetch(`${OPENROUTER_BASE_URL}/audio/transcriptions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${openrouterApiKey}`,
+          "Content-Type": "application/json",
+          "X-Title": "Badboy Voice Memory Assistant",
         },
-        ...(lang ? { language: lang } : {}),
-      }),
-      signal: upstreamAbort.signal,
-    }).finally(() => upstreamAbort.cleanup());
+        body: JSON.stringify({
+          model: "openai/whisper-1",
+          input_audio: {
+            data: audioBase64,
+            format,
+          },
+          ...(lang ? { language: lang } : {}),
+        }),
+        signal: upstreamAbort.signal,
+      });
 
-    if (upstream.status === 429) {
+      if (upstream.status === 429) {
+        return jsonResponse({
+          code: "OPENROUTER_RATE_LIMIT",
+          error: "Speech transcription rate limit reached. Please wait and try again.",
+        }, 429);
+      }
+
+      if (!upstream.ok) {
+        console.error(`[CF Function Error] OpenRouter transcription returned status ${upstream.status}.`);
+        return jsonResponse({
+          code: "TRANSCRIPTION_UPSTREAM_FAILED",
+          error: `Speech transcription failed (HTTP ${upstream.status}). Try again later.`,
+        }, 502);
+      }
+
+      const result = await upstream.json() as { text?: unknown; usage?: unknown };
+      if (typeof result.text !== "string") {
+        return jsonResponse({ code: "TRANSCRIPTION_EMPTY", error: "No transcript was returned." }, 502);
+      }
       return jsonResponse({
-        code: "OPENROUTER_RATE_LIMIT",
-        error: "Speech transcription rate limit reached. Please wait and try again.",
-      }, 429);
+        text: result.text,
+        provider: "openrouter",
+        model: "openai/whisper-1",
+        ...(result.usage !== undefined ? { usage: result.usage } : {}),
+      });
+    } finally {
+      upstreamAbort.cleanup();
     }
-
-    if (!upstream.ok) {
-      console.error(`[CF Function Error] OpenRouter transcription returned status ${upstream.status}.`);
-      return jsonResponse({
-        code: "TRANSCRIPTION_UPSTREAM_FAILED",
-        error: `Speech transcription failed (HTTP ${upstream.status}). Try again later.`,
-      }, 502);
-    }
-
-    const result = await upstream.json() as { text?: unknown; usage?: unknown };
-    if (typeof result.text !== "string") {
-      return jsonResponse({ code: "TRANSCRIPTION_EMPTY", error: "No transcript was returned." }, 502);
-    }
-    return jsonResponse({
-      text: result.text,
-      provider: "openrouter",
-      model: "openai/whisper-1",
-      ...(result.usage !== undefined ? { usage: result.usage } : {}),
-    });
   } catch (err) {
     console.error("[CF Function Error] Transcription request failed:", err instanceof Error ? err.message : String(err));
     return jsonResponse({
@@ -641,8 +645,8 @@ async function handleSpeechRequest(request: Request, env: Env): Promise<Response
   // 2. Secondary fallback: OpenRouter audio/speech (if configured)
   const openrouterApiKey = env.OPENROUTER_API_KEY?.trim();
   if (openrouterApiKey) {
+    const upstreamAbort = createUpstreamAbortSignal(request, 12_000);
     try {
-      const upstreamAbort = createUpstreamAbortSignal(request, 12_000);
       const upstream = await fetch(`${OPENROUTER_BASE_URL}/audio/speech`, {
         method: "POST",
         headers: {
@@ -657,7 +661,7 @@ async function handleSpeechRequest(request: Request, env: Env): Promise<Response
           voice: selectedVoice,
         }),
         signal: upstreamAbort.signal,
-      }).finally(() => upstreamAbort.cleanup());
+      });
 
       if (upstream.ok) {
         const audioBytes = await upstream.arrayBuffer();
@@ -676,7 +680,10 @@ async function handleSpeechRequest(request: Request, env: Env): Promise<Response
       }
     } catch (ttsErr) {
       console.warn("[CF Function Warn] Cloud speech upstream failed:", ttsErr instanceof Error ? ttsErr.message : String(ttsErr));
+    } finally {
+      upstreamAbort.cleanup();
     }
+
   }
 
   // The mobile client treats every 2xx response as audio bytes. Use a non-2xx
