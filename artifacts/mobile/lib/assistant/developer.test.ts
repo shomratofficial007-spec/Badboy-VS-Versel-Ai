@@ -224,6 +224,16 @@ test('generateDevelopmentPlan - parses Auto QA request', () => {
   assert.strictEqual(plan.title, 'Auto QA & টেস্ট সুইট অটোমেশন');
 });
 
+test('generateDevelopmentPlan - initializes an empty dependency list for default and QA plans', () => {
+  const defaultPlan = generateDevelopmentPlan('Prepare a personal assistant improvement');
+  assert.strictEqual(defaultPlan.category, 'self');
+  assert.deepStrictEqual(defaultPlan.dependencies, []);
+
+  const qaPlan = generateDevelopmentPlan('Inspect and fix a broken test');
+  assert.strictEqual(qaPlan.category, 'qa');
+  assert.deepStrictEqual(qaPlan.dependencies, []);
+});
+
 test('getProjectBrainSummary - returns non-secret project knowledge', () => {
   const brain = getProjectBrainSummary();
   assert.strictEqual(brain.name, 'Voice-Memory-Assistant-net (Badboy AI)');

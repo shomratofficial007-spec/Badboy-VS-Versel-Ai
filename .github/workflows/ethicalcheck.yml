@@ -110,7 +110,13 @@ jobs:
               const files = comparison.files ?? [];
               const workerUnaffected = files.length > 0 && files.every((file) =>
                 file.filename.startsWith('artifacts/mobile/') ||
-                file.filename.startsWith('.github/')
+                file.filename.startsWith('.github/') ||
+                file.filename.startsWith('functions/vitest/') ||
+                file.filename === 'eslint.config.js' ||
+                file.filename === 'vitest.config.ts' ||
+                file.filename === 'package.json' ||
+                file.filename === 'pnpm-lock.yaml' ||
+                file.filename === 'pnpm-workspace.yaml'
               );
               if (workerUnaffected) {
                 process.stderr.write(
@@ -145,7 +151,11 @@ jobs:
                   file.filename.startsWith('artifacts/mobile/') ||
                   file.filename === 'SECURITY-EXCEPTIONS.md' ||
                   file.filename === 'pnpm-lock.yaml' ||
-                  file.filename === 'pnpm-workspace.yaml'
+                  file.filename === 'pnpm-workspace.yaml' ||
+                  file.filename.startsWith('functions/vitest/') ||
+                  file.filename === 'eslint.config.js' ||
+                  file.filename === 'vitest.config.ts' ||
+                  file.filename === 'package.json'
                 ) {
                   continue;
                 }

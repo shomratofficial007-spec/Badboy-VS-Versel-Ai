@@ -733,7 +733,7 @@ export function generateDevelopmentPlan(prompt: string): DevPlan {
   let title = 'নতুন ফিচারের উন্নয়ন পরিকল্পনা';
   let featureDescription = 'ব্যবহারকারীর প্রদত্ত নির্দেশনা অনুসারে ফিচারের পরিকল্পনা প্রস্তুত করা হয়েছে।';
   let filesToModify: string[] = ['artifacts/mobile/app/(tabs)/index.tsx'];
-  let dependencies: string[] = [];
+  const dependencies: string[] = [];
 
   // QA & Testing
   if (

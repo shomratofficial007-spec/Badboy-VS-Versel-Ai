@@ -7,14 +7,21 @@
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
-    "deploy": "wrangler deploy --config wrangler.json"
+    "deploy": "wrangler deploy --config wrangler.json",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test:vitest": "vitest run"
   },
   "private": true,
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261019.1",
     "prettier": "^3.9.6",
     "typescript": "~5.9.3",
-    "wrangler": "^4.152.0"
+    "wrangler": "^4.152.0",
+    "@eslint/js": "^9.39.3",
+    "eslint": "^9.39.3",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^4.1.6"
   },
   "packageManager": "pnpm@10.8.1"
 }
