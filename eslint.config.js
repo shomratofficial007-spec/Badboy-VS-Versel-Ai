@@ -1,16 +1,14 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
-const readonly = [readonly];
 const nativeGlobals = Object.fromEntries(
   [
-    'console', 'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'console', 'exports',
+    'console', 'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'exports',
     'fetch', 'global', 'module', 'process', 'require', 'setImmediate',
-    'setInterval', 'setTimeout', 'URL', 'URLSearchParams', 'Request',
-    'Response', 'Headers', 'crypto', 'window', 'document', 'navigator',
-    'location', 'localStorage', 'sessionStorage', 'alert', 'confirm',
-    'requestAnimationFrame', 'cancelAnimationFrame', 'HTMLElement', 'Element',
-    'MutationObserver', 'IntersectionObserver',
+    'URL', 'URLSearchParams', 'Request', 'Response', 'Headers', 'crypto',
+    'window', 'document', 'navigator', 'location', 'localStorage', 'sessionStorage',
+    'alert', 'confirm', 'requestAnimationFrame', 'cancelAnimationFrame',
+    'HTMLElement', 'Element', 'MutationObserver', 'IntersectionObserver',
   ].map((name) => [name, 'readonly'])
 );
 
