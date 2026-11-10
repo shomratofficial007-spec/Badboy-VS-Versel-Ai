@@ -262,6 +262,8 @@ test("onRequestPost - transcribe uses Groq Whisper Large-V3 as primary when GROQ
     if (url.includes("api.groq.com/openai/v1/audio/transcriptions")) {
       groqCalled = true;
       sentAuth = (init?.headers as Record<string, string>)?.Authorization || "";
+      assert.ok(init?.signal instanceof AbortSignal, "Groq transcription must have an abort signal");
+      assert.strictEqual(init?.signal?.aborted, false);
       const formData = init?.body as FormData;
       assert.strictEqual(formData.get("language"), "bn");
       assert.strictEqual(formData.get("temperature"), "0");
@@ -356,6 +358,8 @@ test("onRequestPost - transcribe falls back to OpenRouter when Groq fails with 4
     }
     if (url.includes("openrouter.ai/api/v1/audio/transcriptions")) {
       openrouterAttempted = true;
+      assert.ok(init?.signal instanceof AbortSignal, "OpenRouter transcription must have an abort signal");
+      assert.strictEqual(init?.signal?.aborted, false);
       const body = JSON.parse(String(init?.body || "{}"));
       assert.strictEqual(body.model, "openai/whisper-1");
       return new Response(JSON.stringify({ text: "OpenRouter ফলব্যাক ট্রান্সক্রিপশন" }), {
@@ -422,6 +426,35 @@ test("onRequestPost - speech endpoint validates inputs and falls back gracefully
   assert.strictEqual(json.code, "FALLBACK_TO_CLIENT_TTS");
   assert.match(json.error, /local speech engine/i);
   assert.strictEqual(json.voice, "bn-BD-PradeepNeural");
+});
+
+test("onRequestPost - unknown TTS locale falls back locally instead of selecting Bengali voice", async () => {
+  const originalFetch = globalThis.fetch;
+  let upstreamCalled = false;
+  globalThis.fetch = (async () => {
+    upstreamCalled = true;
+    throw new Error("No cloud TTS provider should be called for an unsupported locale.");
+  }) as typeof globalThis.fetch;
+
+  try {
+    const context = {
+      request: new Request("https://example.com/api/assistant/speech", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "Hello", language: "zu-ZA" }),
+      }),
+      env: { OPENROUTER_API_KEY: "test-openrouter-key" },
+    } as any;
+    const response = await onRequestPost(context);
+    assert.strictEqual(response.status, 503);
+    const json = (await response.json()) as any;
+    assert.strictEqual(json.code, "FALLBACK_TO_CLIENT_TTS");
+    assert.strictEqual(json.language, "zu-ZA");
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(json, "voice"), false);
+    assert.strictEqual(upstreamCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("onRequestPost - advances through fallback models on retryable 404, 429, 500, 503 errors and network failures", async () => {
