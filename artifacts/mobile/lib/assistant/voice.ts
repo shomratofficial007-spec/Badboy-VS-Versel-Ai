@@ -154,6 +154,38 @@ export function getNextVoiceLanguage(code: string): string {
   return VOICE_LANGUAGES[(index + 1) % VOICE_LANGUAGES.length].code;
 }
 
+/** Treat regional variants as one language so a chosen TTS voice survives locale changes. */
+export function getVoiceLanguageGroup(code: string): string {
+  return code.toLowerCase().split(/[-_]/)[0];
+}
+
+export function rememberVoiceForLanguage(
+  preferences: Record<string, string>,
+  language: string,
+  identifier: string | null,
+): Record<string, string> {
+  const next = { ...preferences };
+  const key = getVoiceLanguageGroup(language);
+  if (identifier) next[key] = identifier;
+  else delete next[key];
+  return next;
+}
+
+export function selectVoiceForLanguage(
+  preferences: Record<string, string>,
+  currentLanguage: string,
+  currentIdentifier: string | null,
+  nextLanguage: string,
+): { preferences: Record<string, string>; voiceIdentifier: string | null } {
+  const next = currentIdentifier
+    ? rememberVoiceForLanguage(preferences, currentLanguage, currentIdentifier)
+    : { ...preferences };
+  return {
+    preferences: next,
+    voiceIdentifier: next[getVoiceLanguageGroup(nextLanguage)] ?? null,
+  };
+}
+
 interface SpeechCallbacks {
   onTranscript: (text: string, isFinal: boolean) => void;
   onError?: (errorType?: string) => void;
