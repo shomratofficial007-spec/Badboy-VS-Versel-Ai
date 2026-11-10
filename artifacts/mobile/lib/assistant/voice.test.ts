@@ -4,6 +4,9 @@ import {
   containsWakePhrase,
   getVoiceErrorMessage,
   getNextVoiceLanguage,
+  getVoiceLanguageGroup,
+  rememberVoiceForLanguage,
+  selectVoiceForLanguage,
   getVoiceLanguageLabel,
   VOICE_LANGUAGES,
   isDictationAvailable,
@@ -17,6 +20,28 @@ import {
   updateVoiceRecordingLifecycle,
   VOICE_SILENCE_DURATION_MS,
 } from './voice.ts';
+
+test('voice preferences are remembered per language and restored when switching back', () => {
+  const english = rememberVoiceForLanguage({}, 'en-US', 'english-voice');
+  const switched = selectVoiceForLanguage(english, 'en-US', 'english-voice', 'bn-BD');
+  assert.equal(switched.voiceIdentifier, null);
+  const bengali = rememberVoiceForLanguage(switched.preferences, 'bn-BD', 'bengali-voice');
+  const backToEnglish = selectVoiceForLanguage(bengali, 'bn-BD', 'bengali-voice', 'en-GB');
+  assert.equal(backToEnglish.voiceIdentifier, 'english-voice');
+  assert.equal(backToEnglish.preferences.en, 'english-voice');
+  assert.equal(backToEnglish.preferences.bn, 'bengali-voice');
+});
+
+test('regional locale changes reuse the same language voice preference', () => {
+  const switched = selectVoiceForLanguage({ en: 'english-voice' }, 'bn-BD', null, 'en-GB');
+  assert.equal(switched.voiceIdentifier, 'english-voice');
+});
+
+test('choosing the default voice clears only that language preference', () => {
+  const preferences = rememberVoiceForLanguage({ en: 'english-voice', bn: 'bengali-voice' }, 'en-US', null);
+  assert.equal(preferences.en, undefined);
+  assert.equal(preferences.bn, 'bengali-voice');
+});
 
 test('wake phrases: English and Bangla aliases are recognized', () => {
   for (const phrase of [
