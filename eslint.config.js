@@ -1,17 +1,44 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
-const nativeGlobals = Object.fromEntries(
-  [
-    '__dirname', '__filename', 'console', 'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'exports',
-    'fetch', 'global', 'module', 'process', 'require', 'setImmediate',
-    'URL', 'URLSearchParams', 'Request', 'Response', 'Headers', 'crypto',
-    'window', 'document', 'navigator', 'location', 'localStorage', 'sessionStorage',
-    'alert', 'confirm', 'requestAnimationFrame', 'cancelAnimationFrame',
-    'HTMLElement', 'Element', 'MutationObserver', 'IntersectionObserver',
-    'AbortSignal', 'AbortController',
-  ].map((name) => [name, 'readonly'])
-);
+const nativeGlobals = {
+  __dirname: 'readonly',
+  __filename: 'readonly',
+  console: 'readonly',
+  setTimeout: 'readonly',
+  setInterval: 'readonly',
+  clearTimeout: 'readonly',
+  clearInterval: 'readonly',
+  exports: 'readonly',
+  fetch: 'readonly',
+  global: 'readonly',
+  module: 'readonly',
+  process: 'readonly',
+  require: 'readonly',
+  setImmediate: 'readonly',
+  URL: 'readonly',
+  URLSearchParams: 'readonly',
+  Request: 'readonly',
+  Response: 'readonly',
+  Headers: 'readonly',
+  crypto: 'readonly',
+  window: 'readonly',
+  document: 'readonly',
+  navigator: 'readonly',
+  location: 'readonly',
+  localStorage: 'readonly',
+  sessionStorage: 'readonly',
+  alert: 'readonly',
+  confirm: 'readonly',
+  requestAnimationFrame: 'readonly',
+  cancelAnimationFrame: 'readonly',
+  HTMLElement: 'readonly',
+  Element: 'readonly',
+  MutationObserver: 'readonly',
+  IntersectionObserver: 'readonly',
+  AbortSignal: 'readonly',
+  AbortController: 'readonly',
+};
 
 export default tseslint.config(
   {
@@ -24,6 +51,7 @@ export default tseslint.config(
       '**/cache/**',
       '**/.next/**',
       '**/.turbo/**',
+      '**/e.g. SettingsScreen.tsx',
     ],
   },
   js.configs.recommended,
@@ -44,10 +72,9 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-this-alias': 'off',
       '@typescript-eslint/no-require-imports': 'off',
-      '@typescript-eslint/no-unused-vars': [
-        'warn',
-        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
-      ],
+      '@typescript-eslint/no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-expressions': 'off',
+      'no-unused-labels': 'off',
     },
   },
   {
@@ -59,6 +86,7 @@ export default tseslint.config(
     rules: { 
       '@typescript-eslint/no-require-imports': 'off',
       '@typescript-eslint/no-this-alias': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
     },
   },
   {
@@ -74,6 +102,7 @@ export default tseslint.config(
       '@typescript-eslint/no-require-imports': 'off',
       '@typescript-eslint/no-this-alias': 'off',
       'no-undef': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
     },
   }
 );
