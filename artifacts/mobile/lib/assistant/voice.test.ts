@@ -14,6 +14,7 @@ import {
   getAvailableSpeechVoices,
   shouldStopVoiceRecordingForSilence,
   shouldFinalizeStoppedVoiceRecording,
+  updateVoiceRecordingLifecycle,
   VOICE_SILENCE_DURATION_MS,
 } from './voice.ts';
 
@@ -96,6 +97,27 @@ test('voice recording finalizes only after an active recorder stops at its hard 
   assert.equal(shouldFinalizeStoppedVoiceRecording(true, false, true, 100), false);
   assert.equal(shouldFinalizeStoppedVoiceRecording(true, false, false, 0), false);
   assert.equal(shouldFinalizeStoppedVoiceRecording(true, false, false, 100), true);
+});
+
+test('voice recorder lifecycle finalizes once after an observed recording stops', () => {
+  const activity = { current: 0 };
+  let finalized = 0;
+  assert.equal(updateVoiceRecordingLifecycle(false, true, false, false, activity, 100, () => finalized++), false);
+  assert.equal(finalized, 0);
+  assert.equal(updateVoiceRecordingLifecycle(false, true, false, true, activity, 200, () => finalized++), true);
+  assert.equal(activity.current, 200);
+  assert.equal(updateVoiceRecordingLifecycle(false, true, false, false, activity, 300, () => finalized++), false);
+  assert.equal(activity.current, 200);
+  assert.equal(finalized, 1);
+});
+
+test('voice recorder lifecycle ignores web, idle, and in-flight states', () => {
+  const activity = { current: 0 };
+  let finalized = 0;
+  assert.equal(updateVoiceRecordingLifecycle(true, true, false, false, activity, 100, () => finalized++), false);
+  assert.equal(updateVoiceRecordingLifecycle(false, false, false, true, activity, 100, () => finalized++), false);
+  assert.equal(updateVoiceRecordingLifecycle(false, true, true, false, activity, 100, () => finalized++), false);
+  assert.equal(finalized, 0);
 });
 
 test('dictation reports unsupported when no browser recognizer or native provider is available', () => {
