@@ -164,7 +164,7 @@ test('AssistantContext callbacks persist chat/settings and create, update, delet
   const saved = calls.find((call) => call.name === 'storeMemoryNote')?.value;
   assert.equal(saved.note.title, 'শিরোনাম');
   assert.equal(saved.note.content, 'গোপন তথ্য');
-  assert.equal(saved.memories.length, 1);
+  assert.equal(saved.memories.length, 0, 'storage receives only pre-existing notes; it appends the new note once');
 
   const note = { ...saved.note };
   value = renderProvider();
