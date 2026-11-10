@@ -633,6 +633,25 @@ export function shouldFinalizeStoppedVoiceRecording(
   return recordingStarted && !transcriptionInFlight && !isRecording && recordingObservedAt > 0;
 }
 
+export function updateVoiceRecordingLifecycle(
+  isWeb: boolean,
+  recordingStarted: boolean,
+  transcriptionInFlight: boolean,
+  isRecording: boolean,
+  lastVoiceActivityAt: { current: number },
+  now: number,
+  onFinalize: () => void,
+): boolean {
+  if (isWeb || !recordingStarted || transcriptionInFlight) return false;
+  if (shouldFinalizeStoppedVoiceRecording(recordingStarted, transcriptionInFlight, isRecording, lastVoiceActivityAt.current)) {
+    onFinalize();
+    return false;
+  }
+  if (!isRecording) return false;
+  if (lastVoiceActivityAt.current === 0) lastVoiceActivityAt.current = now;
+  return true;
+}
+
 /** True only after speech was detected and the microphone stayed below the
  * configured dBFS threshold for the complete silence window. */
 export function shouldStopVoiceRecordingForSilence(
