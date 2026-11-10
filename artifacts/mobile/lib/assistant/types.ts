@@ -36,6 +36,8 @@ export interface AssistantSettings {
   voiceLanguage: string;
   /** Installed device/browser TTS voice; null uses the default/cloud voice. */
   voiceIdentifier?: string | null;
+  /** Last selected installed TTS voice for each language family (e.g. en, bn). */
+  voiceIdentifiersByLanguage?: Record<string, string>;
   roadmap: {
     webDevelopment: boolean;
     appDevelopment: boolean;
