@@ -101,7 +101,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
         createdAt: new Date().toISOString(),
       };
       const next = [note, ...memories];
-      await storeMemoryNote(note, next);
+      await storeMemoryNote(note, memories);
       setMemories(next);
     },
     [memories],

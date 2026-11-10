@@ -154,6 +154,38 @@ export function getNextVoiceLanguage(code: string): string {
   return VOICE_LANGUAGES[(index + 1) % VOICE_LANGUAGES.length].code;
 }
 
+/** Treat regional variants as one language so a chosen TTS voice survives locale changes. */
+export function getVoiceLanguageGroup(code: string): string {
+  return code.toLowerCase().split(/[-_]/)[0];
+}
+
+export function rememberVoiceForLanguage(
+  preferences: Record<string, string>,
+  language: string,
+  identifier: string | null,
+): Record<string, string> {
+  const next = { ...preferences };
+  const key = getVoiceLanguageGroup(language);
+  if (identifier) next[key] = identifier;
+  else delete next[key];
+  return next;
+}
+
+export function selectVoiceForLanguage(
+  preferences: Record<string, string>,
+  currentLanguage: string,
+  currentIdentifier: string | null,
+  nextLanguage: string,
+): { preferences: Record<string, string>; voiceIdentifier: string | null } {
+  const next = currentIdentifier
+    ? rememberVoiceForLanguage(preferences, currentLanguage, currentIdentifier)
+    : { ...preferences };
+  return {
+    preferences: next,
+    voiceIdentifier: next[getVoiceLanguageGroup(nextLanguage)] ?? null,
+  };
+}
+
 interface SpeechCallbacks {
   onTranscript: (text: string, isFinal: boolean) => void;
   onError?: (errorType?: string) => void;
@@ -623,6 +655,35 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
 export const VOICE_SILENCE_THRESHOLD_DBFS = -45;
 export const VOICE_SILENCE_DURATION_MS = 1400;
 
+/** Finalize a recording only after it was observed running and then stopped. */
+export function shouldFinalizeStoppedVoiceRecording(
+  recordingStarted: boolean,
+  transcriptionInFlight: boolean,
+  isRecording: boolean,
+  recordingObservedAt: number,
+): boolean {
+  return recordingStarted && !transcriptionInFlight && !isRecording && recordingObservedAt > 0;
+}
+
+export function updateVoiceRecordingLifecycle(
+  isWeb: boolean,
+  recordingStarted: boolean,
+  transcriptionInFlight: boolean,
+  isRecording: boolean,
+  lastVoiceActivityAt: { current: number },
+  now: number,
+  onFinalize: () => void,
+): boolean {
+  if (isWeb || !recordingStarted || transcriptionInFlight) return false;
+  if (shouldFinalizeStoppedVoiceRecording(recordingStarted, transcriptionInFlight, isRecording, lastVoiceActivityAt.current)) {
+    onFinalize();
+    return false;
+  }
+  if (!isRecording) return false;
+  if (lastVoiceActivityAt.current === 0) lastVoiceActivityAt.current = now;
+  return true;
+}
+
 /** True only after speech was detected and the microphone stayed below the
  * configured dBFS threshold for the complete silence window. */
 export function shouldStopVoiceRecordingForSilence(
@@ -830,7 +891,7 @@ export function speak(
       const timeout = new Promise<never>((_resolve, reject) => {
         requestWatchdog = setTimeout(
           () => reject(new Error('Cloud speech request timed out.')),
-          12000,
+          23000,
         );
       });
       let bytes: Uint8Array;

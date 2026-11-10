@@ -54,10 +54,14 @@ test('uses SecureStore on native when EXPO_OS is omitted by a custom build', asy
     assert.equal(secureStoreToken, OWNER_TOKEN);
     assert.equal(await getOwnerToken(), OWNER_TOKEN);
 
-    // Simulate a fresh JS runtime: the token must be restored from SecureStore,
-    // not merely from the module's in-memory cache.
-    await clearOwnerToken();
-    assert.equal(secureStoreToken, null);
+    // restoreOwnerSession clears the module cache and must recover from SecureStore.
+    assert.equal(await restoreOwnerSession(), true);
+    assert.equal(await getOwnerToken(), OWNER_TOKEN);
+
+    // A token removed from persistent storage must not survive in the old cache.
+    secureStoreToken = null;
+    assert.equal(await restoreOwnerSession(), false);
+    assert.equal(await getOwnerToken(), null);
   } finally {
     if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
     else delete (globalThis as typeof globalThis & { window?: unknown }).window;

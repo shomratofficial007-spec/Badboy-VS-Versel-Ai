@@ -40,6 +40,7 @@ import {
   speak,
   stopSpeaking,
   shouldStopVoiceRecordingForSilence,
+  updateVoiceRecordingLifecycle,
   VOICE_SILENCE_THRESHOLD_DBFS,
 } from '@/lib/assistant/voice';
 import type { ChatMessage } from '@/lib/assistant/types';
@@ -422,7 +423,10 @@ export default function ChatScreen() {
   }, [audioRecorder, resumeWakeWord, selectedLang, sendMessage, settings.autoSubmitVoice]);
 
   useEffect(() => {
-    if (Platform.OS === 'web' || !audioRecordingStartedRef.current || !audioRecorderState.isRecording) return;
+    if (!updateVoiceRecordingLifecycle(
+      Platform.OS === 'web', audioRecordingStartedRef.current, transcriptionInFlightRef.current,
+      audioRecorderState.isRecording, lastVoiceActivityAtRef, Date.now(), finishRecordedVoice,
+    )) return;
     const meter = audioRecorderState.metering;
     if (typeof meter !== 'number' || !Number.isFinite(meter)) return;
 
@@ -446,7 +450,7 @@ export default function ChatScreen() {
     return () => {
       if (!audioRecordingStartedRef.current) return;
       audioRecordingStartedRef.current = false;
-      void audioRecorder
+        void audioRecorder
         .stop()
         .then(() => {
           const recordingUri = audioRecorder.uri;
@@ -498,8 +502,8 @@ export default function ChatScreen() {
         await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
         await audioRecorder.prepareToRecordAsync();
         transcriptionInFlightRef.current = false;
-        speechDetectedRef.current = false;
-        lastVoiceActivityAtRef.current = Date.now();
+            speechDetectedRef.current = false;
+        lastVoiceActivityAtRef.current = 0;
         audioRecordingStartedRef.current = true;
         // Silence detection ends normal turns; 20 seconds remains a hard safety cap.
         audioRecorder.record({ forDuration: 20 });
@@ -507,7 +511,7 @@ export default function ChatScreen() {
         setListening(true);
       } catch (cause) {
         audioRecordingStartedRef.current = false;
-        setListening(false);
+            setListening(false);
         await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
         setError(
           cause instanceof Error

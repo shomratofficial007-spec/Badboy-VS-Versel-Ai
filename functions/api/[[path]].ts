@@ -253,6 +253,24 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
+function createUpstreamAbortSignal(request: Request, timeoutMs = 12_000): {
+  signal: AbortSignal;
+  cleanup: () => void;
+} {
+  const controller = new AbortController();
+  const abortFromClient = () => controller.abort(request.signal.reason);
+  if (request.signal.aborted) abortFromClient();
+  else request.signal.addEventListener("abort", abortFromClient, { once: true });
+  const timeout = setTimeout(() => controller.abort(new Error("Upstream request timed out")), timeoutMs);
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      clearTimeout(timeout);
+      request.signal.removeEventListener("abort", abortFromClient);
+    },
+  };
+}
+
 async function handleTranscriptionRequest(request: Request, env: Env): Promise<Response> {
   const groqApiKey = env.GROQ_API_KEY?.trim() || "";
   const openrouterApiKey = env.OPENROUTER_API_KEY?.trim() || "";
@@ -333,29 +351,44 @@ async function handleTranscriptionRequest(request: Request, env: Env): Promise<R
         formData.append("prompt", transcriptionPrompt);
       }
 
-      const groqResponse = await fetch(`${GROQ_BASE_URL}/audio/transcriptions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${groqApiKey}`,
-        },
-        body: formData,
-      });
-
-      if (groqResponse.ok) {
-        const result = (await groqResponse.json()) as { text?: unknown };
-        if (typeof result.text === "string" && result.text.trim()) {
-          return jsonResponse({
-            text: result.text.trim(),
-            provider: "groq",
-            model: "whisper-large-v3",
-          });
+      const upstreamAbort = createUpstreamAbortSignal(request);
+      let groqResponse: Response;
+      try {
+        groqResponse = await fetch(`${GROQ_BASE_URL}/audio/transcriptions`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${groqApiKey}`,
+          },
+          body: formData,
+          signal: upstreamAbort.signal,
+        });
+        if (groqResponse.ok) {
+          const result = (await groqResponse.json()) as { text?: unknown };
+          if (typeof result.text === "string" && result.text.trim()) {
+            return jsonResponse({
+              text: result.text.trim(),
+              provider: "groq",
+              model: "whisper-large-v3",
+            });
+          }
+        } else {
+          console.warn(`[CF Function Warn] Groq whisper transcription returned HTTP ${groqResponse.status}. Attempting fallback.`);
         }
-      } else {
-        console.warn(`[CF Function Warn] Groq whisper transcription returned HTTP ${groqResponse.status}. Attempting fallback.`);
+      } finally {
+        upstreamAbort.cleanup();
       }
+
     } catch (groqErr) {
       console.warn("[CF Function Warn] Groq whisper transcription failed:", groqErr instanceof Error ? groqErr.message : String(groqErr));
     }
+  }
+
+  // Do not spend another provider request after the mobile client has cancelled.
+  if (request.signal.aborted) {
+    return jsonResponse({
+      code: "TRANSCRIPTION_CANCELLED",
+      error: "Speech transcription was cancelled by the client.",
+    }, 499);
   }
 
   // 2. Fallback: OpenRouter transcription (openai/whisper-1)
@@ -367,48 +400,54 @@ async function handleTranscriptionRequest(request: Request, env: Env): Promise<R
   }
 
   try {
-    const upstream = await fetch(`${OPENROUTER_BASE_URL}/audio/transcriptions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${openrouterApiKey}`,
-        "Content-Type": "application/json",
-        "X-Title": "Badboy Voice Memory Assistant",
-      },
-      body: JSON.stringify({
-        model: "openai/whisper-1",
-        input_audio: {
-          data: audioBase64,
-          format,
+    const upstreamAbort = createUpstreamAbortSignal(request);
+    try {
+      const upstream = await fetch(`${OPENROUTER_BASE_URL}/audio/transcriptions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${openrouterApiKey}`,
+          "Content-Type": "application/json",
+          "X-Title": "Badboy Voice Memory Assistant",
         },
-        ...(lang ? { language: lang } : {}),
-      }),
-    });
+        body: JSON.stringify({
+          model: "openai/whisper-1",
+          input_audio: {
+            data: audioBase64,
+            format,
+          },
+          ...(lang ? { language: lang } : {}),
+        }),
+        signal: upstreamAbort.signal,
+      });
 
-    if (upstream.status === 429) {
+      if (upstream.status === 429) {
+        return jsonResponse({
+          code: "OPENROUTER_RATE_LIMIT",
+          error: "Speech transcription rate limit reached. Please wait and try again.",
+        }, 429);
+      }
+
+      if (!upstream.ok) {
+        console.error(`[CF Function Error] OpenRouter transcription returned status ${upstream.status}.`);
+        return jsonResponse({
+          code: "TRANSCRIPTION_UPSTREAM_FAILED",
+          error: `Speech transcription failed (HTTP ${upstream.status}). Try again later.`,
+        }, 502);
+      }
+
+      const result = await upstream.json() as { text?: unknown; usage?: unknown };
+      if (typeof result.text !== "string") {
+        return jsonResponse({ code: "TRANSCRIPTION_EMPTY", error: "No transcript was returned." }, 502);
+      }
       return jsonResponse({
-        code: "OPENROUTER_RATE_LIMIT",
-        error: "Speech transcription rate limit reached. Please wait and try again.",
-      }, 429);
+        text: result.text,
+        provider: "openrouter",
+        model: "openai/whisper-1",
+        ...(result.usage !== undefined ? { usage: result.usage } : {}),
+      });
+    } finally {
+      upstreamAbort.cleanup();
     }
-
-    if (!upstream.ok) {
-      console.error(`[CF Function Error] OpenRouter transcription returned status ${upstream.status}.`);
-      return jsonResponse({
-        code: "TRANSCRIPTION_UPSTREAM_FAILED",
-        error: `Speech transcription failed (HTTP ${upstream.status}). Try again later.`,
-      }, 502);
-    }
-
-    const result = await upstream.json() as { text?: unknown; usage?: unknown };
-    if (typeof result.text !== "string") {
-      return jsonResponse({ code: "TRANSCRIPTION_EMPTY", error: "No transcript was returned." }, 502);
-    }
-    return jsonResponse({
-      text: result.text,
-      provider: "openrouter",
-      model: "openai/whisper-1",
-      ...(result.usage !== undefined ? { usage: result.usage } : {}),
-    });
   } catch (err) {
     console.error("[CF Function Error] Transcription request failed:", err instanceof Error ? err.message : String(err));
     return jsonResponse({
@@ -436,12 +475,12 @@ const EDGE_TTS_VOICE_MAP: Record<string, string> = {
   "ja-jp": "ja-JP-NanamiNeural",
 };
 
-function resolveEdgeTtsVoice(language?: string): string {
-  if (!language) return "bn-BD-PradeepNeural";
-  const normalized = language.trim().toLowerCase();
+function resolveEdgeTtsVoice(language?: string): string | null {
+  if (!language?.trim()) return "bn-BD-PradeepNeural";
+  const normalized = language.trim().replace(/_/g, "-").toLowerCase();
   if (EDGE_TTS_VOICE_MAP[normalized]) return EDGE_TTS_VOICE_MAP[normalized];
   const langBase = normalized.split("-")[0];
-  return EDGE_TTS_VOICE_MAP[langBase] || "bn-BD-PradeepNeural";
+  return EDGE_TTS_VOICE_MAP[langBase] ?? null;
 }
 
 /**
@@ -582,6 +621,16 @@ async function handleSpeechRequest(request: Request, env: Env): Promise<Response
   const cleanText = text.trim();
   const selectedVoice = resolveEdgeTtsVoice(language);
 
+  // Languages without a verified Edge neural voice must use the device's
+  // locale-aware TTS engine. Never silently speak them with a Bengali voice.
+  if (!selectedVoice) {
+    return jsonResponse({
+      code: "FALLBACK_TO_CLIENT_TTS",
+      error: `No verified cloud TTS voice is configured for ${language}. Use the device's local speech engine.`,
+      language,
+    }, 503);
+  }
+
   // 1. Primary: Microsoft Edge-TTS Natural Neural Voice
   try {
     const edgeAudio = await synthesizeEdgeTts(cleanText, selectedVoice);
@@ -604,6 +653,7 @@ async function handleSpeechRequest(request: Request, env: Env): Promise<Response
   // 2. Secondary fallback: OpenRouter audio/speech (if configured)
   const openrouterApiKey = env.OPENROUTER_API_KEY?.trim();
   if (openrouterApiKey) {
+    const upstreamAbort = createUpstreamAbortSignal(request, 12_000);
     try {
       const upstream = await fetch(`${OPENROUTER_BASE_URL}/audio/speech`, {
         method: "POST",
@@ -618,6 +668,7 @@ async function handleSpeechRequest(request: Request, env: Env): Promise<Response
           response_format: "mp3",
           voice: selectedVoice,
         }),
+        signal: upstreamAbort.signal,
       });
 
       if (upstream.ok) {
@@ -637,7 +688,10 @@ async function handleSpeechRequest(request: Request, env: Env): Promise<Response
       }
     } catch (ttsErr) {
       console.warn("[CF Function Warn] Cloud speech upstream failed:", ttsErr instanceof Error ? ttsErr.message : String(ttsErr));
+    } finally {
+      upstreamAbort.cleanup();
     }
+
   }
 
   // The mobile client treats every 2xx response as audio bytes. Use a non-2xx

@@ -4,6 +4,9 @@ import {
   containsWakePhrase,
   getVoiceErrorMessage,
   getNextVoiceLanguage,
+  getVoiceLanguageGroup,
+  rememberVoiceForLanguage,
+  selectVoiceForLanguage,
   getVoiceLanguageLabel,
   VOICE_LANGUAGES,
   isDictationAvailable,
@@ -13,8 +16,32 @@ import {
   checkMicrophonePermission,
   getAvailableSpeechVoices,
   shouldStopVoiceRecordingForSilence,
+  shouldFinalizeStoppedVoiceRecording,
+  updateVoiceRecordingLifecycle,
   VOICE_SILENCE_DURATION_MS,
 } from './voice.ts';
+
+test('voice preferences are remembered per language and restored when switching back', () => {
+  const english = rememberVoiceForLanguage({}, 'en-US', 'english-voice');
+  const switched = selectVoiceForLanguage(english, 'en-US', 'english-voice', 'bn-BD');
+  assert.equal(switched.voiceIdentifier, null);
+  const bengali = rememberVoiceForLanguage(switched.preferences, 'bn-BD', 'bengali-voice');
+  const backToEnglish = selectVoiceForLanguage(bengali, 'bn-BD', 'bengali-voice', 'en-GB');
+  assert.equal(backToEnglish.voiceIdentifier, 'english-voice');
+  assert.equal(backToEnglish.preferences.en, 'english-voice');
+  assert.equal(backToEnglish.preferences.bn, 'bengali-voice');
+});
+
+test('regional locale changes reuse the same language voice preference', () => {
+  const switched = selectVoiceForLanguage({ en: 'english-voice' }, 'bn-BD', null, 'en-GB');
+  assert.equal(switched.voiceIdentifier, 'english-voice');
+});
+
+test('choosing the default voice clears only that language preference', () => {
+  const preferences = rememberVoiceForLanguage({ en: 'english-voice', bn: 'bengali-voice' }, 'en-US', null);
+  assert.equal(preferences.en, undefined);
+  assert.equal(preferences.bn, 'bengali-voice');
+});
 
 test('wake phrases: English and Bangla aliases are recognized', () => {
   for (const phrase of [
@@ -87,6 +114,35 @@ test('voice recording auto-stop requires speech followed by sustained silence', 
   assert.equal(shouldStopVoiceRecordingForSilence(-60, true, lastSpeechAt, lastSpeechAt + VOICE_SILENCE_DURATION_MS - 1), false);
   assert.equal(shouldStopVoiceRecordingForSilence(-60, true, lastSpeechAt, lastSpeechAt + VOICE_SILENCE_DURATION_MS), true);
   assert.equal(shouldStopVoiceRecordingForSilence(undefined, true, lastSpeechAt, 20000), false);
+});
+
+test('voice recording finalizes only after an active recorder stops at its hard duration limit', () => {
+  assert.equal(shouldFinalizeStoppedVoiceRecording(false, false, false, 100), false);
+  assert.equal(shouldFinalizeStoppedVoiceRecording(true, true, false, 100), false);
+  assert.equal(shouldFinalizeStoppedVoiceRecording(true, false, true, 100), false);
+  assert.equal(shouldFinalizeStoppedVoiceRecording(true, false, false, 0), false);
+  assert.equal(shouldFinalizeStoppedVoiceRecording(true, false, false, 100), true);
+});
+
+test('voice recorder lifecycle finalizes once after an observed recording stops', () => {
+  const activity = { current: 0 };
+  let finalized = 0;
+  assert.equal(updateVoiceRecordingLifecycle(false, true, false, false, activity, 100, () => finalized++), false);
+  assert.equal(finalized, 0);
+  assert.equal(updateVoiceRecordingLifecycle(false, true, false, true, activity, 200, () => finalized++), true);
+  assert.equal(activity.current, 200);
+  assert.equal(updateVoiceRecordingLifecycle(false, true, false, false, activity, 300, () => finalized++), false);
+  assert.equal(activity.current, 200);
+  assert.equal(finalized, 1);
+});
+
+test('voice recorder lifecycle ignores web, idle, and in-flight states', () => {
+  const activity = { current: 0 };
+  let finalized = 0;
+  assert.equal(updateVoiceRecordingLifecycle(true, true, false, false, activity, 100, () => finalized++), false);
+  assert.equal(updateVoiceRecordingLifecycle(false, false, false, true, activity, 100, () => finalized++), false);
+  assert.equal(updateVoiceRecordingLifecycle(false, true, true, false, activity, 100, () => finalized++), false);
+  assert.equal(finalized, 0);
 });
 
 test('dictation reports unsupported when no browser recognizer or native provider is available', () => {

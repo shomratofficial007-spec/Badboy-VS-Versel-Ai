@@ -148,26 +148,37 @@ export async function transcribeAudio(
   format: string,
   language: string,
 ): Promise<string> {
-  const response = await expoFetch(apiUrl('/assistant/transcribe'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: await ownerAuthorizationHeader() },
-    body: JSON.stringify({
-      audioBase64,
-      format,
-      // OpenRouter expects ISO-639-1 language codes when provided.
-      language: getTranscriptionLanguageCode(language),
-    }),
-  });
-
-  const result = (await response.json().catch(() => ({}))) as {
-    text?: string;
-    error?: string;
-  };
-  if (!response.ok) {
-    throw new Error(result.error ?? `Speech transcription failed (HTTP ${response.status}).`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+  try {
+    const response = await expoFetch(apiUrl('/assistant/transcribe'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: await ownerAuthorizationHeader() },
+      body: JSON.stringify({
+        audioBase64,
+        format,
+        // OpenRouter expects ISO-639-1 language codes when provided.
+        language: getTranscriptionLanguageCode(language),
+      }),
+      signal: controller.signal,
+    });
+    const result = (await response.json().catch(() => ({}))) as {
+      text?: string;
+      error?: string;
+    };
+    if (!response.ok) {
+      throw new Error(result.error ?? `Speech transcription failed (HTTP ${response.status}).`);
+    }
+    if (!result.text?.trim()) throw new Error('কোনো কথা শনাক্ত করা যায়নি। আবার চেষ্টা করুন।');
+    return result.text.trim();
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error('ভয়েস ট্রান্সক্রিপশন নির্ধারিত সময়ের মধ্যে শেষ হয়নি। আবার চেষ্টা করুন।');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  if (!result.text?.trim()) throw new Error('কোনো কথা শনাক্ত করা যায়নি। আবার চেষ্টা করুন।');
-  return result.text.trim();
 }
 
 /** Read a completed Expo audio recording and send it to the server-side Whisper endpoint. */
@@ -186,16 +197,26 @@ export async function transcribeRecordedAudio(
 
 /** Request free Fish Audio speech from the server; the API key stays server-side. */
 export async function requestSpeech(text: string, language: string): Promise<Uint8Array> {
-  const response = await expoFetch(apiUrl('/assistant/speech'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'audio/mpeg', Authorization: await ownerAuthorizationHeader() },
-    body: JSON.stringify({ text, language }),
-  });
-  if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `Speech generation failed (HTTP ${response.status}).`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 22_000);
+  try {
+    const response = await expoFetch(apiUrl('/assistant/speech'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'audio/mpeg', Authorization: await ownerAuthorizationHeader() },
+      body: JSON.stringify({ text, language }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `Speech generation failed (HTTP ${response.status}).`);
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (!bytes.length) throw new Error('Speech service returned an empty audio file.');
+    return bytes;
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('Speech generation timed out. Use the device speech engine and try again.');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (!bytes.length) throw new Error('Speech service returned an empty audio file.');
-  return bytes;
 }

@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { useAssistant } from '@/context/AssistantContext';
 import { useOwnerAuth } from '@/context/OwnerAuthContext';
-import { VOICE_LANGUAGES, getAvailableSpeechVoices, speak, stopSpeaking, type AvailableSpeechVoice } from '@/lib/assistant/voice';
+import { VOICE_LANGUAGES, getAvailableSpeechVoices, rememberVoiceForLanguage, selectVoiceForLanguage, speak, stopSpeaking, type AvailableSpeechVoice } from '@/lib/assistant/voice';
 import { streamDeveloperAnalysis, streamReply } from '@/lib/assistant/api';
 import {
   addDeveloperProjectMemory,
@@ -1191,7 +1191,20 @@ export default function SettingsScreen() {
         <ScrollView nestedScrollEnabled style={{ maxHeight: 220, borderWidth: 1, borderColor: colors.border, borderRadius: 12 }} contentContainerStyle={{ padding: 6, gap: 5 }}>
           {VOICE_LANGUAGES.filter((item) => !languageSearch.trim() || item.label.toLocaleLowerCase().includes(languageSearch.trim().toLocaleLowerCase()) || item.code.toLocaleLowerCase().includes(languageSearch.trim().toLocaleLowerCase())).map((item) => {
             const selected = settings.voiceLanguage === item.code;
-            return <Pressable key={item.code} onPress={() => { updateSettings({ voiceLanguage: item.code, voiceIdentifier: null }); setLanguageSearch(''); }} accessibilityRole="button" accessibilityState={{ selected }} style={{ minHeight: 42, borderRadius: 9, borderWidth: selected ? 1.5 : 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.secondary : colors.background, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            return <Pressable key={item.code} onPress={() => {
+              const selection = selectVoiceForLanguage(
+                settings.voiceIdentifiersByLanguage ?? {},
+                settings.voiceLanguage,
+                settings.voiceIdentifier ?? null,
+                item.code,
+              );
+              updateSettings({
+                voiceLanguage: item.code,
+                voiceIdentifier: selection.voiceIdentifier,
+                voiceIdentifiersByLanguage: selection.preferences,
+              });
+              setLanguageSearch('');
+            }} accessibilityRole="button" accessibilityState={{ selected }} style={{ minHeight: 42, borderRadius: 9, borderWidth: selected ? 1.5 : 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.secondary : colors.background, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <View style={{ flex: 1 }}><Text style={{ color: colors.foreground, fontSize: 13, fontWeight: selected ? '800' : '500' }}>{item.label}</Text><Text style={{ color: colors.mutedForeground, fontSize: 10 }}>{item.code}</Text></View>
               {selected ? <Feather name="check-circle" size={16} color={colors.primary} /> : null}
             </Pressable>;
@@ -1202,13 +1215,27 @@ export default function SettingsScreen() {
         <Text style={[styles.smallNote, { color: colors.mutedForeground, marginTop: 0, marginBottom: 8 }]}>ফোনে ইনস্টল করা TTS voice-গুলো এখানে দেখাবে। ভাষা অনুযায়ী উপলভ্য কণ্ঠস্বর আলাদা হতে পারে।</Text>
         {voiceListLoading ? <ActivityIndicator size="small" color={colors.primary} /> : null}
         <ScrollView nestedScrollEnabled style={{ maxHeight: 190, borderWidth: 1, borderColor: colors.border, borderRadius: 12 }} contentContainerStyle={{ padding: 6, gap: 5 }}>
-          <Pressable onPress={() => updateSettings({ voiceIdentifier: null })} style={{ minHeight: 42, borderRadius: 9, borderWidth: 1, borderColor: settings.voiceIdentifier ? colors.border : colors.primary, backgroundColor: settings.voiceIdentifier ? colors.background : colors.secondary, paddingHorizontal: 10, justifyContent: 'center' }}>
+          <Pressable onPress={() => updateSettings({
+            voiceIdentifier: null,
+            voiceIdentifiersByLanguage: rememberVoiceForLanguage(
+              settings.voiceIdentifiersByLanguage ?? {},
+              settings.voiceLanguage,
+              null,
+            ),
+          })} style={{ minHeight: 42, borderRadius: 9, borderWidth: 1, borderColor: settings.voiceIdentifier ? colors.border : colors.primary, backgroundColor: settings.voiceIdentifier ? colors.background : colors.secondary, paddingHorizontal: 10, justifyContent: 'center' }}>
             <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: settings.voiceIdentifier ? '500' : '800' }}>ডিফল্ট / Cloud voice</Text>
           </Pressable>
           {availableVoices.filter((voice) => voice.language.toLowerCase().split(/[-_]/)[0] === settings.voiceLanguage.toLowerCase().split(/[-_]/)[0]).map((voice) => {
             const selected = settings.voiceIdentifier === voice.identifier;
             return <View key={voice.identifier} style={{ minHeight: 48, borderRadius: 9, borderWidth: selected ? 1.5 : 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.secondary : colors.background, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Pressable onPress={() => updateSettings({ voiceIdentifier: voice.identifier })} style={{ flex: 1, justifyContent: 'center', minHeight: 42 }}>
+              <Pressable onPress={() => updateSettings({
+                voiceIdentifier: voice.identifier,
+                voiceIdentifiersByLanguage: rememberVoiceForLanguage(
+                  settings.voiceIdentifiersByLanguage ?? {},
+                  settings.voiceLanguage,
+                  voice.identifier,
+                ),
+              })} style={{ flex: 1, justifyContent: 'center', minHeight: 42 }}>
                 <Text numberOfLines={1} style={{ color: colors.foreground, fontSize: 12, fontWeight: selected ? '800' : '500' }}>{voice.name}</Text><Text style={{ color: colors.mutedForeground, fontSize: 10 }}>{voice.language}</Text>
               </Pressable>
               <Pressable accessibilityRole="button" accessibilityLabel={`নমুনা শুনুন: ${voice.name}`} onPress={() => { updateSettings({ voiceIdentifier: voice.identifier }); speak(settings.voiceLanguage.startsWith('bn') ? 'হ্যালো, আমি ব্যাডবয়। তোমার কেমন লাগছে?' : 'Hello, I am Badboy. How do you like this voice?', settings.voiceLanguage, {}, voice.identifier); }} style={{ paddingHorizontal: 9, paddingVertical: 7, borderRadius: 8, backgroundColor: colors.primary }}>

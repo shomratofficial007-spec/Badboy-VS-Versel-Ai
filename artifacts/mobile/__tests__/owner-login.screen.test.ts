@@ -75,7 +75,8 @@ test('Owner Login starts with a disabled secure-token action and explains local 
   assert.match(html, /Secure Sign In/);
   assert.match(html, /disabled/);
   assert.match(html, /SecureStore/);
-  assert.match(html, /Chat History ও Memory ফোনেই থাকবে/);
+  assert.match(html, /Chat History ও সাধারণ Memory ফোনেই থাকবে/);
+  assert.match(html, /Developer Agent-এর Project Memory ও Tasks Owner Token-সুরক্ষিত Cloudflare D1-এ সংরক্ষিত হয়/);
 });
 
 test('Owner Login submit handler delegates to owner auth and safely handles rejection', async () => {

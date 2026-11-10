@@ -20,7 +20,13 @@ class BadboyWakeWordModule : Module() {
       val threshold = options?.get("threshold") ?: 0.696
       if (threshold <= 0.0 || threshold >= 1.0) throw IllegalArgumentException("Invalid wake threshold")
       val intent = Intent(context, BadboyWakeWordService::class.java).putExtra("threshold", threshold)
-      if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
+      BadboyWakeWordBridge.update("starting", false)
+      try {
+        if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
+      } catch (cause: Exception) {
+        BadboyWakeWordBridge.update("error", false, cause.message ?: "Wake word service could not start.")
+        throw cause
+      }
       Bundle().apply { putString("state", "starting"); putBoolean("enabled", true); putBoolean("modelLoaded", false) }
     }
     AsyncFunction("stop") {

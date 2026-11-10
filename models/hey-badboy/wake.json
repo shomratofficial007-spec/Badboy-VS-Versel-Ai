@@ -8,6 +8,12 @@
   "win_length": 400,
   "hop_length": 160,
   "window_frames": 101,
+  "output": {
+    "shape": [1],
+    "dtype": "float32",
+    "raw_value": "logit",
+    "activation": "sigmoid"
+  },
   "mel_fmin_hz": 0.0,
   "mel_fmax_hz": 8000.0,
   "window_type": "hann",

@@ -146,6 +146,29 @@ jobs:
       - name: Verify LCOV report exists
         run: test -s coverage/lcov.info
 
+      - name: Set up Python for wake-word validation coverage
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+
+      - name: Run Python wake-word validator tests and real TFLite inference with coverage
+        run: |
+          python -m pip install --disable-pip-version-check --no-cache-dir "numpy==1.26.4" "tflite-runtime==2.14.0" "coverage==7.13.3"
+          coverage erase
+          coverage run --branch --include='scripts/validate-wakeword-model.py' -m unittest discover -s scripts/tests -p 'test_*.py'
+          coverage run --branch --append --include='scripts/validate-wakeword-model.py' scripts/validate-wakeword-model.py artifacts/mobile/modules/badboy-wakeword/android/src/main/assets/wake.tflite
+          coverage xml -o coverage/python-coverage.xml
+          coverage report --include='scripts/validate-wakeword-model.py' --fail-under=80
+
+      - name: Upload Python coverage report
+        if: always() && hashFiles('coverage/python-coverage.xml') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-coverage
+          path: coverage/python-coverage.xml
+          if-no-files-found: error
+          retention-days: 14
+
       # Preserve the exact report as an auditable artifact even if the remote
       # SonarCloud service rejects analysis (for example, Automatic Analysis on).
       - name: Upload LCOV coverage report
