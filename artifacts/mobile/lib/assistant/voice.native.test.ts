@@ -205,5 +205,6 @@ test('cloud TTS failure falls back to the device voice using the selected locale
   await flush();
   assert.equal(nativeTtsText, 'Hello');
   assert.equal(nativeTtsOptions.language, 'zu-ZA');
+  nativeTtsOptions.onStart();
   assert.deepEqual(events, ['start']);
 });
