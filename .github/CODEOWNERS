@@ -1,0 +1,6 @@
+# PR Agent Configuration Files Protection
+.github/workflows/pr_agent.yml @shomratofficial007-spec
+.pr_agent.toml @shomratofficial007-spec
+
+# Protect the CODEOWNERS file itself
+.github/CODEOWNERS @shomratofficial007-spec
