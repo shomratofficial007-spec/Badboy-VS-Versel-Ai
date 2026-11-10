@@ -199,11 +199,22 @@ export async function transcribeRecordedAudio(
 
 /** Request free Fish Audio speech from the server; the API key stays server-side. */
 export async function requestSpeech(text: string, language: string): Promise<Uint8Array> {
-  const response = await expoFetch(apiUrl('/assistant/speech'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'audio/mpeg', Authorization: await ownerAuthorizationHeader() },
-    body: JSON.stringify({ text, language }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  let response: Response;
+  try {
+    response = await expoFetch(apiUrl('/assistant/speech'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'audio/mpeg', Authorization: await ownerAuthorizationHeader() },
+      body: JSON.stringify({ text, language }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('Speech generation timed out. Use the device speech engine and try again.');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? `Speech generation failed (HTTP ${response.status}).`);
