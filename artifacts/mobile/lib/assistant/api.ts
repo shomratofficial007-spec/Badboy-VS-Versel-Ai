@@ -148,16 +148,29 @@ export async function transcribeAudio(
   format: string,
   language: string,
 ): Promise<string> {
-  const response = await expoFetch(apiUrl('/assistant/transcribe'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: await ownerAuthorizationHeader() },
-    body: JSON.stringify({
-      audioBase64,
-      format,
-      // OpenRouter expects ISO-639-1 language codes when provided.
-      language: getTranscriptionLanguageCode(language),
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25_000);
+  let response: Response;
+  try {
+    response = await expoFetch(apiUrl('/assistant/transcribe'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: await ownerAuthorizationHeader() },
+      body: JSON.stringify({
+        audioBase64,
+        format,
+        // OpenRouter expects ISO-639-1 language codes when provided.
+        language: getTranscriptionLanguageCode(language),
+      }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error('ভয়েস ট্রান্সক্রিপশন নির্ধারিত সময়ের মধ্যে শেষ হয়নি। আবার চেষ্টা করুন।');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const result = (await response.json().catch(() => ({}))) as {
     text?: string;
