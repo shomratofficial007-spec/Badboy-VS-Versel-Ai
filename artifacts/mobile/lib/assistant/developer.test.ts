@@ -58,6 +58,26 @@ test('performLiveWebResearch - deterministic mock test for successful search res
   }
 });
 
+test('performLiveWebResearch - removes nested tag delimiters from result text', async () => {
+  const originalFetch = globalThis.fetch;
+  const mockHtml = `
+    <html><body>
+      <a class="result__url" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com">Result <scrip<script>alert</script>t></a>
+      <a class="result__snippet">Text <scrip<script>alert</script>t></a>
+    </body></html>
+  `;
+  globalThis.fetch = async () => new Response(mockHtml, { status: 200 });
+
+  try {
+    const research = await performLiveWebResearch('Nested tag test');
+    assert.strictEqual(research.results.length, 1);
+    assert.ok(!/[<>]/.test(research.results[0].title));
+    assert.ok(!/[<>]/.test(research.results[0].snippet));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('performLiveWebResearch - deterministic mock test for empty search results fallback link', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response('<html><body>No results</body></html>', { status: 200 });
@@ -66,7 +86,7 @@ test('performLiveWebResearch - deterministic mock test for empty search results 
     const research = await performLiveWebResearch('Empty Search Query');
     assert.strictEqual(research.isFallbackLinkOnly, true);
     assert.strictEqual(research.results.length, 1);
-    assert.ok(research.results[0].url.includes('duckduckgo.com'));
+    assert.strictEqual(new URL(research.results[0].url).hostname, 'duckduckgo.com');
   } finally {
     globalThis.fetch = originalFetch;
   }

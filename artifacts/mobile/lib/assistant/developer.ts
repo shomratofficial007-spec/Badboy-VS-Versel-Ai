@@ -282,8 +282,8 @@ export async function performLiveWebResearch(query: string, timeoutMs: number = 
     let match;
     while ((match = resultMatchRegex.exec(htmlText)) !== null && results.length < 4) {
       const validUrl = sanitizeSearchUrl(match[1]);
-      const title = match[2].replace(/<[^>]+>/g, '').trim();
-      const snippet = match[3].replace(/<[^>]+>/g, '').trim();
+      const title = match[2].replace(/[<>]/g, '').trim();
+      const snippet = match[3].replace(/[<>]/g, '').trim();
 
       if (validUrl && title) {
         results.push({
