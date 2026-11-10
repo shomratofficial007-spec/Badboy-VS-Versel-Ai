@@ -10,6 +10,9 @@ on:
       - "pnpm-workspace.yaml"
       - ".github/workflows/android-apk-free.yml"
 
+permissions:
+  contents: read
+
 jobs:
   build-apk:
     name: Prebuild Expo Android and assemble release APK
