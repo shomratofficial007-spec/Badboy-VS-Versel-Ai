@@ -13,6 +13,12 @@ interface DiscoveredComponent {
   importPath: string;
 }
 
+function stringifySourceLiteral(value: string): string {
+  return JSON.stringify(value).replace(/[<>&\u2028\u2029]/g, (character) =>
+    `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+}
+
 export function mockupPreviewPlugin(): Plugin {
   let root = "";
   let currentSource = "";
@@ -55,7 +61,7 @@ export function mockupPreviewPlugin(): Plugin {
     const entries = components
       .map(
         (c) =>
-          `  ${JSON.stringify(c.globKey)}: () => import(${JSON.stringify(c.importPath)})`,
+          `  ${stringifySourceLiteral(c.globKey)}: () => import(${stringifySourceLiteral(c.importPath)})`,
       )
       .join(",\n");
 

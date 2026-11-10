@@ -349,7 +349,7 @@ test("onRequestPost - transcribe falls back to OpenRouter when Groq fails with 4
   let openrouterAttempted = false;
 
   globalThis.fetch = (async (url: string, init?: RequestInit) => {
-    if (url.includes("api.groq.com")) {
+    if (new URL(url).hostname === "api.groq.com") {
       groqAttempted = true;
       return new Response(JSON.stringify({ error: { message: "Rate limit reached" } }), {
         status: 429,
