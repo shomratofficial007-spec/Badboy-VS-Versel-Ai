@@ -158,6 +158,8 @@ test('transcribeAudio maps language, sends audio and returns trimmed transcript'
   fetchHandler = async (url, init) => {
     assert.equal(String(url), 'https://worker.example/assistant/transcribe');
     assert.equal(authFrom(init), 'Bearer owner-token-test');
+    assert.ok(init.signal instanceof AbortSignal, 'transcription request must be cancellable');
+    assert.equal(init.signal.aborted, false);
     sent = JSON.parse(String(init.body));
     return jsonResponse({ text: '  তুমি কেমন আছো?  ' });
   };
@@ -190,6 +192,8 @@ test('requestSpeech returns audio bytes and rejects HTTP or empty audio response
   fetchHandler = async (url, init) => {
     assert.equal(String(url), 'https://worker.example/assistant/speech');
     assert.equal(authFrom(init), 'Bearer owner-token-test');
+    assert.ok(init.signal instanceof AbortSignal, 'speech request must be cancellable');
+    assert.equal(init.signal.aborted, false);
     assert.deepEqual(JSON.parse(String(init.body)), { text: 'হ্যালো', language: 'bn-BD' });
     return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
   };
