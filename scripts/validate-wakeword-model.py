@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import pathlib
 import sys
@@ -26,6 +27,14 @@ def main() -> int:
     if len(outputs) != 1:
         raise SystemExit(f"Expected one model output, found {len(outputs)}")
 
+    metadata_path = pathlib.Path("models/hey-badboy/wake.json")
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    expected_output = metadata.get("output", {})
+    if expected_output.get("shape") != [1] or expected_output.get("dtype") != "float32":
+        raise SystemExit(f"Invalid wake.json output contract: {expected_output!r}")
+    if expected_output.get("raw_value") != "logit" or expected_output.get("activation") != "sigmoid":
+        raise SystemExit(f"Invalid wake.json output semantics: {expected_output!r}")
+
     input_detail = inputs[0]
     output_detail = outputs[0]
     input_shape = tuple(int(value) for value in input_detail["shape"])
@@ -37,8 +46,8 @@ def main() -> int:
     if output_detail["dtype"] != np.float32:
         raise SystemExit(f"Unexpected output dtype: {output_detail['dtype']}; expected float32")
 
-    if output_shape != (1, 1):
-        raise SystemExit(f"Unexpected output shape: {output_shape}; the exported model contract is (1, 1) logit")
+    if output_shape != tuple(expected_output["shape"]):
+        raise SystemExit(f"Unexpected output shape: {output_shape}; wake.json specifies {expected_output['shape']}")
 
     rng = np.random.default_rng(20261110)
     test_inputs = (
