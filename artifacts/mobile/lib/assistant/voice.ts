@@ -891,7 +891,7 @@ export function speak(
       const timeout = new Promise<never>((_resolve, reject) => {
         requestWatchdog = setTimeout(
           () => reject(new Error('Cloud speech request timed out.')),
-          12000,
+          23000,
         );
       });
       let bytes: Uint8Array;
