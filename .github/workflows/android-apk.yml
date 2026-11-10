@@ -92,7 +92,7 @@ jobs:
 
       - name: Run Android native unit tests
         working-directory: artifacts/mobile/android
-        run: ./gradlew --no-daemon testDebugUnitTest
+        run: ./gradlew --no-daemon :badboy-wakeword:testDebugUnitTest
 
       - name: Build installable debug APK with embedded JavaScript
         working-directory: artifacts/mobile/android
