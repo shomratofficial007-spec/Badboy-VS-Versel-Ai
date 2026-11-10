@@ -1,0 +1,45 @@
+[config]
+# AI Model Selection
+model = "gemini-1.5-flash"
+fallback_model = "gemini-1.5-pro"
+git_provider = "github"
+
+[pr_reviewer]
+# PR Auto-Review Settings
+enable_philosophical_hallucinations = false
+inline_code_comments = true
+require_score_review = true
+require_tests_review = true
+require_estimate_effort_to_review = true
+
+# কোডের ভেতরে সিক্রেটস বা পাসওয়ার্ড ভুল করে চলে এসেছে কি না তা চেক করতে
+detect_secrets = true
+
+# Custom Instructions for SonarCloud Bugs & Code Smells
+extra_instructions = """
+1. Pay special attention to SonarCloud reliability issues and code smells.
+2. Check for unhandled Promises and ensure they use await or .catch().
+3. Suggest performance improvements for complex Regular Expressions.
+4. Ensure code follows standard TypeScript/JavaScript best practices.
+"""
+
+[pr_code_suggestions]
+# AI Auto-Suggestion & Code Fix Features
+num_code_suggestions = 4
+summarize_only = false
+focus_on_issues = true
+
+# সরাসরি কোড ফিক্সের কমান্ড বা প্যাচ ফাইল জেনারেট করার সুবিধা বাড়াতে
+apply_original_user_labels = true
+# কোড সাজেশনের সাথে কমান্ড প্রম্পট বা অতিরিক্ত ডিটেইলস চাইলে
+rich_output = true
+
+[pr_description]
+# Auto PR Description Generation
+publish_labels = true
+add_original_user_description = true
+use_description_markers = true
+
+[pr_questions]
+# Allow asking questions about the PR
+enable_help_text = true
