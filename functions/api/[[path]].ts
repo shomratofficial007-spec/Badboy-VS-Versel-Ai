@@ -383,6 +383,14 @@ async function handleTranscriptionRequest(request: Request, env: Env): Promise<R
     }
   }
 
+  // Do not spend another provider request after the mobile client has cancelled.
+  if (request.signal.aborted) {
+    return jsonResponse({
+      code: "TRANSCRIPTION_CANCELLED",
+      error: "Speech transcription was cancelled by the client.",
+    }, 499);
+  }
+
   // 2. Fallback: OpenRouter transcription (openai/whisper-1)
   if (!openrouterApiKey) {
     return jsonResponse({
