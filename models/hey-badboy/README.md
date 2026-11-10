@@ -59,9 +59,9 @@ val interpreter = Interpreter(loadModelFile(context, "wake.tflite"), options)
 
 // Input: float32 mel features, shape (1, 40, 101). See preprocessing below
 val input = Array(1) { Array(40) { FloatArray(101) } }
-val output = Array(1) { FloatArray(1) }
+val output = FloatArray(1) // Actual TFLite output tensor shape is [1].
 interpreter.run(input, output)
-val prob = 1.0f / (1.0f + Math.exp(-output[0][0].toDouble()))
+val prob = (1.0 / (1.0 + Math.exp(-output[0].toDouble()))).toFloat()
 val triggered = prob > THRESHOLD
 ```
 
