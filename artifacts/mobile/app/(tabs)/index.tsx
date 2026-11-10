@@ -40,7 +40,7 @@ import {
   speak,
   stopSpeaking,
   shouldStopVoiceRecordingForSilence,
-  shouldFinalizeStoppedVoiceRecording,
+  updateVoiceRecordingLifecycle,
   VOICE_SILENCE_THRESHOLD_DBFS,
 } from '@/lib/assistant/voice';
 import type { ChatMessage } from '@/lib/assistant/types';
@@ -423,18 +423,10 @@ export default function ChatScreen() {
   }, [audioRecorder, resumeWakeWord, selectedLang, sendMessage, settings.autoSubmitVoice]);
 
   useEffect(() => {
-    if (Platform.OS === 'web' || !audioRecordingStartedRef.current || transcriptionInFlightRef.current) return;
-    if (shouldFinalizeStoppedVoiceRecording(
-      audioRecordingStartedRef.current,
-      transcriptionInFlightRef.current,
-      audioRecorderState.isRecording,
-      lastVoiceActivityAtRef.current,
-    )) {
-      void finishRecordedVoice();
-      return;
-    }
-    if (!audioRecorderState.isRecording) return;
-    if (lastVoiceActivityAtRef.current === 0) lastVoiceActivityAtRef.current = Date.now();
+    if (!updateVoiceRecordingLifecycle(
+      Platform.OS === 'web', audioRecordingStartedRef.current, transcriptionInFlightRef.current,
+      audioRecorderState.isRecording, lastVoiceActivityAtRef, Date.now(), finishRecordedVoice,
+    )) return;
     const meter = audioRecorderState.metering;
     if (typeof meter !== 'number' || !Number.isFinite(meter)) return;
 
