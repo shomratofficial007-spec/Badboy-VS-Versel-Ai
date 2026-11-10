@@ -84,7 +84,7 @@ class BadboyWakeWordService : Service() {
    }
    val outputTensor=model!!.getOutputTensor(0)
    val outputShape=outputTensor.shape()
-   require(outputShape.contentEquals(intArrayOf(1,1)) && outputTensor.dataType()==DataType.FLOAT32){
+   require(outputShape.contentEquals(intArrayOf(1)) && outputTensor.dataType()==DataType.FLOAT32){
     "TFLite output mismatch: expected FLOAT32 [1, 1] logit, got shape=${outputShape.contentToString()}, type=${outputTensor.dataType()}"
    }
    listOf(0.5098,0.6013,0.8999,2.5629).forEach{filters.add(Biquad.hp(100.0,it,rate.toDouble()))}
