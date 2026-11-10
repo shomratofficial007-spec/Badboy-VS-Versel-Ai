@@ -90,11 +90,12 @@ test('voice recording auto-stop requires speech followed by sustained silence', 
   assert.equal(shouldStopVoiceRecordingForSilence(undefined, true, lastSpeechAt, 20000), false);
 });
 
-test('voice recording finalizes after the recorder stops at its hard duration limit', () => {
-  assert.equal(shouldFinalizeStoppedVoiceRecording(false, true, false), false);
-  assert.equal(shouldFinalizeStoppedVoiceRecording(true, false, false), false);
-  assert.equal(shouldFinalizeStoppedVoiceRecording(true, true, true), false);
-  assert.equal(shouldFinalizeStoppedVoiceRecording(true, true, false), true);
+test('voice recording finalizes only after an active recorder stops at its hard duration limit', () => {
+  assert.equal(shouldFinalizeStoppedVoiceRecording(false, false, false, 100), false);
+  assert.equal(shouldFinalizeStoppedVoiceRecording(true, true, false, 100), false);
+  assert.equal(shouldFinalizeStoppedVoiceRecording(true, false, true, 100), false);
+  assert.equal(shouldFinalizeStoppedVoiceRecording(true, false, false, 0), false);
+  assert.equal(shouldFinalizeStoppedVoiceRecording(true, false, false, 100), true);
 });
 
 test('dictation reports unsupported when no browser recognizer or native provider is available', () => {
