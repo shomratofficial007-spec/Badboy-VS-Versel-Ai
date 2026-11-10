@@ -30,6 +30,8 @@ on:
 
 jobs:
   mobile-tests-and-typecheck:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
