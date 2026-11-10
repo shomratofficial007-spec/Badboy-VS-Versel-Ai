@@ -626,10 +626,11 @@ export const VOICE_SILENCE_DURATION_MS = 1400;
 /** Finalize a recording only after it was observed running and then stopped. */
 export function shouldFinalizeStoppedVoiceRecording(
   recordingStarted: boolean,
-  recordingObservedActive: boolean,
+  transcriptionInFlight: boolean,
   isRecording: boolean,
+  recordingObservedAt: number,
 ): boolean {
-  return recordingStarted && recordingObservedActive && !isRecording;
+  return recordingStarted && !transcriptionInFlight && !isRecording && recordingObservedAt > 0;
 }
 
 /** True only after speech was detected and the microphone stayed below the
