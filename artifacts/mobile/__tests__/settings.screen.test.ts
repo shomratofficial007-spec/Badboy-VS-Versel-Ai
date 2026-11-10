@@ -127,6 +127,23 @@ mock.module('../lib/assistant/voice.ts', {
       { code: 'en-US', label: 'English (US)' },
     ],
     getAvailableSpeechVoices: async () => [],
+    getVoiceLanguageGroup: (code: string) => code.toLowerCase().split(/[-_]/)[0],
+    rememberVoiceForLanguage: (preferences: Record<string, string>, language: string, identifier: string | null) => {
+      const next = { ...preferences };
+      const key = language.toLowerCase().split(/[-_]/)[0];
+      if (identifier) next[key] = identifier;
+      else delete next[key];
+      return next;
+    },
+    selectVoiceForLanguage: (preferences: Record<string, string>, currentLanguage: string, currentIdentifier: string | null, nextLanguage: string) => {
+      const next = currentIdentifier
+        ? { ...preferences, [currentLanguage.toLowerCase().split(/[-_]/)[0]]: currentIdentifier }
+        : { ...preferences };
+      return {
+        preferences: next,
+        voiceIdentifier: next[nextLanguage.toLowerCase().split(/[-_]/)[0]] ?? null,
+      };
+    },
     speak: async () => {},
     stopSpeaking: async () => {},
   },
@@ -256,6 +273,7 @@ test('Settings exposes voice consent, input/output, auto-speak, auto-submit and 
   assert.deepEqual(settingsUpdates.at(-1), {
     voiceLanguage: 'en-US',
     voiceIdentifier: null,
+    voiceIdentifiersByLanguage: {},
   });
 });
 
@@ -358,7 +376,10 @@ test('Settings supports every theme choice and the default cloud voice reset', a
   const cloudVoice = pressables.find((item) => item.label.includes('ডিফল্ট / Cloud voice'));
   assert.ok(cloudVoice);
   cloudVoice.onPress();
-  assert.deepEqual(settingsUpdates.at(-1), { voiceIdentifier: null });
+  assert.deepEqual(settingsUpdates.at(-1), {
+    voiceIdentifier: null,
+    voiceIdentifiersByLanguage: {},
+  });
 });
 
 test('Settings can switch every Developer Agent engine option without starting an analysis', async () => {
@@ -988,7 +1009,10 @@ test('Settings lists and previews an installed voice matching the selected langu
   const html = await render();
   assert.match(html, /English TTS voice/);
   pressables.find((item) => item.label.includes('English TTS voice'))?.onPress();
-  assert.deepEqual(settingsUpdates.at(-1), { voiceIdentifier: 'en-US-test' });
+  assert.deepEqual(settingsUpdates.at(-1), {
+    voiceIdentifier: 'en-US-test',
+    voiceIdentifiersByLanguage: { en: 'en-US-test' },
+  });
   pressables.find((item) => item.label.includes('নমুনা শুনুন: English TTS voice'))?.onPress();
   assert.deepEqual(settingsUpdates.at(-1), { voiceIdentifier: 'en-US-test' });
   settings.voiceLanguage = 'bn-BD';
