@@ -51,6 +51,11 @@ mock.module('expo-speech', {
     stop: () => { nativeStopCount += 1; },
   },
 });
+mock.module('./api', {
+  namedExports: {
+    requestSpeech: async () => { throw new Error('No verified cloud TTS voice for this locale.'); },
+  },
+});
 const voicePromise = import('./voice');
 
 function reset() {
@@ -187,4 +192,18 @@ test('native TTS rejects blank text and stopSpeaking safely stops the provider',
   assert.match(errors[0], /পড়ে শোনানোর মতো কোনো লেখা নেই/);
   voice.stopSpeaking();
   assert.ok(nativeStopCount >= 1);
+});
+test('cloud TTS failure falls back to the device voice using the selected locale', async () => {
+  reset();
+  const voice = await voicePromise;
+  const events: string[] = [];
+  assert.equal(voice.speak('Hello', 'zu-ZA', {
+    onStart: () => events.push('start'),
+    onDone: () => events.push('done'),
+    onError: () => events.push('error'),
+  }), true);
+  await flush();
+  assert.equal(nativeTtsText, 'Hello');
+  assert.equal(nativeTtsOptions.language, 'zu-ZA');
+  assert.deepEqual(events, ['start']);
 });
