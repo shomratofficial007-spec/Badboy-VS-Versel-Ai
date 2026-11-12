@@ -481,7 +481,7 @@ export default function SettingsScreen() {
               setTelegramConnected(false);
               setBotUsername('');
               setTelegramItems([]);
-            }).catch(() => setTelegramError('Bot token মুছতে সমস্যা হয়েছে।'));
+            }).catch(() => setTelegramError('Bot token মুছতে সমস্যা হয়েছে।'));
           },
         },
       ],
