@@ -25,6 +25,7 @@ test('cleanSongQuery - strips Banglish filler phrases and isolates song name', (
     'boro boro remix',
   );
   assert.strictEqual(cleanSongQuery('Rabindra Sangeet play koro'), 'Rabindra Sangeet');
+  assert.strictEqual(cleanSongQuery(' , . Rabindra Sangeet , . '), 'Rabindra Sangeet');
 });
 
 test('getYouTubeUrls - formats web and Android app URLs', () => {
