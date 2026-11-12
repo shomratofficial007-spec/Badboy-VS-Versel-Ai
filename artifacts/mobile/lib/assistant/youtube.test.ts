@@ -56,6 +56,24 @@ test('extractYouTubeIntent - handles YouTube-prefixed Bangla song requests', () 
   assert.strictEqual(intent.query, 'Imagine Dragons');
 });
 
+
+test('extractYouTubeIntent - supports Bengali song requests with bounded matching', () => {
+  const banglaSuffix = extractYouTubeIntent('রবীন্দ্র সঙ্গীত গানটি ইউটিউবে');
+  assert.ok(banglaSuffix);
+  if (!banglaSuffix) throw new Error('Bangla suffix intent expected');
+  assert.strictEqual(banglaSuffix.query, 'রবীন্দ্র সঙ্গীত');
+
+  const youtubePrefix = extractYouTubeIntent('ইউটিউবে Imagine Dragons গান');
+  assert.ok(youtubePrefix);
+  if (!youtubePrefix) throw new Error('YouTube-prefixed Bangla intent expected');
+  assert.strictEqual(youtubePrefix.query, 'Imagine Dragons');
+
+  const english = extractYouTubeIntent('play Arijit Singh on youtube');
+  assert.ok(english);
+  if (!english) throw new Error('English intent expected');
+  assert.strictEqual(english.query, 'Arijit Singh');
+});
+
 test('extractYouTubeIntent - returns null for non-YouTube queries', () => {
   const intent = extractYouTubeIntent('আজকের আবহাওয়া কেমন?');
   assert.strictEqual(intent, null);

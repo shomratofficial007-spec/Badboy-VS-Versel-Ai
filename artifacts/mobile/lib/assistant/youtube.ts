@@ -68,13 +68,12 @@ export function extractYouTubeIntent(text: string): YouTubeIntent | null {
   // Captured groups start with `\S` so they never overlap the preceding `\s*`/`\s+`
   // (avoids quadratic backtracking). Captures are trimmed below.
   const SONG_PATTERNS = [
-    /play\s+(\S.*?)(?:on\s+youtube|$)/i,
-    /open\s+youtube\s*(?:for|and\s+search|and\s+play)?\s*(.*)/i,
-    /^youtube\s*(?:a|e|-e)?\s*(\S.*)$/i,
-    /^(.+?)(?:গানটি|গান|মিউজিক|গানটা)\s*(?:ইউটিউবে|youtube|play|প্লে|চালান|খুলুন|সার্চ|শুনুন)/i,
-    /(?:ইউটিউবে|youtube-এ|youtube-এ|youtube)\s*(\S.*?)(?:গান|ভিডিও|সার্চ|প্লে|খুলুন)/i,
+    /^play\\s+(\\S.*)(?:\\s+on\\s+youtube)?$/i,
+    /^open\\s+youtube(?:\\s+(?:for|and\\s+search|and\\s+play))?\\s*(.*)$/i,
+    /^youtube\\s*(?:a|e|-e)?\\s*(\\S.*)$/i,
+    /^(.+)(?:গানটি|গানটা|গান|মিউজিক)\\s*(?:ইউটিউবে|youtube|play|প্লে|চালান|খুলুন|সার্চ|শুনুন)$/i,
+    /^(?:ইউটিউবে|youtube-এ|youtube)\\s+(\\S.*)\\s+(?:গান|ভিডিও|সার্চ|প্লে|খুলুন)$/i,
   ];
-
   for (const pattern of SONG_PATTERNS) {
     const match = trimmed.match(pattern);
     if (match && match[1]) {
