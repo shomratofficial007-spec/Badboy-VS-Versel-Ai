@@ -29,6 +29,13 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
 };
 
+// Removes trailing slashes without a backtracking regex (SonarCloud S5852).
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charAt(end - 1) === "/") end--;
+  return value.slice(0, end);
+}
+
 function logModelDiagnostic(event: string, model: string, statusCode?: number) {
   // Never log prompts, user content, provider bodies, or credentials.
   console.info(JSON.stringify({
@@ -942,7 +949,7 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
 
 export async function handleApiRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
-  const rawPathname = url.pathname.replace(/\/+$/, "");
+  const rawPathname = trimTrailingSlashes(url.pathname);
   const pathname = rawPathname.startsWith("/api")
     ? rawPathname
     : `/api${rawPathname.startsWith("/") ? rawPathname : `/${rawPathname}`}`;
