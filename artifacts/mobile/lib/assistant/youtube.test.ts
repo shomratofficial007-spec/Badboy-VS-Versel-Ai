@@ -49,6 +49,13 @@ test('extractYouTubeIntent - detects English and Banglish song requests', () => 
   assert.ok(intent.appUrl.includes('vnd.youtube://'));
 });
 
+test('extractYouTubeIntent - handles YouTube-prefixed Bangla song requests', () => {
+  const intent = extractYouTubeIntent('youtube a Imagine Dragons গান');
+  assert.ok(intent);
+  if (!intent) throw new Error('Intent expected');
+  assert.strictEqual(intent.query, 'Imagine Dragons');
+});
+
 test('extractYouTubeIntent - returns null for non-YouTube queries', () => {
   const intent = extractYouTubeIntent('আজকের আবহাওয়া কেমন?');
   assert.strictEqual(intent, null);
