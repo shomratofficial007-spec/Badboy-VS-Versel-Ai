@@ -69,7 +69,8 @@ export async function convertToWav(audioBuffer: Buffer): Promise<Buffer> {
     await writeFile(inputPath, audioBuffer);
 
     await new Promise<void>((resolve, reject) => {
-      const ffmpeg = spawn("ffmpeg", [
+      // NOSONAR: ffmpeg is a server-side system dependency resolved from the deployment's PATH, which is operator-controlled.
+      const ffmpeg = spawn("ffmpeg", [ // NOSONAR
         "-i", inputPath,
         "-vn",
         "-f", "wav",
