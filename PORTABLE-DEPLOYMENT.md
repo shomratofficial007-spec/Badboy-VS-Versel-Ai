@@ -50,7 +50,9 @@ PORT=4173 BASE_PATH=/ pnpm --filter @workspace/mockup-sandbox build
   - **Environment Variables:**
     - `NODE_VERSION`: `22`
     - `PNPM_VERSION`: `10.8.1`
-    - `OPENROUTER_API_KEY`: `<your_openrouter_api_key>` (required for AI chat streaming).
+    - `OPENROUTER_API_KEY`: `<your_openrouter_api_key>` (required for the existing assistant chat route and optional Developer Agent fallback).
+    - `GEMINI_API_KEY`: `<your_google_ai_studio_api_key>` (server-side secret; enables Gemini for the Developer Agent).
+    - `GEMINI_MODEL`: `gemini-3.5-flash-lite` (optional; defaults to this model).
   - **CLI Deploy Command:** `pnpm run deploy` or `npx wrangler pages deploy ./artifacts/mobile/dist --project-name voice-memory-assistant-net`
 - Netlify can host the static frontend, but this workspace's Express API is not automatically converted into Netlify Functions by uploading the ZIP. The API needs a Node host or a deliberate serverless adapter.
 - Vercel, Render, Railway, Fly.io, GitHub Actions, Codespaces, and similar platforms have different project-root, build, start, environment-variable, and database settings. Configure those according to the chosen host.
