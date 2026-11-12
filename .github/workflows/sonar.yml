@@ -5,8 +5,7 @@ on:
     branches:
       - main
       - master
-  pull_request:
-    types: [opened, synchronize, reopened]
+  # PR coverage is handled by sonarcloud.yml; keep this legacy scan main-only.
 
 jobs:
   sonarcloud:
