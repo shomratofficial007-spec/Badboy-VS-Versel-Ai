@@ -36,7 +36,7 @@ PORT=4173 BASE_PATH=/ pnpm --filter @workspace/mockup-sandbox build
 - **Static web app:** deploy `artifacts/mobile/dist` on a static host after its build succeeds.
 - **API server:** `artifacts/api-server` is a separate Node.js service. Deploy it on a Node-compatible server host; a static-only host cannot run it by itself without adapting routes to that host's serverless-function format.
 - **Database:** set `DATABASE_URL` only if the selected features require the database and a compatible PostgreSQL database is provisioned.
-- **AI:** set `OPENROUTER_API_KEY` in the API service's private environment settings to enable the current OpenRouter integration. Never put API keys in frontend/public environment variables or commit them to this archive. The 503 response is expected when the key is absent.
+- **AI:** set `GEMINI_API_KEY` as a server-side secret to enable the Developer Agent's Gemini adapter (default model: `gemini-3.5-flash-lite`). Optionally set `GEMINI_MODEL` to another model available to your Google AI Studio project. The Native AI Engine remains the controller and tries Gemini first; if Gemini is unavailable or rate-limited, it uses `OPENROUTER_API_KEY` and the existing free-model fallbacks when configured. The ordinary assistant chat route continues to use OpenRouter. Never put API keys in frontend/public environment variables or commit them to the repository. The Developer Agent returns 503 when neither provider key is configured.
 - **Frontend-to-API URL:** configure the frontend/API base URL to match the public URL of the separately deployed API. A host-specific rewrite may be needed.
 
 ## Platform-specific notes
