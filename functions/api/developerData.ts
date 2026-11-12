@@ -16,6 +16,13 @@ function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
 }
 
+// Removes trailing slashes without a backtracking regex (SonarCloud S5852).
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charAt(end - 1) === "/") end--;
+  return value.slice(0, end);
+}
+
 function boundedLimit(value: string | null, fallback: number): number {
   if (value === null || value.trim() === "") return fallback;
   const parsed = Number(value);
@@ -67,7 +74,7 @@ export async function handleDeveloperDataRequest(
   ownerId: string,
 ): Promise<Response | null> {
   const url = new URL(request.url);
-  const pathname = url.pathname.replace(/\/+$/, "");
+  const pathname = trimTrailingSlashes(url.pathname);
   const routes = new Set([
     "/api/developer/tasks",
     "/api/developer/projects",
