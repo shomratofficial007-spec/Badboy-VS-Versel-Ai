@@ -20,7 +20,7 @@ jobs:
         uses: Codium-ai/pr-agent@main
         env:
           PR_MODELER.PROVIDER: "google"
-          PR_MODELER.MODEL: "gemini-1.5-flash"
+          PR_MODELER.MODEL: "gemini-1.5-pro"
           GOOGLE.API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           config.allow_bugs: true
