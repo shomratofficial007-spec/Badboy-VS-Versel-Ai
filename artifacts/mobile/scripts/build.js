@@ -8,6 +8,13 @@ let metroProcess = null;
 
 const projectRoot = path.resolve(__dirname, '..');
 
+// Removes trailing slashes without a backtracking regex (SonarCloud S5852).
+function trimTrailingSlashes(value) {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === '/') end--;
+  return value.slice(0, end);
+}
+
 // Outside Replit, build a standard static web export. This avoids requiring
 // Replit-only deployment domains just to build the project on other hosts.
 const isReplitEnvironment = Boolean(
@@ -17,7 +24,7 @@ const isReplitEnvironment = Boolean(
 );
 if (!isReplitEnvironment) {
   const child = spawn(
-    'pnpm',
+    'pnpm', // NOSONAR: build-time tooling resolved from the developer/CI PATH, not user input.
     ['exec', 'expo', 'export', '--platform', 'web', '--output-dir', 'dist'],
     { stdio: 'inherit', cwd: projectRoot, env: { ...process.env, EXPO_PUBLIC_DOMAIN: process.env.EXPO_PUBLIC_DOMAIN || '' } },
   );
@@ -59,7 +66,7 @@ if (!isReplitEnvironment) {
 
     console.log('Bundling Cloudflare Pages functions into _worker.js...');
     const fnChild = spawn(
-      'npx',
+      'npx', // NOSONAR: build-time tooling resolved from the developer/CI PATH, not user input.
       ['wrangler', 'pages', 'functions', 'build', '--outdir', 'dist-worker-temp'],
       { stdio: 'inherit', cwd: workspaceRoot },
     );
@@ -108,7 +115,7 @@ function findWorkspaceRoot(startDir) {
 }
 
 const workspaceRoot = findWorkspaceRoot(projectRoot);
-const basePath = (process.env.BASE_PATH || '/').replace(/\/+$/, '');
+const basePath = trimTrailingSlashes(process.env.BASE_PATH || '/');
 
 function exitWithError(message) {
   console.error(message);
@@ -235,7 +242,7 @@ async function startMetro(expoPublicDomain, expoPublicReplId) {
   }
 
   metroProcess = spawn(
-    'pnpm',
+    'pnpm', // NOSONAR: build-time tooling resolved from the developer/CI PATH, not user input.
     ['exec', 'expo', 'start', '--no-dev', '--minify', '--localhost'],
     {
       stdio: ['ignore', 'pipe', 'pipe'],

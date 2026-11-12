@@ -73,7 +73,7 @@ jobs:
         run: bash .github/scripts/wait-for-workflow-run.sh
         env:
           GH_TOKEN: ${{ github.token }}
-          WORKFLOW_NAME: SonarCloud Analysis
+          WORKFLOW_NAME: SonarCloud Coverage Analysis
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
 
   semgrep-security-scan:
@@ -356,7 +356,7 @@ jobs:
         run: bash .github/scripts/wait-for-workflow-run.sh
         env:
           GH_TOKEN: ${{ github.token }}
-          WORKFLOW_NAME: SonarCloud Analysis
+          WORKFLOW_NAME: SonarCloud Coverage Analysis
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       - name: Verify SonarCloud New Code coverage and Quality Gate
         env:

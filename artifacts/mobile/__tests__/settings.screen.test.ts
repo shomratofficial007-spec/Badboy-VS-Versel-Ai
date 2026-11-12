@@ -765,6 +765,16 @@ test('Settings Developer Agent fails closed on unavailable Copilot and reports e
   assert.match(html, /Project notes unavailable/);
   assert.equal(developerAnalysisCalls.length, 0);
   assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 1);
+
+  resetTelegramState();
+  settings.developerEngine = 'native';
+  developerAnalysisHandler = async () => { throw 'unexpected native analysis failure'; };
+  const fallbackRender = createSettingsHookHarness({ 32: 'Review Settings' });
+  await fallbackRender();
+  pressables.find((item) => item.label.includes('Analyze with selected engine'))?.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  html = await fallbackRender();
+  assert.match(html, /Developer Agent analysis সম্পন্ন করা যায়নি/);
 });
 
 test('Settings Developer task history refresh displays records and surfaces D1 read errors', async () => {

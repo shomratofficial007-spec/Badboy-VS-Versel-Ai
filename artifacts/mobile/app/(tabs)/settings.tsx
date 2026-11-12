@@ -131,7 +131,7 @@ export default function SettingsScreen() {
     try {
       setDeveloperTasks(await listDeveloperTasks());
     } catch (cause) {
-      setDeveloperDataError(cause instanceof Error ? cause.message : 'Developer task history লোড করা যায়নি।');
+      setDeveloperDataError(cause instanceof Error ? cause.message : 'Developer task history লোড করা যায়নি।');
     }
   };
 
@@ -143,7 +143,7 @@ export default function SettingsScreen() {
         setSelectedDeveloperProjectId(projects[0].project_id);
       }
     } catch (cause) {
-      setDeveloperDataError(cause instanceof Error ? cause.message : 'Project তালিকা লোড করা যায়নি।');
+      setDeveloperDataError(cause instanceof Error ? cause.message : 'Project তালিকা লোড করা যায়নি।');
     }
   };
 
@@ -165,7 +165,7 @@ export default function SettingsScreen() {
       setSelectedDeveloperProjectId(project.projectId);
       await refreshDeveloperProjects();
     } catch (cause) {
-      setDeveloperDataError(cause instanceof Error ? cause.message : 'Project Brain D1-এ সংরক্ষণ করা যায়নি।');
+      setDeveloperDataError(cause instanceof Error ? cause.message : 'Project Brain D1-এ সংরক্ষণ করা যায়নি।');
     } finally {
       setDeveloperDataBusy(false);
     }
@@ -186,7 +186,7 @@ export default function SettingsScreen() {
       setDeveloperMemoryDraft('');
       setDeveloperMemories(await listDeveloperProjectMemory(selectedDeveloperProjectId));
     } catch (cause) {
-      setDeveloperDataError(cause instanceof Error ? cause.message : 'Private project memory সংরক্ষণ করা যায়নি।');
+      setDeveloperDataError(cause instanceof Error ? cause.message : 'Private project memory সংরক্ষণ করা যায়নি।');
     } finally {
       setDeveloperDataBusy(false);
     }
@@ -200,7 +200,7 @@ export default function SettingsScreen() {
       await deleteDeveloperProjectMemory(memoryId);
       setDeveloperMemories((previous) => previous.filter((item) => item.memory_id !== memoryId));
     } catch (cause) {
-      setDeveloperDataError(cause instanceof Error ? cause.message : 'Project memory মুছে ফেলা যায়নি।');
+      setDeveloperDataError(cause instanceof Error ? cause.message : 'Project memory মুছে ফেলা যায়নি।');
     } finally {
       setDeveloperDataBusy(false);
     }
@@ -209,7 +209,12 @@ export default function SettingsScreen() {
   useEffect(() => {
     let active = true;
     setVoiceListLoading(true);
-    getAvailableSpeechVoices().then((voices) => { if (active) setAvailableVoices(voices); }).finally(() => { if (active) setVoiceListLoading(false); });
+    void getAvailableSpeechVoices()
+      .then((voices) => { if (active) setAvailableVoices(voices); })
+      .catch(() => {
+        // The voice list is optional; the default voice is used when it cannot be loaded.
+      })
+      .finally(() => { if (active) setVoiceListLoading(false); });
     hasTelegramBot().then((connected) => {
       if (active) setTelegramConnected(connected);
     }).catch(() => {
@@ -243,7 +248,7 @@ export default function SettingsScreen() {
     let active = true;
     listDeveloperProjectMemory(selectedDeveloperProjectId)
       .then((memories) => { if (active) setDeveloperMemories(memories); })
-      .catch((cause) => { if (active) setDeveloperDataError(cause instanceof Error ? cause.message : 'Project memory লোড করা যায়নি।'); });
+      .catch((cause) => { if (active) setDeveloperDataError(cause instanceof Error ? cause.message : 'Project memory লোড করা যায়নি।'); });
     return () => { active = false; };
   }, [selectedDeveloperProjectId]);
 
@@ -273,7 +278,7 @@ export default function SettingsScreen() {
       });
       if (!report.trim()) throw new Error('বিশ্লেষণ থেকে কোনো রিপোর্ট পাওয়া যায়নি।');
     } catch (cause) {
-      setExpertReviewError(cause instanceof Error ? cause.message : 'Expert Review সম্পন্ন করা যায়নি।');
+      setExpertReviewError(cause instanceof Error ? cause.message : 'Expert Review সম্পন্ন করা যায়নি।');
     } finally {
       setExpertReviewBusy(false);
     }
@@ -300,7 +305,7 @@ export default function SettingsScreen() {
     );
 
     if (resolution.status === 'unavailable') {
-      setDeveloperAnalysisError(resolution.reason ?? 'Copilot SDK runtime এখনো প্রস্তুত নয়।');
+      setDeveloperAnalysisError(resolution.reason ?? 'Copilot SDK runtime এখনো প্রস্তুত নয়।');
       return;
     }
 
@@ -329,7 +334,7 @@ export default function SettingsScreen() {
       if (!report.trim()) throw new Error('বিশ্লেষণ থেকে কোনো রিপোর্ট পাওয়া যায়নি।');
     } catch (cause) {
       setDeveloperAnalysisError(
-        cause instanceof Error ? cause.message : 'Developer Agent analysis সম্পন্ন করা যায়নি।',
+        cause instanceof Error ? cause.message : 'Developer Agent analysis সম্পন্ন করা যায়নি।',
       );
     } finally {
       setDeveloperAnalysisBusy(false);
@@ -342,7 +347,7 @@ export default function SettingsScreen() {
     try {
       await Share.share({ title: 'Badboy Expert Review', message: expertReviewReport });
     } catch {
-      setExpertReviewError('রিপোর্ট শেয়ার করা যায়নি।');
+      setExpertReviewError('রিপোর্ট শেয়ার করা যায়নি।');
     }
   };
 
@@ -422,7 +427,7 @@ export default function SettingsScreen() {
               if (res.success) {
                 setDevHistory((prev) => [{ plan: currentPlan, prUrl: res.prUrl, date: new Date().toLocaleTimeString() }, ...prev]);
               } else {
-                setDevError(res.error || 'Pull Request তৈরি করা ব্যর্থ হয়েছে।');
+                setDevError(res.error || 'Pull Request তৈরি করা ব্যর্থ হয়েছে।');
               }
             } catch (err) {
               setDevError(err instanceof Error ? err.message : 'অপ্রত্যাশিত ত্রুটি ঘটেছে।');
@@ -454,7 +459,7 @@ export default function SettingsScreen() {
                 setBotUsername(bot.username);
                 setBotTokenDraft('');
               })
-              .catch((cause) => setTelegramError(cause instanceof Error ? cause.message : 'Bot সংযোগ করা যায়নি।'))
+              .catch((cause) => setTelegramError(cause instanceof Error ? cause.message : 'Bot সংযোগ করা যায়নি।'))
               .finally(() => setTelegramBusy(false));
           },
         },
@@ -489,9 +494,9 @@ export default function SettingsScreen() {
     try {
       const messages = await checkTelegramMessages();
       if (messages.length) setTelegramItems((previous) => [...messages, ...previous].slice(0, 12));
-      else setTelegramError('নতুন বার্তা নেই। Bot-এ /start পাঠিয়ে আবার দেখুন।');
+      else setTelegramError('নতুন বার্তা নেই। Bot-এ /start পাঠিয়ে আবার দেখুন।');
     } catch (cause) {
-      setTelegramError(cause instanceof Error ? cause.message : 'Telegram inbox খোলা যায়নি।');
+      setTelegramError(cause instanceof Error ? cause.message : 'Telegram inbox খোলা যায়নি।');
     } finally {
       setTelegramBusy(false);
     }
@@ -512,7 +517,7 @@ export default function SettingsScreen() {
             setTelegramError(null);
             void sendTelegramMessage(text)
               .then(() => setTelegramMessage(''))
-              .catch((cause) => setTelegramError(cause instanceof Error ? cause.message : 'বার্তা পাঠানো যায়নি।'))
+              .catch((cause) => setTelegramError(cause instanceof Error ? cause.message : 'বার্তা পাঠানো যায়নি।'))
               .finally(() => setTelegramBusy(false));
           },
         },
@@ -543,7 +548,7 @@ export default function SettingsScreen() {
       <Text style={[styles.eyebrow, { color: colors.primary }]}>PERSONAL CONTROL CENTER</Text>
       <Text style={[styles.title, { color: colors.foreground }]}>সেটিংস</Text>
       <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-        তোমার অভিজ্ঞতা, ভয়েস, গোপনীয়তা ও ডেভেলপার টুল—সব এক জায়গায়।
+        তোমার অভিজ্ঞতা, ভয়েস, গোপনীয়তা ও ডেভেলপার টুল—সব এক জায়গায়।
       </Text>
 
       <View style={[styles.section, sectionCard]}>
@@ -563,7 +568,7 @@ export default function SettingsScreen() {
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>BADBOY Smart Agent Task Engine</Text>
         </View>
         <Text style={[styles.body, { color: colors.mutedForeground }]}>
-          ভয়েস বা টেক্সট কম্যান্ড দিলে এজেন্ট নিজে উপযুক্ত টুল ও স্মার্ট রিজনিং সিলেক্ট করে লাইভ ওয়েব তথ্যসহ টাস্ক সম্পাদন করে।
+          ভয়েস বা টেক্সট কম্যান্ড দিলে এজেন্ট নিজে উপযুক্ত টুল ও স্মার্ট রিজনিং সিলেক্ট করে লাইভ ওয়েব তথ্যসহ টাস্ক সম্পাদন করে।
         </Text>
         <TextInput
           value={agentPrompt}
@@ -621,12 +626,12 @@ export default function SettingsScreen() {
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
           <Feather name="wifi" size={17} color={colors.primary} />
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>AI ও গোপনীয়তা</Text>
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>AI ও গোপনীয়তা</Text>
         </View>
         <SettingSwitch
           colors={colors}
           title="অনলাইন AI"
-          subtitle={settings.onlineAI ? 'শুধু এই মুহূর্তের বার্তাটি AI-কে পাঠানো হয়।' : 'অফলাইনে chat ও মেমোরি এই ফোনেই থাকে; AI উত্তর বন্ধ।'}
+          subtitle={settings.onlineAI ? 'শুধু এই মুহূর্তের বার্তাটি AI-কে পাঠানো হয়।' : 'অফলাইনে chat ও মেমোরি এই ফোনেই থাকে; AI উত্তর বন্ধ।'}
           value={settings.onlineAI}
           onValueChange={(value) => updateSettings({ onlineAI: value })}
         />
@@ -645,7 +650,7 @@ export default function SettingsScreen() {
         <Pressable
           onPress={() => {
             updateSettings({ personality: personalityDraft.trim() || 'Warm, clear, and practical.' });
-            Alert.alert('সংরক্ষিত', 'আপনার assistant personality এই ফোনে সংরক্ষণ করা হয়েছে।');
+            Alert.alert('সংরক্ষিত', 'আপনার assistant personality এই ফোনে সংরক্ষণ করা হয়েছে।');
           }}
           style={[styles.secondaryButton, { backgroundColor: colors.secondary }]}
         >
@@ -723,7 +728,7 @@ export default function SettingsScreen() {
         <SettingSwitch
           colors={colors}
           title="Develop mode"
-          subtitle="ওয়েব ডেভেলপমেন্ট, অ্যান্ড্রয়েড এপিকে, অটো কিউএ এবং ব্যাডবয় সেলফ-ডেভেলপমেন্ট।"
+          subtitle="ওয়েব ডেভেলপমেন্ট, অ্যান্ড্রয়েড এপিকে, অটো কিউএ এবং ব্যাডবয় সেলফ-ডেভেলপমেন্ট।"
           value={settings.developerMode}
           onValueChange={(value) => updateSettings({ developerMode: value })}
         />
@@ -818,7 +823,7 @@ export default function SettingsScreen() {
                   <Text style={[styles.label, { color: colors.foreground }]}>Analysis Report</Text>
                   <Text selectable style={[styles.body, { color: colors.foreground, marginTop: 6, lineHeight: 21 }]}>{developerAnalysisReport}</Text>
                   <Pressable
-                    onPress={() => Share.share({ title: 'Badboy Developer Analysis', message: developerAnalysisReport }).catch(() => setDeveloperAnalysisError('রিপোর্ট শেয়ার করা যায়নি।'))}
+                    onPress={() => Share.share({ title: 'Badboy Developer Analysis', message: developerAnalysisReport }).catch(() => setDeveloperAnalysisError('রিপোর্ট শেয়ার করা যায়নি।'))}
                     style={[styles.secondaryButton, { backgroundColor: colors.secondary, marginTop: 8 }]}
                   >
                     <Feather name="share-2" size={14} color={colors.secondaryForeground} />
@@ -835,7 +840,7 @@ export default function SettingsScreen() {
                   </Pressable>
                 </View>
                 {developerTasks.length === 0 ? (
-                  <Text style={[styles.smallNote, { color: colors.mutedForeground, marginTop: 7 }]}>এখনো কোনো Developer Agent task সংরক্ষিত নেই। Analysis চালালে task স্বয়ংক্রিয়ভাবে এখানে আসবে।</Text>
+                  <Text style={[styles.smallNote, { color: colors.mutedForeground, marginTop: 7 }]}>এখনো কোনো Developer Agent task সংরক্ষিত নেই। Analysis চালালে task স্বয়ংক্রিয়ভাবে এখানে আসবে।</Text>
                 ) : developerTasks.slice(0, 5).map((task) => (
                   <View key={task.task_id} style={{ borderTopWidth: 1, borderColor: colors.border, paddingTop: 7, marginTop: 7 }}>
                     <Text style={[styles.body, { color: colors.foreground, fontWeight: '700' }]}>{task.title}</Text>
@@ -888,9 +893,9 @@ export default function SettingsScreen() {
             {/* Prompt Input Box */}
             <Text style={[styles.label, { color: colors.foreground, marginTop: 4 }]}>
               {activeDevTab === 'web'
-                ? 'ওয়েব নির্দেশিকা (যেমন: Build a website for my Telegram channel)'
+                ? 'ওয়েব নির্দেশিকা (যেমন: Build a website for my Telegram channel)'
                 : activeDevTab === 'android'
-                ? 'অ্যান্ড্রয়েড নির্দেশিকা (যেমন: Create an Android app and prepare an APK)'
+                ? 'অ্যান্ড্রয়েড নির্দেশিকা (যেমন: Create an Android app and prepare an APK)'
                 : activeDevTab === 'qa'
                 ? 'QA নির্দেশিকা (যেমন: Inspect this project, find bugs, and fix them)'
                 : 'সেলফ নির্দেশিকা (যেমন: Badboy, add a new reminder feature to yourself)'}
@@ -962,7 +967,7 @@ export default function SettingsScreen() {
                 </View>
                 <Text style={[styles.body, { color: colors.foreground, fontWeight: '600', marginTop: 6 }]}>{projectBrain.name}</Text>
                 <Text style={[styles.body, { color: colors.mutedForeground, marginTop: 4 }]}>{projectBrain.architecture}</Text>
-                <Text style={[styles.label, { color: colors.foreground, marginTop: 8 }]}>ফ্রেমওয়ার্ক ও টেকনোলজি:</Text>
+                <Text style={[styles.label, { color: colors.foreground, marginTop: 8 }]}>ফ্রেমওয়ার্ক ও টেকনোলজি:</Text>
                 {projectBrain.frameworks.map((fw) => (
                   <Text key={fw} style={[styles.smallNote, { color: colors.mutedForeground }]}>• {fw}</Text>
                 ))}
@@ -989,7 +994,7 @@ export default function SettingsScreen() {
                 ) : null}
                 <Text style={[styles.label, { color: colors.foreground, marginTop: 12 }]}>Private Project Memory</Text>
                 <Text style={[styles.smallNote, { color: colors.mutedForeground, marginTop: 4 }]}>
-                  এই নোটগুলো Developer Agent-এর analysis context-এ ব্যবহার হতে পারে। Sensitive হিসেবে চিহ্নিত নোট AI-তে পাঠানো হয় না।
+                  এই নোটগুলো Developer Agent-এর analysis context-এ ব্যবহার হতে পারে। Sensitive হিসেবে চিহ্নিত নোট AI-তে পাঠানো হয় না।
                 </Text>
                 <TextInput
                   value={developerMemoryDraft}
@@ -1168,7 +1173,7 @@ export default function SettingsScreen() {
           </View>
         ) : (
           <Text style={[styles.smallNote, { color: colors.mutedForeground }]}>
-            এই মোড অন করলে আপনি ভয়েস বা টেক্সটে নির্দেশনা দিয়ে ফিচার যোগ ও Pull Request তৈরি করার সুবিধা পাবেন।
+            এই মোড অন করলে আপনি ভয়েস বা টেক্সটে নির্দেশনা দিয়ে ফিচার যোগ ও Pull Request তৈরি করার সুবিধা পাবেন।
           </Text>
         )}
       </View>
@@ -1178,12 +1183,12 @@ export default function SettingsScreen() {
           <Feather name="mic" size={17} color={colors.primary} />
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Voice Control Center</Text>
         </View>
-        <SettingSwitch colors={colors} title="Voice Processing Consent" subtitle="ভয়েস ফিচার ব্যবহারের অনুমতি। রেকর্ড করা অডিও transcription-এর জন্য অনলাইন AI সার্ভারে পাঠানো হতে পারে।" value={settings.voiceProcessingConsent} onValueChange={(value) => updateSettings({ voiceProcessingConsent: value })} />
+        <SettingSwitch colors={colors} title="Voice Processing Consent" subtitle="ভয়েস ফিচার ব্যবহারের অনুমতি। রেকর্ড করা অডিও transcription-এর জন্য অনলাইন AI সার্ভারে পাঠানো হতে পারে।" value={settings.voiceProcessingConsent} onValueChange={(value) => updateSettings({ voiceProcessingConsent: value })} />
         <View style={[styles.rule, { backgroundColor: colors.border }]} />
-        <SettingSwitch colors={colors} title="Voice Input" subtitle="মাইক্রোফোন দিয়ে বাংলা/ইংরেজি কথা থেকে লেখা তৈরি।" value={settings.voiceInputEnabled} onValueChange={(value) => updateSettings({ voiceInputEnabled: value })} />
-        <SettingSwitch colors={colors} title="Voice Output" subtitle="Badboy-এর উত্তর TTS দিয়ে পড়ে শোনানো এবং Play/Stop নিয়ন্ত্রণ।" value={settings.voiceOutputEnabled} onValueChange={(value) => updateSettings({ voiceOutputEnabled: value })} />
-        <SettingSwitch colors={colors} title="Auto Speak Replies" subtitle="নতুন AI উত্তর এলে নিজে থেকে পড়ে শোনাবে।" value={settings.autoSpeakReplies} onValueChange={(value) => updateSettings({ autoSpeakReplies: value })} />
-        <SettingSwitch colors={colors} title="Auto Submit Voice Input" subtitle="কথা শেষ হলে transcription স্বয়ংক্রিয়ভাবে AI-তে পাঠাবে। বন্ধ থাকলে লেখা draft-এ থাকবে।" value={settings.autoSubmitVoice} onValueChange={(value) => updateSettings({ autoSubmitVoice: value })} />
+        <SettingSwitch colors={colors} title="Voice Input" subtitle="মাইক্রোফোন দিয়ে বাংলা/ইংরেজি কথা থেকে লেখা তৈরি।" value={settings.voiceInputEnabled} onValueChange={(value) => updateSettings({ voiceInputEnabled: value })} />
+        <SettingSwitch colors={colors} title="Voice Output" subtitle="Badboy-এর উত্তর TTS দিয়ে পড়ে শোনানো এবং Play/Stop নিয়ন্ত্রণ।" value={settings.voiceOutputEnabled} onValueChange={(value) => updateSettings({ voiceOutputEnabled: value })} />
+        <SettingSwitch colors={colors} title="Auto Speak Replies" subtitle="নতুন AI উত্তর এলে নিজে থেকে পড়ে শোনাবে।" value={settings.autoSpeakReplies} onValueChange={(value) => updateSettings({ autoSpeakReplies: value })} />
+        <SettingSwitch colors={colors} title="Auto Submit Voice Input" subtitle="কথা শেষ হলে transcription স্বয়ংক্রিয়ভাবে AI-তে পাঠাবে। বন্ধ থাকলে লেখা draft-এ থাকবে।" value={settings.autoSubmitVoice} onValueChange={(value) => updateSettings({ autoSubmitVoice: value })} />
         <SettingSwitch colors={colors} title="Hey Badboy Wake Word" subtitle="সম্মতি ও microphone permission থাকলে Android-এ wake-word listener চালু রাখবে।" value={settings.wakeWordEnabled} onValueChange={(value) => updateSettings({ wakeWordEnabled: value })} />
         <View style={[styles.rule, { backgroundColor: colors.border }]} />
         <Text style={[styles.label, { color: colors.foreground, marginBottom: 8 }]}>ভাষা নির্বাচন · Language</Text>
@@ -1238,7 +1243,7 @@ export default function SettingsScreen() {
               })} style={{ flex: 1, justifyContent: 'center', minHeight: 42 }}>
                 <Text numberOfLines={1} style={{ color: colors.foreground, fontSize: 12, fontWeight: selected ? '800' : '500' }}>{voice.name}</Text><Text style={{ color: colors.mutedForeground, fontSize: 10 }}>{voice.language}</Text>
               </Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel={`নমুনা শুনুন: ${voice.name}`} onPress={() => { updateSettings({ voiceIdentifier: voice.identifier }); speak(settings.voiceLanguage.startsWith('bn') ? 'হ্যালো, আমি ব্যাডবয়। তোমার কেমন লাগছে?' : 'Hello, I am Badboy. How do you like this voice?', settings.voiceLanguage, {}, voice.identifier); }} style={{ paddingHorizontal: 9, paddingVertical: 7, borderRadius: 8, backgroundColor: colors.primary }}>
+              <Pressable accessibilityRole="button" accessibilityLabel={`নমুনা শুনুন: ${voice.name}`} onPress={() => { updateSettings({ voiceIdentifier: voice.identifier }); speak(settings.voiceLanguage.startsWith('bn') ? 'হ্যালো, আমি ব্যাডবয়। তোমার কেমন লাগছে?' : 'Hello, I am Badboy. How do you like this voice?', settings.voiceLanguage, {}, voice.identifier); }} style={{ paddingHorizontal: 9, paddingVertical: 7, borderRadius: 8, backgroundColor: colors.primary }}>
                 <Feather name="play" size={14} color={colors.primaryForeground} />
               </Pressable>
             </View>;
@@ -1262,18 +1267,18 @@ export default function SettingsScreen() {
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Future Development Roadmap</Text>
         </View>
         <Text style={[styles.body, { color: colors.mutedForeground, marginBottom: 10 }]}>
-          এগুলো ভবিষ্যৎ উন্নয়নের জন্য তোমার পছন্দ সংরক্ষণ করবে। সংশ্লিষ্ট ফিচার তৈরি ও সংযুক্ত না হওয়া পর্যন্ত সুইচ অন করলেই ফিচার চালু হবে না।
+          এগুলো ভবিষ্যৎ উন্নয়নের জন্য তোমার পছন্দ সংরক্ষণ করবে। সংশ্লিষ্ট ফিচার তৈরি ও সংযুক্ত না হওয়া পর্যন্ত সুইচ অন করলেই ফিচার চালু হবে না।
         </Text>
         {([
-          ['webDevelopment', 'Web Development', 'ওয়েব অ্যাপ, API ও Cloudflare উন্নয়ন'],
+          ['webDevelopment', 'Web Development', 'ওয়েব অ্যাপ, API ও Cloudflare উন্নয়ন'],
           ['appDevelopment', 'App Development', 'Android / iOS অ্যাপ ও APK workflow'],
-          ['selfDevelopment', 'Self Development', 'Badboy-এর নিজের সক্ষমতা উন্নয়ন'],
+          ['selfDevelopment', 'Self Development', 'Badboy-এর নিজের সক্ষমতা উন্নয়ন'],
           ['autonomousAgent', 'Autonomous Task Manager', 'অনুমোদিত কাজ পরিকল্পনা ও ধাপে ধাপে সম্পাদন'],
           ['projectBrain', 'Project Brain', 'প্রজেক্ট ফাইল, আর্কিটেকচার ও সিদ্ধান্তের জ্ঞানভান্ডার'],
-          ['autoQA', 'Auto QA & Testing', 'স্বয়ংক্রিয় পরীক্ষা, bug detection ও validation'],
+          ['autoQA', 'Auto QA & Testing', 'স্বয়ংক্রিয় পরীক্ষা, bug detection ও validation'],
           ['pluginMarketplace', 'Plugin Marketplace', 'নতুন টুল ও external app সংযোগ'],
-          ['providerManager', 'AI Provider Manager', 'একাধিক AI provider, model ও fallback নিয়ন্ত্রণ'],
-          ['automationHub', 'Automation Hub', 'রিমাইন্ডার, সময়সূচি ও recurring workflow'],
+          ['providerManager', 'AI Provider Manager', 'একাধিক AI provider, model ও fallback নিয়ন্ত্রণ'],
+          ['automationHub', 'Automation Hub', 'রিমাইন্ডার, সময়সূচি ও recurring workflow'],
           ['releaseRecovery', 'Release & Recovery', 'Preview, release, rollback ও recovery workflow'],
           ['integrations', 'App Integrations', 'Telegram এবং ভবিষ্যতের app integrations'],
           ['localMemoryControls', 'Advanced Memory', 'মেমোরি review, edit, export ও delete controls'],
@@ -1295,7 +1300,7 @@ export default function SettingsScreen() {
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Telegram bot</Text>
         </View>
         <Text style={[styles.body, { color: colors.mutedForeground }]}>
-          নিজের bot token দিন। Token এই ফোনের Secure Storage-এ থাকবে। এটি bot-এর DM সমর্থন করে—ব্যক্তিগত Telegram chat পড়ে না।
+          নিজের bot token দিন। Token এই ফোনের Secure Storage-এ থাকবে। এটি bot-এর DM সমর্থন করে—ব্যক্তিগত Telegram chat পড়ে না।
         </Text>
         {telegramConnected ? (
           <>
@@ -1382,7 +1387,7 @@ export default function SettingsScreen() {
       <Pressable
         onPress={() => Alert.alert('Owner Login থেকে বের হবেন?', 'আবার Badboy ব্যবহার করতে Owner Token দিতে হবে। ফোনের Chat History ও Memory মুছবে না।', [
           { text: 'বাতিল', style: 'cancel' },
-          { text: 'Sign Out', style: 'destructive', onPress: () => void signOut().catch((cause) => Alert.alert('Sign Out ব্যর্থ', cause instanceof Error ? cause.message : 'SecureStore থেকে Token মুছতে সমস্যা হয়েছে।')) },
+          { text: 'Sign Out', style: 'destructive', onPress: () => void signOut().catch((cause) => Alert.alert('Sign Out ব্যর্থ', cause instanceof Error ? cause.message : 'SecureStore থেকে Token মুছতে সমস্যা হয়েছে।')) },
         ])}
         style={[styles.dangerButton, { borderColor: colors.border }]}
       >

@@ -13,9 +13,16 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
+// Removes trailing slashes without a backtracking regex (SonarCloud S5852).
+function trimTrailingSlashes(value) {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === '/') end--;
+  return value.slice(0, end);
+}
+
 const STATIC_ROOT = path.resolve(__dirname, '..', 'static-build');
 const TEMPLATE_PATH = path.resolve(__dirname, 'templates', 'landing-page.html');
-const basePath = (process.env.BASE_PATH || '/').replace(/\/+$/, '');
+const basePath = trimTrailingSlashes(process.env.BASE_PATH || '/');
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -148,7 +155,7 @@ const server = http.createServer((req, res) => {
   serveStaticFile(pathname, res);
 });
 
-const port = parseInt(process.env.PORT || '3000', 10);
+const port = Number.parseInt(process.env.PORT || '3000', 10);
 server.listen(port, '0.0.0.0', () => {
   console.log(`Serving static Expo build on port ${port}`);
 });

@@ -25,6 +25,7 @@ test('cleanSongQuery - strips Banglish filler phrases and isolates song name', (
     'boro boro remix',
   );
   assert.strictEqual(cleanSongQuery('Rabindra Sangeet play koro'), 'Rabindra Sangeet');
+  assert.strictEqual(cleanSongQuery(' , . Rabindra Sangeet , . '), 'Rabindra Sangeet');
 });
 
 test('getYouTubeUrls - formats web and Android app URLs', () => {
@@ -46,6 +47,13 @@ test('extractYouTubeIntent - detects English and Banglish song requests', () => 
   assert.strictEqual(intent.query, 'Rabindra Sangeet');
   assert.ok(intent.url.includes('search_query=Rabindra%20Sangeet'));
   assert.ok(intent.appUrl.includes('vnd.youtube://'));
+});
+
+test('extractYouTubeIntent - handles YouTube-prefixed Bangla song requests', () => {
+  const intent = extractYouTubeIntent('youtube a Imagine Dragons গান');
+  assert.ok(intent);
+  if (!intent) throw new Error('Intent expected');
+  assert.strictEqual(intent.query, 'Imagine Dragons');
 });
 
 test('extractYouTubeIntent - returns null for non-YouTube queries', () => {
