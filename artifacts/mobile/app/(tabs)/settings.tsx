@@ -218,7 +218,7 @@ export default function SettingsScreen() {
     hasTelegramBot().then((connected) => {
       if (active) setTelegramConnected(connected);
     }).catch(() => {
-      if (active) setTelegramError('ফোনের নিরাপদ স্টোরেজ পরীক্ষা করা যায়নি।');
+      if (active) setTelegramError('ফোনের নিরাপদ স্টোরেজ পরীক্ষা করা যায়নি।');
     });
 
     getGitHubToken().then((token) => {
@@ -276,7 +276,7 @@ export default function SettingsScreen() {
         report += chunk;
         setExpertReviewReport(report);
       });
-      if (!report.trim()) throw new Error('বিশ্লেষণ থেকে কোনো রিপোর্ট পাওয়া যায়নি।');
+      if (!report.trim()) throw new Error('বিশ্লেষণ থেকে কোনো রিপোর্ট পাওয়া যায়নি।');
     } catch (cause) {
       setExpertReviewError(cause instanceof Error ? cause.message : 'Expert Review সম্পন্ন করা যায়নি।');
     } finally {
@@ -331,7 +331,7 @@ export default function SettingsScreen() {
         },
       );
       setDeveloperAnalysisTaskId(result.taskId ?? '');
-      if (!report.trim()) throw new Error('বিশ্লেষণ থেকে কোনো রিপোর্ট পাওয়া যায়নি।');
+      if (!report.trim()) throw new Error('বিশ্লেষণ থেকে কোনো রিপোর্ট পাওয়া যায়নি।');
     } catch (cause) {
       setDeveloperAnalysisError(
         cause instanceof Error ? cause.message : 'Developer Agent analysis সম্পন্ন করা যায়নি।',
@@ -403,7 +403,7 @@ export default function SettingsScreen() {
     }
 
     Alert.alert(
-      'স্বয়ংক্রিয় ডেভেলপমেন্ট ওয়ার্কফ্লো শুরু করবেন?',
+      'স্বয়ংক্রিয় ডেভেলপমেন্ট ওয়ার্কফ্লো শুরু করবেন?',
       `ব্রাঞ্চ: ${currentPlan.branchName}\nলক্ষ্য: GitHub-এ Pull Request তৈরি করা।\n\nআপনি কি নিশ্চিত?`,
       [
         { text: 'বাতিল', style: 'cancel' },
@@ -713,7 +713,7 @@ export default function SettingsScreen() {
             <Text selectable style={[styles.body, { color: colors.foreground, lineHeight: 21 }]}>{expertReviewReport}</Text>
             <Pressable onPress={() => void handleShareExpertReport()} style={[styles.primaryButton, { backgroundColor: colors.secondary, marginTop: 8 }]}>
               <Feather name="share-2" size={15} color={colors.secondaryForeground} />
-              <Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>রিপোর্ট শেয়ার করুন</Text>
+              <Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>রিপোর্ট শেয়ার করুন</Text>
             </Pressable>
           </View>
         ) : null}
@@ -827,7 +827,7 @@ export default function SettingsScreen() {
                     style={[styles.secondaryButton, { backgroundColor: colors.secondary, marginTop: 8 }]}
                   >
                     <Feather name="share-2" size={14} color={colors.secondaryForeground} />
-                    <Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>রিপোর্ট শেয়ার করুন</Text>
+                    <Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>রিপোর্ট শেয়ার করুন</Text>
                   </Pressable>
                 </View>
               ) : null}
@@ -914,7 +914,7 @@ export default function SettingsScreen() {
               style={[styles.primaryButton, { backgroundColor: colors.primary, opacity: !featureRequestInput.trim() || devBusy ? 0.5 : 1 }]}
             >
               <Feather name="play" size={15} color={colors.primaryForeground} />
-              <Text style={{ color: colors.primaryForeground, fontWeight: '700' }}>প্ল্যান ও ওয়ার্কফ্লো তৈরি করুন</Text>
+              <Text style={{ color: colors.primaryForeground, fontWeight: '700' }}>প্ল্যান ও ওয়ার্কফ্লো তৈরি করুন</Text>
             </Pressable>
 
             {/* Current Plan Viewer */}
@@ -1341,7 +1341,7 @@ export default function SettingsScreen() {
               style={[styles.primaryButton, { backgroundColor: colors.primary, opacity: !telegramMessage.trim() || telegramBusy ? 0.5 : 1 }]}
             >
               <Feather name="send" size={15} color={colors.primaryForeground} />
-              <Text style={{ color: colors.primaryForeground, fontWeight: '700' }}>অনুমতি দিয়ে পাঠান</Text>
+              <Text style={{ color: colors.primaryForeground, fontWeight: '700' }}>অনুমতি দিয়ে পাঠান</Text>
             </Pressable>
             <Pressable onPress={disconnectBot} style={styles.textButton}>
               <Text style={{ color: colors.destructive, fontWeight: '600' }}>Bot বিচ্ছিন্ন করুন</Text>
