@@ -26,7 +26,7 @@ export async function expireOwnerSession(): Promise<void> {
 function isWebPlatform(): boolean {
   // Bracket access keeps Expo's EXPO_OS value runtime-readable in tests and
   // custom builds instead of allowing a build-time transform to freeze it.
-  const expoOs = process.env['EXPO_OS'];
+  const expoOs = Reflect.get(process.env, 'EXPO_OS') as string | undefined;
   if (expoOs === 'web') return true;
   if (expoOs === 'android' || expoOs === 'ios') return false;
   return Platform.OS === 'web';
