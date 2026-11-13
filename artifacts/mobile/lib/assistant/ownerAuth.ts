@@ -41,13 +41,8 @@ export async function expireOwnerSession(): Promise<void> {
 }
 
 function isWebPlatform(): boolean {
-  // Tests can explicitly declare their simulated runtime without relying on
-  // build-time Expo constants or importing native platform bindings.
-  const runtimeProcess = Reflect.get(globalThis, 'process') as { env?: Record<string, string | undefined> } | undefined;
-  const testPlatform = runtimeProcess?.env?.BADBOY_TEST_PLATFORM;
-  if (testPlatform === 'web') return true;
-  if (testPlatform === 'native') return false;
-  return Platform.OS === 'web';
+  // Native runtimes may expose a window polyfill; a real web document is required.
+  return Platform.OS === 'web' && typeof document !== 'undefined';
 }
 function sessionApiUrl() {
   if (isWebPlatform() && typeof window !== 'undefined' && typeof window.location?.origin === 'string' && window.location.origin.startsWith('http')) {
