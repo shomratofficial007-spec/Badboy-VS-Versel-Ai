@@ -1,10 +1,12 @@
-import { getOwnerToken } from "./ownerAuth";
+import { Platform } from "react-native";
+import { expireOwnerSession, getOwnerToken } from "./ownerAuth";
 
 const DEFAULT_NATIVE_API_DOMAIN =
   "https://badboy-vs-versel-ai.shomratofficial007.workers.dev";
 
 export function apiUrl(path: string): string {
   if (
+    Platform.OS === "web" &&
     typeof window !== "undefined" &&
     typeof window.location?.origin === "string" &&
     window.location.origin.startsWith("http")
@@ -30,7 +32,7 @@ export function createOwnerJsonRequester(
   ): Promise<T> {
     const token = await getToken();
     if (!token) {
-      throw new Error("Owner login is required. Enter your Badboy Owner Token to continue.");
+      throw new Error("Owner login session is required. Please sign in again.");
     }
 
     const headers: Record<string, string> = {
@@ -46,6 +48,7 @@ export function createOwnerJsonRequester(
     });
     const payload = await response.json().catch(() => ({})) as T & { error?: string };
     if (!response.ok) {
+      if (response.status === 401) await expireOwnerSession();
       throw new Error(payload.error ?? `Badboy API request failed (HTTP ${response.status}).`);
     }
     return payload;

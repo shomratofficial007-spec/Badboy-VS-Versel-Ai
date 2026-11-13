@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { createDeveloperDataClient, getAnalysisProjectNotes } from "./developerData";
+import { before, mock, test } from "node:test";
+
+let createDeveloperDataClient: typeof import("./developerData").createDeveloperDataClient;
+let getAnalysisProjectNotes: typeof import("./developerData").getAnalysisProjectNotes;
+before(async () => {
+  mock.module("react-native", { namedExports: { Platform: { OS: "web" } } });
+  ({ createDeveloperDataClient, getAnalysisProjectNotes } = await import("./developerData"));
+});
 
 test("lists Developer Agent tasks with bounded limits", async () => {
   const calls: Array<{ path: string; method: string }> = [];

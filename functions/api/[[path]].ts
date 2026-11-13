@@ -1,5 +1,5 @@
 import { buildDeveloperAnalysisMessages, resolveDeveloperAnalysisEngine, validateDeveloperAnalysisPayload } from "./developerAgent.ts";
-import { authenticatePersonalOwner } from "./personalAuth.ts";
+import { createOwnerSession, authenticateOwnerSession, revokeOwnerSession } from "./sessionAuth.ts";
 import { handleDeveloperDataRequest } from "./developerData.ts";
 import { createAgentStorage, type D1Database } from "./agentStorage.ts";
 import { fetchGeminiChat, getGeminiModel } from "./geminiProvider.ts";
@@ -1011,8 +1011,14 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
 
   // Keep only service health and the credential verifier public. Every other
   // Security invariant: verify the personal owner token before any API or private D1/Developer Agent data access.
-  if (request.method === "POST" && pathname === "/api/auth/verify") {
-    const auth = await authenticatePersonalOwner(request, env);
+  if (request.method === "POST" && pathname === "/api/auth/session") {
+    return createOwnerSession(request, env);
+  }
+  if (request.method === "DELETE" && pathname === "/api/auth/session") {
+    return revokeOwnerSession(request, env);
+  }
+  if (request.method === "GET" && pathname === "/api/auth/session") {
+    const auth = await authenticateOwnerSession(request, env);
     if (!auth.ok) return auth.response;
     return jsonResponse({ authenticated: true }, 200);
   }
@@ -1021,7 +1027,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     (pathname === "/api/healthz" || pathname === "/api/health");
   let verifiedOwnerId: string | null = null;
   if (!isPublicHealthCheck) {
-    const auth = await authenticatePersonalOwner(request, env);
+    const auth = await authenticateOwnerSession(request, env);
     if (!auth.ok) return auth.response;
     verifiedOwnerId = auth.identity.ownerId;
   }
