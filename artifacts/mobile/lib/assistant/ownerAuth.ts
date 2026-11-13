@@ -6,29 +6,6 @@ const DEFAULT_NATIVE_API_DOMAIN = 'https://badboy-vs-versel-ai.shomratofficial00
 let activeSession: string | null = null;
 const sessionExpiryListeners = new Set<() => void>();
 
-type OwnerSessionStorage = {
-  getItemAsync(key: string): Promise<string | null>;
-  setItemAsync(key: string, value: string): Promise<void>;
-  deleteItemAsync(key: string): Promise<void>;
-};
-let ownerSessionStorageOverride: OwnerSessionStorage | null = null;
-let ownerSessionWebOverride: boolean | null = null;
-
-async function getOwnerSessionStorage(): Promise<OwnerSessionStorage> {
-  return ownerSessionStorageOverride ?? await import('expo-secure-store');
-}
-
-/** Injects a storage adapter for isolated unit tests; production uses Expo SecureStore. */
-export function __setOwnerSessionStorageForTests(
-  adapter: OwnerSessionStorage | null,
-  isWeb: boolean | null = null,
-  resetMemory = false,
-): void {
-  ownerSessionStorageOverride = adapter;
-  ownerSessionWebOverride = isWeb;
-  if (resetMemory) activeSession = null;
-}
-
 export function subscribeToOwnerSessionExpiry(listener: () => void): () => void {
   sessionExpiryListeners.add(listener);
   return () => sessionExpiryListeners.delete(listener);
@@ -38,7 +15,7 @@ export async function expireOwnerSession(): Promise<void> {
   activeSession = null;
   if (!isWebPlatform()) {
     try {
-      const SecureStore = await getOwnerSessionStorage();
+      const SecureStore = await import('expo-secure-store');
       await SecureStore.deleteItemAsync(SESSION_KEY);
       await SecureStore.deleteItemAsync(LEGACY_OWNER_TOKEN_KEY);
     } catch { /* The in-memory credential is still cleared. */ }
@@ -66,14 +43,14 @@ export async function getOwnerToken(): Promise<string | null> {
   if (activeSession) return activeSession;
   if (isWebPlatform()) return null;
   try {
-    const SecureStore = await getOwnerSessionStorage();
+    const SecureStore = await import('expo-secure-store');
     activeSession = await SecureStore.getItemAsync(SESSION_KEY);
     return activeSession;
   } catch { return null; }
 }
 export async function saveOwnerToken(sessionToken: string): Promise<void> {
   if (!isWebPlatform()) {
-    const SecureStore = await getOwnerSessionStorage();
+    const SecureStore = await import('expo-secure-store');
     await SecureStore.setItemAsync(SESSION_KEY, sessionToken);
     await SecureStore.deleteItemAsync(LEGACY_OWNER_TOKEN_KEY);
   }
@@ -104,7 +81,7 @@ export async function clearOwnerToken(): Promise<void> {
     } catch { /* Local logout must still clear credentials when offline. */ }
   }
   if (!isWebPlatform()) {
-    const SecureStore = await getOwnerSessionStorage();
+    const SecureStore = await import('expo-secure-store');
     await SecureStore.deleteItemAsync(SESSION_KEY);
     await SecureStore.deleteItemAsync(LEGACY_OWNER_TOKEN_KEY);
   }
