@@ -40,7 +40,7 @@ beforeEach(() => {
   setOwnerSessionStorageForTests({
     getItemAsync: async () => secureStoreToken,
     setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
-    deleteItemAsync: async () => { secureStoreToken = null; },
+    deleteItemAsync: async (key: string) => { if (key === 'badboy-owner-session-v1') secureStoreToken = null; },
   });
   globalThis.fetch = (async () => new Response(JSON.stringify({ authenticated: true }), { status: 200 })) as typeof fetch;
 });
