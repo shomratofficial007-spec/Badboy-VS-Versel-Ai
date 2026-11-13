@@ -31,7 +31,6 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 22
-          cache: pnpm
 
       - name: Install dependencies for isolated preview
         if: github.event_name == 'pull_request'
@@ -118,6 +117,7 @@ jobs:
           exit 1
 
       - name: Scan the verified Cloudflare deployment
+        id: zap
         uses: zaproxy/action-baseline@v0.15.0
         with:
           target: ${{ steps.target.outputs.url }}
@@ -126,7 +126,7 @@ jobs:
           artifact_name: badboy-zap-baseline-report
 
       - name: Enforce ZAP risk threshold (no Medium or High alerts)
-        if: always()
+        if: always() && steps.target.outcome == 'success' && steps.zap.outcome != 'skipped'
         shell: bash
         run: |
           node --input-type=module <<'NODE'
