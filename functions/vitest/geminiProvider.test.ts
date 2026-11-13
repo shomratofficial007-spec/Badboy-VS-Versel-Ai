@@ -77,7 +77,7 @@ describe("Gemini Developer Agent provider adapter", () => {
     expect(output).toContain('"content":"first"');
     expect(output).toContain('"content":"second"');
     expect(output).not.toContain("not-json");
-    expect(output.match(/data: \\[DONE\\]/g)).toHaveLength(1);
+    expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
   });
 
   it("flushes a final SSE event without a trailing blank line", async () => {
