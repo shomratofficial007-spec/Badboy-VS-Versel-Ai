@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, mock, test } from 'node:test';
-import { Platform } from 'react-native';
-import {
+
+const mockPlatform = { OS: 'web' as string };
+mock.module('react-native', { namedExports: { Platform: mockPlatform } });
+const { Platform } = await import('react-native');
+const {
   clearOwnerToken,
   getOwnerToken,
   restoreOwnerSession,
   saveOwnerToken,
   verifyOwnerToken,
-} from './ownerAuth';
+} = await import('./ownerAuth');
 
 const OWNER_TOKEN = 'a'.repeat(43);
 const SESSION_TOKEN = 'b'.repeat(64);
