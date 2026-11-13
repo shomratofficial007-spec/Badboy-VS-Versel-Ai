@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   status:
-    name: Read production D1 migration status only
+    name: Diagnose and read production D1 status (read-only)
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -43,6 +43,33 @@ jobs:
         run: |
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Missing CLOUDFLARE_API_TOKEN secret"; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Missing CLOUDFLARE_ACCOUNT_ID secret"; exit 1; }
+
+      - name: Diagnose Cloudflare token, account, and D1 access (read-only)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: be5648fd-cbb2-487c-8d99-6a0f8c72cf46
+        shell: bash
+        run: |
+          set +e
+          diagnose() {
+            label="$1"
+            method="$2"
+            url="$3"
+            data="${4:-}"
+            if [ "$method" = "POST" ]; then
+              http_code=$(curl -sS -X POST "$url" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" --data "$data" -o /tmp/cf-response.json -w "%{http_code}")
+            else
+              http_code=$(curl -sS "$url" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -o /tmp/cf-response.json -w "%{http_code}")
+            fi
+            echo "=== $label ==="
+            echo "HTTP_STATUS=$http_code"
+            jq -c '{success, errors: [.errors[]? | {code, message}], result: (if (.result|type) == "object" then (.result | {id, name, status}) else null end)}' /tmp/cf-response.json 2>/dev/null || echo "Response was not valid JSON"
+          }
+
+          diagnose "TOKEN_VERIFY" GET "https://api.cloudflare.com/client/v4/user/tokens/verify"
+          diagnose "D1_DATABASE_READ" GET "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$D1_DATABASE_ID"
+          diagnose "D1_READ_ONLY_QUERY" POST "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$D1_DATABASE_ID/query" '{"sql":"SELECT 1 AS connectivity_check"}'
 
       - name: Read production migration status (no changes)
         run: pnpm exec wrangler d1 migrations list badboy-agent-db --remote --config wrangler.json
