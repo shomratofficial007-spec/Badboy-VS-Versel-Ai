@@ -7,7 +7,7 @@ let getOwnerToken: typeof import('./ownerAuth').getOwnerToken;
 let restoreOwnerSession: typeof import('./ownerAuth').restoreOwnerSession;
 let saveOwnerToken: typeof import('./ownerAuth').saveOwnerToken;
 let verifyOwnerToken: typeof import('./ownerAuth').verifyOwnerToken;
-let setOwnerSessionStorageForTests: typeof import('./ownerAuth').__setOwnerSessionStorageForTests;
+let setOwnerSessionStorageForTests: typeof import('./ownerAuth').__setOwnerSessionStorageForTests;\nlet expireOwnerSession: typeof import('./ownerAuth').expireOwnerSession;\nlet subscribeToOwnerSessionExpiry: typeof import('./ownerAuth').subscribeToOwnerSessionExpiry;
 
 mock.module('react-native', { namedExports: { Platform: mockPlatform } });
 mock.module('expo-secure-store', {
@@ -30,7 +30,7 @@ before(async () => {
     restoreOwnerSession,
     saveOwnerToken,
     verifyOwnerToken,
-    __setOwnerSessionStorageForTests: setOwnerSessionStorageForTests,
+    __setOwnerSessionStorageForTests: setOwnerSessionStorageForTests,\n    expireOwnerSession,\n    subscribeToOwnerSessionExpiry,
   } = await import('./ownerAuth'));
 });
 
@@ -167,4 +167,102 @@ test('handles a successful HTTP response without authenticated confirmation as f
   )) as typeof fetch;
 
   await assert.rejects(verifyOwnerToken(OWNER_TOKEN), /Owner authentication failed/);
+});
+
+
+test('notifies subscribers and clears native credentials when a session expires', { concurrency: false }, async () => {
+  const events: string[] = [];
+  const unsubscribe = subscribeToOwnerSessionExpiry(() => events.push('expired'));
+  await saveOwnerToken(SESSION_TOKEN);
+  await expireOwnerSession();
+  assert.deepEqual(events, ['expired']);
+  assert.equal(secureStoreToken, null);
+  unsubscribe();
+});
+
+test('uses the React Native web fallback only when a browser document exists', { concurrency: false }, async () => {
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const testExpoOs = process.env.EXPO_OS;
+  try {
+    delete process.env.EXPO_OS;
+    mockPlatform.OS = 'web';
+    delete (globalThis as typeof globalThis & { document?: unknown }).document;
+    await saveOwnerToken(SESSION_TOKEN);
+    assert.equal(secureStoreToken, SESSION_TOKEN);
+  } finally {
+    mockPlatform.OS = 'android';
+    if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument);
+    else delete (globalThis as typeof globalThis & { document?: unknown }).document;
+    if (testExpoOs === undefined) delete process.env.EXPO_OS;
+    else process.env.EXPO_OS = testExpoOs;
+  }
+});
+
+test('uses the browser origin for web session exchange', { concurrency: false }, async () => {
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const testExpoOs = process.env.EXPO_OS;
+  let requestedUrl = '';
+  try {
+    process.env.EXPO_OS = 'web';
+    setOwnerSessionStorageForTests(null);
+    mockPlatform.OS = 'web';
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: { location: { origin: 'https://preview.example.test' } },
+    });
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      requestedUrl = String(input);
+      return new Response(JSON.stringify({ authenticated: true, sessionToken: SESSION_TOKEN }), { status: 200 });
+    }) as typeof fetch;
+    assert.equal(await verifyOwnerToken(OWNER_TOKEN), SESSION_TOKEN);
+    assert.equal(requestedUrl, 'https://preview.example.test/api/auth/session');
+  } finally {
+    mockPlatform.OS = 'android';
+    if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
+    else delete (globalThis as typeof globalThis & { window?: unknown }).window;
+    if (testExpoOs === undefined) delete process.env.EXPO_OS;
+    else process.env.EXPO_OS = testExpoOs;
+  }
+});
+
+test('returns null when SecureStore cannot be read', { concurrency: false }, async () => {
+  setOwnerSessionStorageForTests({
+    getItemAsync: async () => { throw new Error('SecureStore unavailable'); },
+    setItemAsync: async () => {},
+    deleteItemAsync: async () => {},
+  });
+  assert.equal(await getOwnerToken(), null);
+  setOwnerSessionStorageForTests({
+    getItemAsync: async () => secureStoreToken,
+    setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
+    deleteItemAsync: async (key: string) => { if (key === 'badboy-owner-session-v1') secureStoreToken = null; },
+  });
+});
+
+test('clears local credentials when server logout is unreachable', { concurrency: false }, async () => {
+  await saveOwnerToken(SESSION_TOKEN);
+  globalThis.fetch = (async () => { throw new Error('network offline'); }) as typeof fetch;
+  await clearOwnerToken();
+  assert.equal(secureStoreToken, null);
+});
+
+test('keeps a web session in memory when restore validation has a network failure', { concurrency: false }, async () => {
+  const testExpoOs = process.env.EXPO_OS;
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  try {
+    process.env.EXPO_OS = 'web';
+    setOwnerSessionStorageForTests(null);
+    mockPlatform.OS = 'web';
+    Object.defineProperty(globalThis, 'document', { configurable: true, value: {} });
+    await saveOwnerToken(SESSION_TOKEN);
+    globalThis.fetch = (async () => { throw new Error('network offline'); }) as typeof fetch;
+    assert.equal(await restoreOwnerSession(), false);
+    assert.equal(await getOwnerToken(), SESSION_TOKEN);
+  } finally {
+    mockPlatform.OS = 'android';
+    if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument);
+    else delete (globalThis as typeof globalThis & { document?: unknown }).document;
+    if (testExpoOs === undefined) delete process.env.EXPO_OS;
+    else process.env.EXPO_OS = testExpoOs;
+  }
 });
