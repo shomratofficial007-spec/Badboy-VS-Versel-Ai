@@ -1,16 +1,25 @@
 import assert from 'node:assert/strict';
-import { afterEach, beforeEach, mock, test } from 'node:test';
+import { afterEach, before, beforeEach, mock, test } from 'node:test';
 
 const mockPlatform = { OS: 'web' as string };
-mock.module('react-native', { namedExports: { Platform: mockPlatform } });
-const { Platform } = await import('react-native');
-const {
-  clearOwnerToken,
-  getOwnerToken,
-  restoreOwnerSession,
-  saveOwnerToken,
-  verifyOwnerToken,
-} = await import('./ownerAuth');
+let Platform: { OS: string };
+let clearOwnerToken: typeof import('./ownerAuth').clearOwnerToken;
+let getOwnerToken: typeof import('./ownerAuth').getOwnerToken;
+let restoreOwnerSession: typeof import('./ownerAuth').restoreOwnerSession;
+let saveOwnerToken: typeof import('./ownerAuth').saveOwnerToken;
+let verifyOwnerToken: typeof import('./ownerAuth').verifyOwnerToken;
+
+before(async () => {
+  mock.module('react-native', { namedExports: { Platform: mockPlatform } });
+  ({ Platform } = await import('react-native'));
+  ({
+    clearOwnerToken,
+    getOwnerToken,
+    restoreOwnerSession,
+    saveOwnerToken,
+    verifyOwnerToken,
+  } = await import('./ownerAuth'));
+});
 
 const OWNER_TOKEN = 'a'.repeat(43);
 const SESSION_TOKEN = 'b'.repeat(64);
