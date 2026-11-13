@@ -24,8 +24,11 @@ export async function expireOwnerSession(): Promise<void> {
 }
 
 function isWebPlatform(): boolean {
-  // React Native Platform.OS is the runtime source of truth; build-time Expo env
-  // values can be stale or inlined incorrectly in custom native builds.
+  // Tests can explicitly declare their simulated runtime without relying on
+  // build-time Expo constants or importing native platform bindings.
+  const testPlatform = Reflect.get(globalThis, '__BADBOY_TEST_PLATFORM__');
+  if (testPlatform === 'web') return true;
+  if (testPlatform === 'native') return false;
   return Platform.OS === 'web';
 }
 function sessionApiUrl() {
