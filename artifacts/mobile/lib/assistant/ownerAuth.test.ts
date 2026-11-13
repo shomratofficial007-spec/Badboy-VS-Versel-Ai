@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
-import { Platform } from 'react-native';
 import { afterEach, before, beforeEach, mock, test } from 'node:test';
 
-const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(Platform, 'OS');
+const mockPlatform = { OS: 'android' };
 let clearOwnerToken: typeof import('./ownerAuth').clearOwnerToken;
 let getOwnerToken: typeof import('./ownerAuth').getOwnerToken;
 let restoreOwnerSession: typeof import('./ownerAuth').restoreOwnerSession;
 let saveOwnerToken: typeof import('./ownerAuth').saveOwnerToken;
 let verifyOwnerToken: typeof import('./ownerAuth').verifyOwnerToken;
+
+mock.module('react-native', { namedExports: { Platform: mockPlatform } });
 
 before(async () => {
   ({
@@ -35,21 +36,21 @@ mock.module('expo-secure-store', {
 
 beforeEach(() => {
   // The CI runner may export EXPO_OS=web; force native mode for the native tests.
-  Object.defineProperty(Platform, 'OS', { configurable: true, value: 'android' });
+  mockPlatform.OS = 'android';
   process.env.EXPO_OS = 'android';
   globalThis.fetch = (async () => new Response(JSON.stringify({ authenticated: true }), { status: 200 })) as typeof fetch;
 });
 
 afterEach(async () => {
   await clearOwnerToken();
-  if (originalPlatformDescriptor) Object.defineProperty(Platform, 'OS', originalPlatformDescriptor);
+  mockPlatform.OS = 'android';
   globalThis.fetch = originalFetch;
   if (originalExpoOs === undefined) delete process.env.EXPO_OS;
   else process.env.EXPO_OS = originalExpoOs;
   secureStoreToken = null;
 });
 
-test('keeps the owner token in the active session and restores an existing session', async () => {
+test('keeps the owner token in the active session and restores an existing session', { concurrency: false }, async () => {
   await clearOwnerToken();
   assert.equal(await getOwnerToken(), null);
   assert.equal(await restoreOwnerSession(), false);
@@ -63,12 +64,12 @@ test('keeps the owner token in the active session and restores an existing sessi
   assert.equal(await restoreOwnerSession(), false);
 });
 
-test('uses SecureStore on native when EXPO_OS is omitted by a custom build', async () => {
+test('uses SecureStore on native when EXPO_OS is omitted by a custom build', { concurrency: false }, async () => {
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
   const testExpoOs = process.env.EXPO_OS;
   try {
     delete process.env.EXPO_OS;
-    Object.defineProperty(Platform, 'OS', { configurable: true, value: 'android' });
+    mockPlatform.OS = 'android';
     // Native runtimes can expose window; its presence must not imply web.
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
@@ -94,28 +95,28 @@ test('uses SecureStore on native when EXPO_OS is omitted by a custom build', asy
   }
 });
 
-test('uses SecureStore when the React Native runtime identifies Android', async () => {
+test('uses SecureStore when the React Native runtime identifies Android', { concurrency: false }, async () => {
   await saveOwnerToken(SESSION_TOKEN);
   assert.equal(secureStoreToken, SESSION_TOKEN);
   assert.equal(await restoreOwnerSession(), true);
 });
 
-test('keeps web sessions in memory without writing the native SecureStore', async () => {
+test('keeps web sessions in memory without writing the native SecureStore', { concurrency: false }, async () => {
   const testExpoOs = process.env.EXPO_OS;
   try {
     process.env.EXPO_OS = 'web';
-    Object.defineProperty(Platform, 'OS', { configurable: true, value: 'web' });
+    mockPlatform.OS = 'web';
     await saveOwnerToken(SESSION_TOKEN);
     assert.equal(secureStoreToken, null);
     assert.equal(await getOwnerToken(), SESSION_TOKEN);
   } finally {
-    Object.defineProperty(Platform, 'OS', { configurable: true, value: 'android' });
+    mockPlatform.OS = 'android';
     if (testExpoOs === undefined) delete process.env.EXPO_OS;
     else process.env.EXPO_OS = testExpoOs;
   }
 });
 
-test('verifies a valid owner token through the Worker endpoint', async () => {
+test('verifies a valid owner token through the Worker endpoint', { concurrency: false }, async () => {
   let requestedUrl = '';
   let authorization = '';
 
@@ -133,7 +134,7 @@ test('verifies a valid owner token through the Worker endpoint', async () => {
   assert.equal(authorization, `Bearer ${OWNER_TOKEN}`);
 });
 
-test('rejects a Worker response that does not authenticate the owner token', async () => {
+test('rejects a Worker response that does not authenticate the owner token', { concurrency: false }, async () => {
   globalThis.fetch = (async () => new Response(
     JSON.stringify({ error: 'Personal access key is invalid.' }),
     { status: 401, headers: { 'Content-Type': 'application/json' } },
@@ -149,7 +150,7 @@ test('rejects a Worker response that does not authenticate the owner token', asy
   );
 });
 
-test('handles a successful HTTP response without authenticated confirmation as failure', async () => {
+test('handles a successful HTTP response without authenticated confirmation as failure', { concurrency: false }, async () => {
   globalThis.fetch = (async () => new Response(
     JSON.stringify({ authenticated: false }),
     { status: 200, headers: { 'Content-Type': 'application/json' } },
