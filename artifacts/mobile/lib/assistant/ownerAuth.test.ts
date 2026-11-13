@@ -9,7 +9,7 @@ import {
   verifyOwnerToken,
 } from './ownerAuth';
 
-const OWNER_TOKEN = 'a'.repeat(43);
+const OWNER_TOKEN = 'a'.repeat(43);\nconst SESSION_TOKEN = 'b'.repeat(64);
 const originalFetch = globalThis.fetch;
 let secureStoreToken: string | null = null;
 
@@ -33,7 +33,7 @@ test('keeps the owner token in the active session and restores an existing sessi
   assert.equal(await restoreOwnerSession(), false);
 
   await saveOwnerToken(OWNER_TOKEN);
-  assert.equal(await getOwnerToken(), OWNER_TOKEN);
+  assert.equal(await getOwnerToken(), SESSION_TOKEN);
   assert.equal(await restoreOwnerSession(), true);
 
   await clearOwnerToken();
@@ -105,13 +105,13 @@ test('verifies a valid owner token through the Worker endpoint', async () => {
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     requestedUrl = String(input);
     authorization = new Headers(init?.headers).get('Authorization') ?? '';
-    return new Response(JSON.stringify({ authenticated: true }), {
+    return new Response(JSON.stringify({ authenticated: true, sessionToken: SESSION_TOKEN }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
   }) as typeof fetch;
 
-  await verifyOwnerToken(OWNER_TOKEN);
+  assert.equal(await verifyOwnerToken(OWNER_TOKEN), SESSION_TOKEN);
   assert.match(requestedUrl, /\/api\/auth\/verify$/);
   assert.equal(authorization, `Bearer ${OWNER_TOKEN}`);
 });
