@@ -687,15 +687,15 @@ test("developer health reports Native capability and unavailable Copilot runtime
   assert.strictEqual(json.capabilities.repositoryWrite, false);
 });
 
-test("developer health does not claim analysis is ready before the D1 migration exists", async () => {
-  const response = await onRequestGet({
-    request: new Request("https://example.com/api/developer/health"),
+test("developer health fails closed when the session D1 binding is missing", async () => {
+  const response = await rawOnRequestGet({
+    request: new Request("https://example.com/api/developer/health", {
+      headers: { Authorization: `Bearer ${TEST_SESSION_TOKEN}` },
+    }),
     env: { OPENROUTER_API_KEY: "test-key" },
   } as any);
   assert.equal(response.status, 503);
-  const payload = await response.json() as any;
-  assert.equal(payload.capabilities.analysis, false);
-  assert.equal(payload.capabilities.taskPersistence, false);
+  assert.equal((await response.json() as any).code, "SESSION_STORAGE_UNAVAILABLE");
 });
 
 test("developer analysis rejects invalid payloads before contacting providers", async () => {
