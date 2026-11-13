@@ -22,6 +22,7 @@ before(async () => {
 const OWNER_TOKEN = 'a'.repeat(43);
 const SESSION_TOKEN = 'b'.repeat(64);
 const originalFetch = globalThis.fetch;
+const originalExpoOs = process.env.EXPO_OS;
 let secureStoreToken: string | null = null;
 
 mock.module('expo-secure-store', {
@@ -33,12 +34,17 @@ mock.module('expo-secure-store', {
 });
 
 beforeEach(() => {
+  // The CI runner may export EXPO_OS=web; force native mode for the native tests.
+  process.env.EXPO_OS = 'android';
+  mockPlatform.OS = 'android';
   globalThis.fetch = (async () => new Response(JSON.stringify({ authenticated: true }), { status: 200 })) as typeof fetch;
 });
 
 afterEach(async () => {
   await clearOwnerToken();
   globalThis.fetch = originalFetch;
+  if (originalExpoOs === undefined) delete process.env.EXPO_OS;
+  else process.env.EXPO_OS = originalExpoOs;
   secureStoreToken = null;
 });
 
@@ -58,9 +64,10 @@ test('keeps the owner token in the active session and restores an existing sessi
 
 test('uses SecureStore on native when EXPO_OS is omitted by a custom build', async () => {
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
-  const originalExpoOs = process.env.EXPO_OS;
+  const testExpoOs = process.env.EXPO_OS;
   try {
     delete process.env.EXPO_OS;
+    mockPlatform.OS = 'android';
     // Native runtimes can expose window; its presence must not imply web.
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
@@ -81,8 +88,8 @@ test('uses SecureStore on native when EXPO_OS is omitted by a custom build', asy
   } finally {
     if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
     else delete (globalThis as typeof globalThis & { window?: unknown }).window;
-    if (originalExpoOs === undefined) delete process.env.EXPO_OS;
-    else process.env.EXPO_OS = originalExpoOs;
+    if (testExpoOs === undefined) delete process.env.EXPO_OS;
+    else process.env.EXPO_OS = testExpoOs;
   }
 });
 
@@ -93,15 +100,15 @@ test('uses SecureStore when the React Native runtime identifies Android', async 
 });
 
 test('keeps web sessions in memory without writing the native SecureStore', async () => {
-  const originalExpoOs = process.env.EXPO_OS;
+  const testExpoOs = process.env.EXPO_OS;
   try {
     process.env.EXPO_OS = 'web';
     await saveOwnerToken(SESSION_TOKEN);
     assert.equal(secureStoreToken, null);
     assert.equal(await getOwnerToken(), SESSION_TOKEN);
   } finally {
-    if (originalExpoOs === undefined) delete process.env.EXPO_OS;
-    else process.env.EXPO_OS = originalExpoOs;
+    if (testExpoOs === undefined) delete process.env.EXPO_OS;
+    else process.env.EXPO_OS = testExpoOs;
   }
 });
 
