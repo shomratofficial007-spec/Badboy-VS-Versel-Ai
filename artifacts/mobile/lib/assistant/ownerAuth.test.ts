@@ -103,10 +103,12 @@ test('keeps web sessions in memory without writing the native SecureStore', asyn
   const testExpoOs = process.env.EXPO_OS;
   try {
     process.env.EXPO_OS = 'web';
+    mockPlatform.OS = 'web';
     await saveOwnerToken(SESSION_TOKEN);
     assert.equal(secureStoreToken, null);
     assert.equal(await getOwnerToken(), SESSION_TOKEN);
   } finally {
+    mockPlatform.OS = 'android';
     if (testExpoOs === undefined) delete process.env.EXPO_OS;
     else process.env.EXPO_OS = testExpoOs;
   }
