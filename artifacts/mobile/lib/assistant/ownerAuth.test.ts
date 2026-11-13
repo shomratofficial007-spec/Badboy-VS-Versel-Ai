@@ -14,7 +14,7 @@ mock.module('expo-secure-store', {
   namedExports: {
     getItemAsync: async () => secureStoreToken,
     setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
-    deleteItemAsync: async () => { secureStoreToken = null; },
+    deleteItemAsync: async (key: string) => { if (key === 'badboy-owner-session-v1') secureStoreToken = null; },
   },
 });
 const OWNER_TOKEN = 'a'.repeat(43);
