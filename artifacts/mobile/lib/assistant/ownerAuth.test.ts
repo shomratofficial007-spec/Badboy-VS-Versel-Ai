@@ -8,7 +8,7 @@ let restoreOwnerSession: typeof import('./ownerAuth').restoreOwnerSession;
 let saveOwnerToken: typeof import('./ownerAuth').saveOwnerToken;
 let verifyOwnerToken: typeof import('./ownerAuth').verifyOwnerToken;
 
-mock.module('react-native', { namedExports: { Platform: mockPlatform } });
+mock.module('react-native', { namedExports: { Platform: mockPlatform }, cache: false });
 
 before(async () => {
   ({
@@ -32,6 +32,7 @@ mock.module('expo-secure-store', {
     setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
     deleteItemAsync: async () => { secureStoreToken = null; },
   },
+  cache: false,
 });
 
 beforeEach(() => {
