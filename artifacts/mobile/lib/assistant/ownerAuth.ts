@@ -12,9 +12,15 @@ type OwnerSessionStorage = {
   deleteItemAsync(key: string): Promise<void>;
 };
 
+let ownerSessionStorageOverride: OwnerSessionStorage | null = null;
+
 async function getOwnerSessionStorage(): Promise<OwnerSessionStorage> {
-  const testStorage = Reflect.get(globalThis, '__BADBOY_TEST_SECURE_STORE__') as OwnerSessionStorage | undefined;
-  return testStorage ?? await import('expo-secure-store');
+  return ownerSessionStorageOverride ?? await import('expo-secure-store');
+}
+
+/** Test-only storage injection; production always uses Expo SecureStore. */
+export function __setOwnerSessionStorageForTests(adapter: OwnerSessionStorage | null): void {
+  ownerSessionStorageOverride = adapter;
 }
 
 export function subscribeToOwnerSessionExpiry(listener: () => void): () => void {
@@ -37,7 +43,8 @@ export async function expireOwnerSession(): Promise<void> {
 function isWebPlatform(): boolean {
   // Tests can explicitly declare their simulated runtime without relying on
   // build-time Expo constants or importing native platform bindings.
-  const testPlatform = Reflect.get(globalThis, '__BADBOY_TEST_PLATFORM__');
+  const runtimeProcess = Reflect.get(globalThis, 'process') as { env?: Record<string, string | undefined> } | undefined;
+  const testPlatform = runtimeProcess?.env?.BADBOY_TEST_PLATFORM;
   if (testPlatform === 'web') return true;
   if (testPlatform === 'native') return false;
   return Platform.OS === 'web';
