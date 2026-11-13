@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { afterEach, before, beforeEach, mock, test } from 'node:test';
 
 const mockPlatform = { OS: 'web' };
-let Platform: { OS: string };
 let clearOwnerToken: typeof import('./ownerAuth').clearOwnerToken;
 let getOwnerToken: typeof import('./ownerAuth').getOwnerToken;
 let restoreOwnerSession: typeof import('./ownerAuth').restoreOwnerSession;
@@ -11,7 +10,6 @@ let verifyOwnerToken: typeof import('./ownerAuth').verifyOwnerToken;
 
 before(async () => {
   mock.module('react-native', { namedExports: { Platform: mockPlatform } });
-  ({ Platform } = await import('react-native'));
   ({
     clearOwnerToken,
     getOwnerToken,
@@ -60,11 +58,11 @@ test('keeps the owner token in the active session and restores an existing sessi
 
 test('uses SecureStore on native when EXPO_OS is omitted by a custom build', async () => {
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
-  const originalPlatformOs = Platform.OS;
+  const originalPlatformOs = mockPlatform.OS;
   const originalExpoOs = process.env.EXPO_OS;
   try {
     delete process.env.EXPO_OS;
-    Platform.OS = 'android';
+    mockPlatform.OS = 'android';
     // Native runtimes can expose window; its presence must not imply web.
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
@@ -85,33 +83,33 @@ test('uses SecureStore on native when EXPO_OS is omitted by a custom build', asy
   } finally {
     if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
     else delete (globalThis as typeof globalThis & { window?: unknown }).window;
-    Platform.OS = originalPlatformOs;
+    mockPlatform.OS = originalPlatformOs;
     if (originalExpoOs === undefined) delete process.env.EXPO_OS;
     else process.env.EXPO_OS = originalExpoOs;
   }
 });
 
 test('uses SecureStore when the React Native runtime identifies Android', async () => {
-  const originalPlatformOs = Platform.OS;
+  const originalPlatformOs = mockPlatform.OS;
   try {
-    Platform.OS = 'android';
+    mockPlatform.OS = 'android';
     await saveOwnerToken(SESSION_TOKEN);
     assert.equal(secureStoreToken, SESSION_TOKEN);
     assert.equal(await restoreOwnerSession(), true);
   } finally {
-    Platform.OS = originalPlatformOs;
+    mockPlatform.OS = originalPlatformOs;
   }
 });
 
 test('keeps web sessions in memory without writing the native SecureStore', async () => {
-  const originalPlatformOs = Platform.OS;
+  const originalPlatformOs = mockPlatform.OS;
   try {
-    Platform.OS = 'web';
+    mockPlatform.OS = 'web';
     await saveOwnerToken(SESSION_TOKEN);
     assert.equal(secureStoreToken, null);
     assert.equal(await getOwnerToken(), SESSION_TOKEN);
   } finally {
-    Platform.OS = originalPlatformOs;
+    mockPlatform.OS = originalPlatformOs;
   }
 });
 
