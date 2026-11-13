@@ -9,7 +9,8 @@ import {
   verifyOwnerToken,
 } from './ownerAuth';
 
-const OWNER_TOKEN = 'a'.repeat(43);\nconst SESSION_TOKEN = 'b'.repeat(64);
+const OWNER_TOKEN = 'a'.repeat(43);
+const SESSION_TOKEN = 'b'.repeat(64);
 const originalFetch = globalThis.fetch;
 let secureStoreToken: string | null = null;
 
