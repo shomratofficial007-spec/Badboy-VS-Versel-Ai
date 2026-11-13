@@ -37,6 +37,7 @@ mock.module('expo-secure-store', {
 beforeEach(() => {
   // The CI runner may export EXPO_OS=web; force native mode for the native tests.
   process.env.EXPO_OS = 'android';
+  assert.equal((Reflect.get(globalThis, 'process') as NodeJS.Process | undefined)?.env.EXPO_OS, 'android');
   mockPlatform.OS = 'android';
   globalThis.fetch = (async () => new Response(JSON.stringify({ authenticated: true }), { status: 200 })) as typeof fetch;
 });
