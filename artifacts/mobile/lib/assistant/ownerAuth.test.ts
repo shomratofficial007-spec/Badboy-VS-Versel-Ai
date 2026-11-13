@@ -8,7 +8,8 @@ let saveOwnerToken: typeof import('./ownerAuth').saveOwnerToken;
 let verifyOwnerToken: typeof import('./ownerAuth').verifyOwnerToken;
 let setOwnerSessionStorageForTests: typeof import('./ownerAuth').__setOwnerSessionStorageForTests;
 
-mock.module('react-native', { namedExports: { Platform: { OS: 'android' } } });
+const mockPlatform = { OS: 'android' };
+mock.module('react-native', { namedExports: { Platform: mockPlatform } });
 
 before(async () => {
   ({
@@ -34,13 +35,14 @@ beforeEach(() => {
     getItemAsync: async () => secureStoreToken,
     setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
     deleteItemAsync: async () => { secureStoreToken = null; },
-  }, 'native');
+  });
   globalThis.fetch = (async () => new Response(JSON.stringify({ authenticated: true }), { status: 200 })) as typeof fetch;
 });
 
 afterEach(async () => {
   await clearOwnerToken();
   globalThis.fetch = originalFetch;
+  mockPlatform.OS = 'android';
   if (originalExpoOs === undefined) delete process.env.EXPO_OS;
   else process.env.EXPO_OS = originalExpoOs;
   secureStoreToken = null;
@@ -58,7 +60,7 @@ test('keeps the owner token in the active session and restores an existing sessi
     getItemAsync: async () => secureStoreToken,
     setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
     deleteItemAsync: async () => { secureStoreToken = null; },
-  }, 'native', true);
+  }, true);
   assert.equal(await restoreOwnerSession(), true);
 
   await clearOwnerToken();
@@ -86,7 +88,7 @@ test('uses SecureStore on native when EXPO_OS is omitted by a custom build', { c
       getItemAsync: async () => secureStoreToken,
       setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
       deleteItemAsync: async () => { secureStoreToken = null; },
-    }, 'native', true);
+    }, true);
     assert.equal(await restoreOwnerSession(), true);
     assert.equal(await getOwnerToken(), SESSION_TOKEN);
 
@@ -116,11 +118,12 @@ test('keeps web sessions in memory without writing the native SecureStore', { co
   const testExpoOs = process.env.EXPO_OS;
   try {
     process.env.EXPO_OS = 'web';
+    mockPlatform.OS = 'web';
     setOwnerSessionStorageForTests({
       getItemAsync: async () => secureStoreToken,
       setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
       deleteItemAsync: async () => { secureStoreToken = null; },
-    }, 'web');
+    });
     await saveOwnerToken(SESSION_TOKEN);
     assert.equal(secureStoreToken, null);
     assert.equal(await getOwnerToken(), SESSION_TOKEN);
