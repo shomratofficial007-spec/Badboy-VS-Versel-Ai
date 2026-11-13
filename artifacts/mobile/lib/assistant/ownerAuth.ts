@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 
 const SESSION_KEY = 'badboy-owner-session-v1';
+const LEGACY_OWNER_TOKEN_KEY = 'badboy-owner-token-v1';
 const DEFAULT_NATIVE_API_DOMAIN = 'https://badboy-vs-versel-ai.shomratofficial007.workers.dev';
 let activeSession: string | null = null;
 
@@ -26,6 +27,7 @@ export async function saveOwnerToken(sessionToken: string): Promise<void> {
   if (!isWebPlatform()) {
     const SecureStore = await import('expo-secure-store');
     await SecureStore.setItemAsync(SESSION_KEY, sessionToken);
+    await SecureStore.deleteItemAsync(LEGACY_OWNER_TOKEN_KEY);
   }
   activeSession = sessionToken;
 }
@@ -56,6 +58,7 @@ export async function clearOwnerToken(): Promise<void> {
   if (!isWebPlatform()) {
     const SecureStore = await import('expo-secure-store');
     await SecureStore.deleteItemAsync(SESSION_KEY);
+    await SecureStore.deleteItemAsync(LEGACY_OWNER_TOKEN_KEY);
   }
 }
 export async function restoreOwnerSession(): Promise<boolean> {
