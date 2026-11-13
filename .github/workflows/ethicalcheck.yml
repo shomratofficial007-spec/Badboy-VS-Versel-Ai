@@ -113,7 +113,7 @@ jobs:
 
           const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
           const alerts = (report.site ?? []).flatMap((site) => site.alerts ?? []);
-          const blocking = alerts.filter((alert) => /^(High|Medium)\\b/.test(alert.riskdesc ?? ''));
+          const blocking = alerts.filter((alert) => (alert.riskdesc ?? '').startsWith('High') || (alert.riskdesc ?? '').startsWith('Medium'));
 
           for (const alert of alerts) {
             console.log(`${alert.riskdesc ?? 'Unknown risk'}: ${alert.name}`);
