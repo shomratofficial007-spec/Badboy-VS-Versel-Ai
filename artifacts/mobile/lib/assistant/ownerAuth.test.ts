@@ -7,6 +7,7 @@ let getOwnerToken: typeof import('./ownerAuth').getOwnerToken;
 let restoreOwnerSession: typeof import('./ownerAuth').restoreOwnerSession;
 let saveOwnerToken: typeof import('./ownerAuth').saveOwnerToken;
 let verifyOwnerToken: typeof import('./ownerAuth').verifyOwnerToken;
+let setOwnerSessionStorageForTests: typeof import('./ownerAuth').__setOwnerSessionStorageForTests;
 
 mock.module('react-native', { namedExports: { Platform: mockPlatform }, cache: false });
 
@@ -14,6 +15,7 @@ const OWNER_TOKEN = 'a'.repeat(43);
 const SESSION_TOKEN = 'b'.repeat(64);
 const originalFetch = globalThis.fetch;
 const originalExpoOs = process.env.EXPO_OS;
+const originalTestPlatform = process.env.BADBOY_TEST_PLATFORM;
 let secureStoreToken: string | null = null;
 
 before(async () => {
@@ -23,14 +25,15 @@ before(async () => {
     restoreOwnerSession,
     saveOwnerToken,
     verifyOwnerToken,
+    __setOwnerSessionStorageForTests: setOwnerSessionStorageForTests,
   } = await import('./ownerAuth'));
 });
 
 beforeEach(() => {
   process.env.EXPO_OS = 'android';
   mockPlatform.OS = 'android';
-  Reflect.set(globalThis, '__BADBOY_TEST_PLATFORM__', 'native');
-  Reflect.set(globalThis, '__BADBOY_TEST_SECURE_STORE__', {
+  process.env.BADBOY_TEST_PLATFORM = 'native';
+  setOwnerSessionStorageForTests({
     getItemAsync: async () => secureStoreToken,
     setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
     deleteItemAsync: async () => { secureStoreToken = null; },
@@ -42,12 +45,13 @@ afterEach(async () => {
   await clearOwnerToken();
   globalThis.fetch = originalFetch;
   mockPlatform.OS = 'android';
-  Reflect.deleteProperty(globalThis, '__BADBOY_TEST_PLATFORM__');
+  if (originalTestPlatform === undefined) delete process.env.BADBOY_TEST_PLATFORM;
+  else process.env.BADBOY_TEST_PLATFORM = originalTestPlatform;
+  setOwnerSessionStorageForTests(null);
   if (originalExpoOs === undefined) delete process.env.EXPO_OS;
   else process.env.EXPO_OS = originalExpoOs;
   secureStoreToken = null;
-  Reflect.deleteProperty(globalThis, '__BADBOY_TEST_SECURE_STORE__');
-  Reflect.deleteProperty(globalThis, '__BADBOY_TEST_PLATFORM__');
+
 });
 
 test('keeps the owner session in SecureStore and restores it', { concurrency: false }, async () => {
@@ -105,7 +109,7 @@ test('keeps web sessions in memory without writing the native SecureStore', { co
   try {
     process.env.EXPO_OS = 'web';
     mockPlatform.OS = 'web';
-    Reflect.set(globalThis, '__BADBOY_TEST_PLATFORM__', 'web');
+    process.env.BADBOY_TEST_PLATFORM = 'web';
     await saveOwnerToken(SESSION_TOKEN);
     assert.equal(secureStoreToken, null);
     assert.equal(await getOwnerToken(), SESSION_TOKEN);
