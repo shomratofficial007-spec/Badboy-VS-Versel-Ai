@@ -32,7 +32,7 @@ test('keeps the owner token in the active session and restores an existing sessi
   assert.equal(await getOwnerToken(), null);
   assert.equal(await restoreOwnerSession(), false);
 
-  await saveOwnerToken(OWNER_TOKEN);
+  await saveOwnerToken(SESSION_TOKEN);
   assert.equal(await getOwnerToken(), SESSION_TOKEN);
   assert.equal(await restoreOwnerSession(), true);
 
@@ -54,9 +54,9 @@ test('uses SecureStore on native when EXPO_OS is omitted by a custom build', asy
       value: { location: { origin: 'http://localhost' } },
     });
 
-    await saveOwnerToken(OWNER_TOKEN);
-    assert.equal(secureStoreToken, OWNER_TOKEN);
-    assert.equal(await getOwnerToken(), OWNER_TOKEN);
+    await saveOwnerToken(SESSION_TOKEN);
+    assert.equal(secureStoreToken, SESSION_TOKEN);
+    assert.equal(await getOwnerToken(), SESSION_TOKEN);
 
     // A fresh app runtime must recover the token from SecureStore.
     assert.equal(await restoreOwnerSession(), true);
@@ -90,9 +90,9 @@ test('keeps web sessions in memory without writing the native SecureStore', asyn
   const originalPlatformOs = Platform.OS;
   try {
     Object.defineProperty(Platform, 'OS', { configurable: true, value: 'web' });
-    await saveOwnerToken(OWNER_TOKEN);
+    await saveOwnerToken(SESSION_TOKEN);
     assert.equal(secureStoreToken, null);
-    assert.equal(await getOwnerToken(), OWNER_TOKEN);
+    assert.equal(await getOwnerToken(), SESSION_TOKEN);
   } finally {
     Object.defineProperty(Platform, 'OS', { configurable: true, value: originalPlatformOs });
   }
