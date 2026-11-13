@@ -50,8 +50,8 @@ export function OwnerAuthProvider({ children }: { children: React.ReactNode }) {
     if (!/^[A-Za-z0-9_-]{43,128}$/.test(normalized)) {
       throw new Error('Owner Token-এর ফরম্যাট সঠিক নয়।');
     }
-    await verifyOwnerToken(normalized);
-    await saveOwnerToken(normalized);
+    const sessionToken = await verifyOwnerToken(normalized);
+    await saveOwnerToken(sessionToken);
     setAuthenticated(true);
   }, []);
 
