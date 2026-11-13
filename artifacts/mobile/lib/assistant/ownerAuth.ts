@@ -12,7 +12,6 @@ type OwnerSessionStorage = {
   deleteItemAsync(key: string): Promise<void>;
 };
 let ownerSessionStorageOverride: OwnerSessionStorage | null = null;
-let ownerSessionPlatformOverride: 'web' | 'native' | null = null;
 
 async function getOwnerSessionStorage(): Promise<OwnerSessionStorage> {
   return ownerSessionStorageOverride ?? await import('expo-secure-store');
@@ -21,11 +20,9 @@ async function getOwnerSessionStorage(): Promise<OwnerSessionStorage> {
 /** Injects a storage adapter for isolated unit tests; production uses Expo SecureStore. */
 export function __setOwnerSessionStorageForTests(
   adapter: OwnerSessionStorage | null,
-  platform: 'web' | 'native' | null = null,
   resetMemory = false,
 ): void {
   ownerSessionStorageOverride = adapter;
-  ownerSessionPlatformOverride = platform;
   if (resetMemory) activeSession = null;
 }
 
@@ -47,7 +44,6 @@ export async function expireOwnerSession(): Promise<void> {
 }
 
 function isWebPlatform(): boolean {
-  if (ownerSessionPlatformOverride) return ownerSessionPlatformOverride === 'web';
   const runtimeProcess = Reflect.get(globalThis, 'process') as { env?: Record<string, string | undefined> } | undefined;
   const expoOs = runtimeProcess?.env?.EXPO_OS;
   if (expoOs === 'web') return true;
