@@ -102,10 +102,10 @@ test('uses SecureStore when React Native runtime identifies Android', { concurre
 
 test('keeps web sessions in memory without writing the native SecureStore', { concurrency: false }, async () => {
   const testExpoOs = process.env.EXPO_OS;
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
   try {
     process.env.EXPO_OS = 'web';
     mockPlatform.OS = 'web';
-    const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
     Object.defineProperty(globalThis, 'document', { configurable: true, value: {} });
     await saveOwnerToken(SESSION_TOKEN);
     assert.equal(secureStoreToken, null);
