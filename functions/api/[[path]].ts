@@ -966,6 +966,11 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   if (request.method === "DELETE" && pathname === "/api/auth/session") {
     return revokeOwnerSession(request, env);
   }
+  if (request.method === "GET" && pathname === "/api/auth/session") {
+    const auth = await authenticateOwnerSession(request, env);
+    if (!auth.ok) return auth.response;
+    return jsonResponse({ authenticated: true }, 200);
+  }
 
   const isPublicHealthCheck = request.method === "GET" &&
     (pathname === "/api/healthz" || pathname === "/api/health");
