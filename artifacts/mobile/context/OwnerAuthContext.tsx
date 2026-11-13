@@ -3,7 +3,6 @@ import {
   clearOwnerToken,
   restoreOwnerSession,
   saveOwnerToken,
-  subscribeToOwnerSessionExpiry,
   verifyOwnerToken,
 } from '@/lib/assistant/ownerAuth';
 
@@ -28,9 +27,6 @@ export function OwnerAuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    const unsubscribe = subscribeToOwnerSessionExpiry(() => {
-      if (mounted) setAuthenticated(false);
-    });
     restoreOwnerSession()
       .then((valid) => {
         if (mounted) {
@@ -46,7 +42,6 @@ export function OwnerAuthProvider({ children }: { children: React.ReactNode }) {
       });
     return () => {
       mounted = false;
-      unsubscribe();
     };
   }, []);
 
@@ -55,8 +50,8 @@ export function OwnerAuthProvider({ children }: { children: React.ReactNode }) {
     if (!/^[A-Za-z0-9_-]{43,128}$/.test(normalized)) {
       throw new Error('Owner Token-এর ফরম্যাট সঠিক নয়।');
     }
-    const sessionToken = await verifyOwnerToken(normalized);
-    await saveOwnerToken(sessionToken);
+    await verifyOwnerToken(normalized);
+    await saveOwnerToken(normalized);
     setAuthenticated(true);
   }, []);
 

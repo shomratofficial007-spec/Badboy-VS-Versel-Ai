@@ -65,7 +65,7 @@ export default function OwnerLoginScreen() {
         >
           {busy ? <ActivityIndicator color="#071426" /> : <Text style={styles.buttonText}>Secure Sign In</Text>}
         </Pressable>
-        <Text style={styles.note}>Owner Token শুধু Login-এর সময় পাঠানো হবে; এরপর Session SecureStore-এ থাকবে। Chat History ও সাধারণ Memory ফোনেই থাকবে; Developer Agent-এর Project Memory ও Tasks Owner Token-সুরক্ষিত Cloudflare D1-এ সংরক্ষিত হয়।</Text>
+        <Text style={styles.note}>Token শুধু এই ডিভাইসের SecureStore-এ রাখা হবে। Chat History ও সাধারণ Memory ফোনেই থাকবে; Developer Agent-এর Project Memory ও Tasks Owner Token-সুরক্ষিত Cloudflare D1-এ সংরক্ষিত হয়।</Text>
       </View>
     </KeyboardAvoidingView>
   );
