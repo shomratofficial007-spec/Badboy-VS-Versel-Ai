@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
-import { mock, test } from "node:test";
+import { before, mock, test } from "node:test";
 
-mock.module("react-native", { namedExports: { Platform: { OS: "web" } } });
-const { createOwnerJsonRequester } = await import("./ownerJsonRequest");
+let createOwnerJsonRequester: typeof import("./ownerJsonRequest").createOwnerJsonRequester;
+before(async () => {
+  mock.module("react-native", { namedExports: { Platform: { OS: "web" } } });
+  ({ createOwnerJsonRequester } = await import("./ownerJsonRequest"));
+});
 
 test("adds the verified owner token and JSON body to a POST request", async () => {
   let sentUrl = "";
