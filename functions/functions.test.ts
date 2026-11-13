@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import test from "node:test";
 // Node ESM imports require .js extension when pointing to typescript files
-import { onRequestGet as rawOnRequestGet, onRequestPost as rawOnRequestPost } from "./api/[[path]].ts";
+import { onRequestDelete as rawOnRequestDelete, onRequestGet as rawOnRequestGet, onRequestPost as rawOnRequestPost } from "./api/[[path]].ts";
 import { handleDeveloperDataRequest } from "./api/developerData.ts";
 import {
   buildDeveloperAnalysisMessages,
@@ -1440,4 +1440,48 @@ test("direct Developer Agent helpers cover every engine and payload validation b
   assert.equal(resolveDeveloperAnalysisEngine("native").status, "ready");
   assert.equal(resolveDeveloperAnalysisEngine("copilot").status, "unavailable");
   assert.equal(resolveDeveloperAnalysisEngine("auto").status, "fallback");
+});
+
+
+test("session logout revokes the opaque session and fails closed on missing or broken storage", async () => {
+  const missingToken = await rawOnRequestDelete({
+    request: new Request("https://example.com/api/auth/session", { method: "DELETE" }),
+    env: { AGENT_DB: withTestSessionDatabase(testAgentDb()) },
+  } as any);
+  assert.equal(missingToken.status, 401);
+  assert.equal((await missingToken.json() as any).code, "SESSION_REQUIRED");
+
+  const noDatabase = await rawOnRequestDelete({
+    request: new Request("https://example.com/api/auth/session", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${TEST_SESSION_TOKEN}` },
+    }),
+    env: {},
+  } as any);
+  assert.equal(noDatabase.status, 503);
+  assert.equal((await noDatabase.json() as any).code, "SESSION_STORAGE_UNAVAILABLE");
+
+  const database = withTestSessionDatabase(testAgentDb());
+  const revoked = await rawOnRequestDelete({
+    request: new Request("https://example.com/api/auth/session", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${TEST_SESSION_TOKEN}` },
+    }),
+    env: { AGENT_DB: database },
+  } as any);
+  assert.equal(revoked.status, 200);
+  assert.deepEqual(await revoked.json(), { authenticated: false });
+
+  const brokenDatabase = {
+    prepare() { throw new Error("D1 unavailable"); },
+  };
+  const storageFailure = await rawOnRequestDelete({
+    request: new Request("https://example.com/api/auth/session", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${TEST_SESSION_TOKEN}` },
+    }),
+    env: { AGENT_DB: brokenDatabase },
+  } as any);
+  assert.equal(storageFailure.status, 503);
+  assert.equal((await storageFailure.json() as any).code, "SESSION_STORAGE_UNAVAILABLE");
 });
