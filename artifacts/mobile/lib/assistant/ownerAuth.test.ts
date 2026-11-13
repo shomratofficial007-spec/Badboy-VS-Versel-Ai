@@ -60,7 +60,7 @@ test('uses SecureStore on native when EXPO_OS is omitted by a custom build', asy
 
     // A fresh app runtime must recover the token from SecureStore.
     assert.equal(await restoreOwnerSession(), true);
-    assert.equal(await getOwnerToken(), OWNER_TOKEN);
+    assert.equal(await getOwnerToken(), SESSION_TOKEN);
 
     secureStoreToken = null;
     assert.equal(await restoreOwnerSession(), false);
@@ -78,8 +78,8 @@ test('uses SecureStore when the React Native runtime identifies Android', async 
   const originalPlatformOs = Platform.OS;
   try {
     Object.defineProperty(Platform, 'OS', { configurable: true, value: 'android' });
-    await saveOwnerToken(OWNER_TOKEN);
-    assert.equal(secureStoreToken, OWNER_TOKEN);
+    await saveOwnerToken(SESSION_TOKEN);
+    assert.equal(secureStoreToken, SESSION_TOKEN);
     assert.equal(await restoreOwnerSession(), true);
   } finally {
     Object.defineProperty(Platform, 'OS', { configurable: true, value: originalPlatformOs });
@@ -112,7 +112,7 @@ test('verifies a valid owner token through the Worker endpoint', async () => {
   }) as typeof fetch;
 
   assert.equal(await verifyOwnerToken(OWNER_TOKEN), SESSION_TOKEN);
-  assert.match(requestedUrl, /\/api\/auth\/verify$/);
+  assert.match(requestedUrl, /\/api\/auth\/session$/);
   assert.equal(authorization, `Bearer ${OWNER_TOKEN}`);
 });
 
