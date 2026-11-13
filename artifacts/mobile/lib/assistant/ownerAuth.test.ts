@@ -7,7 +7,9 @@ let getOwnerToken: typeof import('./ownerAuth').getOwnerToken;
 let restoreOwnerSession: typeof import('./ownerAuth').restoreOwnerSession;
 let saveOwnerToken: typeof import('./ownerAuth').saveOwnerToken;
 let verifyOwnerToken: typeof import('./ownerAuth').verifyOwnerToken;
-let setOwnerSessionStorageForTests: typeof import('./ownerAuth').__setOwnerSessionStorageForTests;\nlet expireOwnerSession: typeof import('./ownerAuth').expireOwnerSession;\nlet subscribeToOwnerSessionExpiry: typeof import('./ownerAuth').subscribeToOwnerSessionExpiry;
+let setOwnerSessionStorageForTests: typeof import('./ownerAuth').__setOwnerSessionStorageForTests;
+let expireOwnerSession: typeof import('./ownerAuth').expireOwnerSession;
+let subscribeToOwnerSessionExpiry: typeof import('./ownerAuth').subscribeToOwnerSessionExpiry;
 
 mock.module('react-native', { namedExports: { Platform: mockPlatform } });
 mock.module('expo-secure-store', {
@@ -30,7 +32,9 @@ before(async () => {
     restoreOwnerSession,
     saveOwnerToken,
     verifyOwnerToken,
-    __setOwnerSessionStorageForTests: setOwnerSessionStorageForTests,\n    expireOwnerSession,\n    subscribeToOwnerSessionExpiry,
+    __setOwnerSessionStorageForTests: setOwnerSessionStorageForTests,
+    expireOwnerSession,
+    subscribeToOwnerSessionExpiry,
   } = await import('./ownerAuth'));
 });
 
