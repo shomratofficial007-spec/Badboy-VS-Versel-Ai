@@ -4,7 +4,7 @@ import { adaptGeminiStreamToOpenAI, fetchGeminiChat, getGeminiModel } from "../a
 describe("Gemini Developer Agent provider adapter", () => {
   it("uses the configured model and sends the API key only in a request header", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response('data: {"candidates":[{"content":{"parts":[{"text":"হ্যালো"}]}}]}\\n\\n', {
+      new Response('data: {"candidates":[{"content":{"parts":[{"text":"হ্যালো"}]}}]}\n\n', {
         status: 200,
         headers: { "Content-Type": "text/event-stream" },
       }),
@@ -44,7 +44,7 @@ describe("Gemini Developer Agent provider adapter", () => {
         'data: {"candidates":[{"content":{"parts":[{"text":"Hello "},{"text":"world"}]}}]}',
         "",
         "",
-      ].join("\\n"),
+      ].join("\n"),
       { headers: { "Content-Type": "text/event-stream" } },
     );
 
@@ -69,7 +69,7 @@ describe("Gemini Developer Agent provider adapter", () => {
         "",
         "data: [DONE]",
         "",
-      ].join("\\r\\n"),
+      ].join("\r\n"),
       { headers: { "Content-Type": "text/event-stream" } },
     );
 
@@ -96,10 +96,10 @@ describe("Gemini Developer Agent provider adapter", () => {
         'data: {"candidates":[{},{"content":{"parts":[{"inlineData":"ignored"}]}}]}',
         "",
         "",
-      ].join("\\n"),
+      ].join("\n"),
     );
     const output = await adaptGeminiStreamToOpenAI(source).text();
-    expect(output).toBe("data: [DONE]\\n\\n");
+    expect(output).toBe("data: [DONE]\n\n");
   });
 
   it("returns responses without a body unchanged", () => {
@@ -108,7 +108,7 @@ describe("Gemini Developer Agent provider adapter", () => {
   });
 
   it("preserves upstream response status and headers while removing stale body headers", async () => {
-    const source = new Response("data: {}\\n\\n", {
+    const source = new Response("data: {}\n\n", {
       status: 202,
       headers: {
         "Content-Type": "text/event-stream",
