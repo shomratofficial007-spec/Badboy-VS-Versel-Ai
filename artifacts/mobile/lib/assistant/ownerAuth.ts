@@ -24,10 +24,9 @@ export async function expireOwnerSession(): Promise<void> {
 }
 
 function isWebPlatform(): boolean {
-  // Expo may inline EXPO_OS in managed builds; custom native builds can omit it.
-  // React Native's Platform.OS remains the authoritative fallback in that case.
-  const expoOs = process.env.EXPO_OS;
-  return expoOs ? expoOs === 'web' : Platform.OS === 'web';
+  // React Native's runtime platform is authoritative. EXPO_OS may be inlined
+  // by a build-time transform and can disagree with a custom native runtime.
+  return Platform.OS === 'web';
 }
 function sessionApiUrl() {
   if (isWebPlatform() && typeof window !== 'undefined' && typeof window.location?.origin === 'string' && window.location.origin.startsWith('http')) {
