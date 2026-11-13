@@ -15,6 +15,7 @@ const OWNER_TOKEN = 'a'.repeat(43);
 const SESSION_TOKEN = 'b'.repeat(64);
 const originalFetch = globalThis.fetch;
 const originalExpoOs = process.env.EXPO_OS;
+const originalTestPlatform = process.env.BADBOY_TEST_PLATFORM;
 let secureStoreToken: string | null = null;
 
 before(async () => {
@@ -30,6 +31,7 @@ before(async () => {
 
 beforeEach(() => {
   process.env.EXPO_OS = 'android';
+  process.env.BADBOY_TEST_PLATFORM = 'native';
   mockPlatform.OS = 'android';
   setOwnerSessionStorageForTests({
     getItemAsync: async () => secureStoreToken,
@@ -44,6 +46,8 @@ afterEach(async () => {
   globalThis.fetch = originalFetch;
   mockPlatform.OS = 'android';
   setOwnerSessionStorageForTests(null);
+  if (originalTestPlatform === undefined) delete process.env.BADBOY_TEST_PLATFORM;
+  else process.env.BADBOY_TEST_PLATFORM = originalTestPlatform;
   if (originalExpoOs === undefined) delete process.env.EXPO_OS;
   else process.env.EXPO_OS = originalExpoOs;
   secureStoreToken = null;
@@ -105,6 +109,7 @@ test('keeps web sessions in memory without writing the native SecureStore', { co
   const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
   try {
     process.env.EXPO_OS = 'web';
+    process.env.BADBOY_TEST_PLATFORM = 'web';
     mockPlatform.OS = 'web';
     Object.defineProperty(globalThis, 'document', { configurable: true, value: {} });
     await saveOwnerToken(SESSION_TOKEN);
