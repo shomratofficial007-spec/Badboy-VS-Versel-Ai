@@ -2,8 +2,9 @@ import { buildDeveloperAnalysisMessages, resolveDeveloperAnalysisEngine, validat
 import { authenticatePersonalOwner } from "./personalAuth.ts";
 import { handleDeveloperDataRequest } from "./developerData.ts";
 import { createAgentStorage, type D1Database } from "./agentStorage.ts";
-// Cloudflare Pages Function: /api/* routes backed by OpenRouter.
-// Directs /api/assistant/chat requests to OpenRouter with streaming SSE.
+import { fetchGeminiChat, getGeminiModel } from "./geminiProvider.ts";
+// Cloudflare Pages Function: Native Developer Agent controls optional AI provider adapters.
+// Ordinary /api/assistant/chat remains on its existing OpenRouter route.
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
@@ -18,6 +19,8 @@ const RETRYABLE_UPSTREAM_STATUSES = new Set([404, 408, 429, 500, 502, 503, 504])
 
 interface Env {
   OPENROUTER_API_KEY?: string;
+  GEMINI_API_KEY?: string;
+  GEMINI_MODEL?: string;
   GROQ_API_KEY?: string;
   BADBOY_OWNER_TOKEN?: string;
   AGENT_DB?: D1Database;
@@ -91,6 +94,44 @@ async function fetchChatWithFreeFallbacks(
   }
 
   throw lastError instanceof Error ? lastError : new Error("All free models are unavailable.");
+}
+
+type DeveloperProvider = "gemini" | "openrouter";
+
+async function fetchDeveloperAnalysisWithProviders(
+  env: Env,
+  messages: Array<{ role: "system" | "user"; content: string }>,
+): Promise<{ response: Response; provider: DeveloperProvider; model: string }> {
+  const geminiApiKey = env.GEMINI_API_KEY?.trim() || "";
+  const openrouterApiKey = env.OPENROUTER_API_KEY?.trim() || "";
+
+  // Native remains the controller. Gemini is the preferred optional adapter;
+  // OpenRouter is used only when Gemini is unavailable/rate-limited and configured.
+  if (geminiApiKey) {
+    const model = getGeminiModel(env.GEMINI_MODEL);
+    logModelDiagnostic("attempt", model);
+    try {
+      const response = await fetchGeminiChat(geminiApiKey, messages, model);
+      if (response.ok && response.body) {
+        logModelDiagnostic("selected", model, response.status);
+        return { response, provider: "gemini", model };
+      }
+      logModelDiagnostic("unavailable", model, response.status);
+      if (!RETRYABLE_UPSTREAM_STATUSES.has(response.status) || !openrouterApiKey) {
+        return { response, provider: "gemini", model };
+      }
+      await response.body?.cancel().catch(() => undefined);
+    } catch (error) {
+      logModelDiagnostic("network_error", model);
+      if (!openrouterApiKey) throw error;
+    }
+  }
+
+  if (openrouterApiKey) {
+    const routed = await fetchChatWithFreeFallbacks(openrouterApiKey, messages);
+    return { ...routed, provider: "openrouter" };
+  }
+  throw new Error("No Developer Agent AI provider is configured.");
 }
 
 function jsonResponse(data: unknown, status = 200) {
@@ -735,12 +776,13 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
     );
   }
 
-  const apiKey = env.OPENROUTER_API_KEY?.trim() || "";
-  if (!apiKey) {
+  const hasGeminiProvider = Boolean(env.GEMINI_API_KEY?.trim());
+  const hasOpenRouterProvider = Boolean(env.OPENROUTER_API_KEY?.trim());
+  if (!hasGeminiProvider && !hasOpenRouterProvider) {
     return jsonResponse(
       {
         code: "AI_NOT_CONFIGURED",
-        error: "Developer Agent Native engine requires OPENROUTER_API_KEY.",
+        error: "Configure GEMINI_API_KEY or OPENROUTER_API_KEY in the server environment.",
       },
       503,
     );
@@ -788,12 +830,16 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
   }));
 
   let upstream: Response;
+  let selectedProvider: DeveloperProvider = "openrouter";
+  let selectedModel = OPENROUTER_MODEL_ID;
   try {
-    const routed = await fetchChatWithFreeFallbacks(
-      apiKey,
+    const routed = await fetchDeveloperAnalysisWithProviders(
+      env,
       buildDeveloperAnalysisMessages(validation.value),
     );
     upstream = routed.response;
+    selectedProvider = routed.provider;
+    selectedModel = routed.model;
   } catch {
     await storage.updateTaskStatus({ taskId, ownerId, status: "failed" }).catch(() => false);
     await storage.appendTaskEvent({
@@ -829,11 +875,15 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
       event: "task_failed",
       taskId,
       engine,
+      provider: selectedProvider,
+      model: selectedModel,
       upstreamStatus: upstream.status,
     }));
     return jsonResponse(
       {
-        code: upstream.status === 429 ? "OPENROUTER_RATE_LIMIT" : "DEVELOPER_AGENT_UPSTREAM_FAILED",
+        code: upstream.status === 429
+          ? (selectedProvider === "gemini" ? "GEMINI_RATE_LIMIT" : "OPENROUTER_RATE_LIMIT")
+          : "DEVELOPER_AGENT_UPSTREAM_FAILED",
         error: upstream.status === 429
           ? "AI provider rate limit reached. Please try again shortly."
           : `Developer Agent provider returned HTTP ${upstream.status}.`,
@@ -850,7 +900,7 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
     async start(controller) {
       const send = (payload: string) =>
         controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
-      send(JSON.stringify({ taskId, engine, status: "started" }));
+      send(JSON.stringify({ taskId, engine, provider: selectedProvider, model: selectedModel, status: "started" }));
       let accumulatedOutput = "";
       const completeTask = async () => {
         const updated = await storage.updateTaskStatus({
@@ -876,7 +926,7 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
             const parsed = extractDeltas(event);
             for (const content of parsed.texts) {
               accumulatedOutput = (accumulatedOutput + content).slice(0, 4000);
-              send(JSON.stringify({ content, taskId, engine }));
+              send(JSON.stringify({ content, taskId, engine, provider: selectedProvider }));
             }
             if (parsed.done) {
               await completeTask();
@@ -893,7 +943,7 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
           const parsed = extractDeltas(pending);
           for (const content of parsed.texts) {
             accumulatedOutput = (accumulatedOutput + content).slice(0, 4000);
-            send(JSON.stringify({ content, taskId, engine }));
+            send(JSON.stringify({ content, taskId, engine, provider: selectedProvider }));
           }
         }
         await completeTask();
@@ -941,6 +991,7 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
       "Cache-Control": "no-cache, no-transform",
       "X-Badboy-Task-Id": taskId,
       "X-Badboy-Engine": engine,
+      "X-Badboy-Provider": selectedProvider,
       "X-Badboy-Task-Status": "running",
       ...CORS_HEADERS,
     },
@@ -982,7 +1033,9 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
 
   if (request.method === "GET") {
     if (pathname === "/api/developer/health") {
-      const nativeAvailable = Boolean(env.OPENROUTER_API_KEY?.trim());
+      const geminiAvailable = Boolean(env.GEMINI_API_KEY?.trim());
+      const openrouterAvailable = Boolean(env.OPENROUTER_API_KEY?.trim());
+      const nativeAvailable = geminiAvailable || openrouterAvailable;
       let taskPersistenceAvailable = false;
       if (env.AGENT_DB) {
         try {
@@ -999,6 +1052,10 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
         status: analysisAvailable ? "ready" : "degraded",
         engines: {
           native: { available: nativeAvailable },
+          providers: {
+            gemini: { available: geminiAvailable, model: getGeminiModel(env.GEMINI_MODEL) },
+            openrouter: { available: openrouterAvailable },
+          },
           copilot: {
             available: false,
             reason: "Isolated Copilot CLI runtime and authentication are not yet validated.",

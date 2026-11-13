@@ -1,7 +1,8 @@
 [config]
 # AI Model Selection
-model = "gemini-1.5-flash"
-fallback_model = "gemini-1.5-pro"
+model = "gemini-3.5-flash-lite"
+fallback_model = "gemini-3.8-flash"
+custom_model_max_tokens = 1048576
 git_provider = "github"
 
 [pr_reviewer]
