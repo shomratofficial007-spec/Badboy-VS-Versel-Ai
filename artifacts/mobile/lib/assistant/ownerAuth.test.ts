@@ -74,29 +74,27 @@ test('uses SecureStore on native when EXPO_OS is omitted by a custom build', asy
   }
 });
 
-test('uses SecureStore when Expo explicitly identifies Android', async () => {
-  const originalExpoOs = process.env.EXPO_OS;
+test('uses SecureStore when the React Native runtime identifies Android', async () => {
+  const originalPlatformOs = Platform.OS;
   try {
-    process.env.EXPO_OS = 'android';
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: 'android' });
     await saveOwnerToken(OWNER_TOKEN);
     assert.equal(secureStoreToken, OWNER_TOKEN);
     assert.equal(await restoreOwnerSession(), true);
   } finally {
-    if (originalExpoOs === undefined) delete process.env.EXPO_OS;
-    else process.env.EXPO_OS = originalExpoOs;
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: originalPlatformOs });
   }
 });
 
 test('keeps web sessions in memory without writing the native SecureStore', async () => {
-  const originalExpoOs = process.env.EXPO_OS;
+  const originalPlatformOs = Platform.OS;
   try {
-    process.env.EXPO_OS = 'web';
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: 'web' });
     await saveOwnerToken(OWNER_TOKEN);
     assert.equal(secureStoreToken, null);
     assert.equal(await getOwnerToken(), OWNER_TOKEN);
   } finally {
-    if (originalExpoOs === undefined) delete process.env.EXPO_OS;
-    else process.env.EXPO_OS = originalExpoOs;
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: originalPlatformOs });
   }
 });
 
