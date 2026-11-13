@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { afterEach, before, beforeEach, mock, test } from 'node:test';
 
-const mockPlatform = { OS: 'web' as string };
+let mockPlatformOs = 'web';
+const mockPlatform = { get OS() { return mockPlatformOs; } };
 let Platform: { OS: string };
 let clearOwnerToken: typeof import('./ownerAuth').clearOwnerToken;
 let getOwnerToken: typeof import('./ownerAuth').getOwnerToken;
@@ -64,7 +65,7 @@ test('uses SecureStore on native when EXPO_OS is omitted by a custom build', asy
   const originalExpoOs = process.env.EXPO_OS;
   try {
     delete process.env.EXPO_OS;
-    Object.defineProperty(Platform, 'OS', { configurable: true, value: 'android' });
+    mockPlatformOs = 'android';
     // Native runtimes can expose window; its presence must not imply web.
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
@@ -85,7 +86,7 @@ test('uses SecureStore on native when EXPO_OS is omitted by a custom build', asy
   } finally {
     if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
     else delete (globalThis as typeof globalThis & { window?: unknown }).window;
-    Object.defineProperty(Platform, 'OS', { configurable: true, value: originalPlatformOs });
+    mockPlatformOs = originalPlatformOs;
     if (originalExpoOs === undefined) delete process.env.EXPO_OS;
     else process.env.EXPO_OS = originalExpoOs;
   }
@@ -106,7 +107,7 @@ test('uses SecureStore when the React Native runtime identifies Android', async 
 test('keeps web sessions in memory without writing the native SecureStore', async () => {
   const originalPlatformOs = Platform.OS;
   try {
-    Object.defineProperty(Platform, 'OS', { configurable: true, value: 'web' });
+    mockPlatformOs = 'web';
     await saveOwnerToken(SESSION_TOKEN);
     assert.equal(secureStoreToken, null);
     assert.equal(await getOwnerToken(), SESSION_TOKEN);
