@@ -15,14 +15,14 @@ concurrency:
 
 jobs:
   status:
-    name: Read production D1 schema and migration status (read-only)
+    name: Verify production D1 migration objects (read-only)
     runs-on: ubuntu-latest
     environment: production
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Read production D1 schema and migration history (read-only)
+      - name: Verify production D1 schema and migration objects (read-only)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -31,39 +31,26 @@ jobs:
         run: |
           set -euo pipefail
           API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$D1_DATABASE_ID/query"
-
           query_d1() {
-            local sql="$1"
-            local output="$2"
+            local sql="$1" output="$2"
             local status
-            status=$(curl -sS -X POST "$API" \
-              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-              -H "Content-Type: application/json" \
-              --data "$(jq -n --arg sql "$sql" '{sql:$sql}')" \
-              -o "$output" -w "%{http_code}")
+            status=$(curl -sS -X POST "$API" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" --data "$(jq -n --arg sql "$sql" '{sql:$sql}')" -o "$output" -w "%{http_code}")
             echo "Cloudflare D1 API HTTP status: $status"
             if [ "$status" -lt 200 ] || [ "$status" -ge 300 ] || [ "$(jq -r '.success // false' "$output")" != "true" ]; then
               jq -c '{success, errors}' "$output" || true
               return 1
             fi
           }
-
-          echo "Reading existing production D1 tables..."
-          query_d1 "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name" /tmp/d1-schema.json
-          jq -r '.result[]?.results[]?.name' /tmp/d1-schema.json
-
-          if [ "$(jq -r '[.result[]?.results[]? | select(.name == "d1_migrations")] | length' /tmp/d1-schema.json)" -eq 0 ]; then
-            echo "::notice::No d1_migrations history table exists. This database has no recorded Wrangler migration history."
+          query_d1 "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name" /tmp/tables.json
+          query_d1 "SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%' ORDER BY name" /tmp/indexes.json
+          echo "=== TABLES ==="
+          jq -r '.result[]?.results[]?.name' /tmp/tables.json
+          echo "=== INDEXES ==="
+          jq -r '.result[]?.results[]?.name' /tmp/indexes.json
+          echo "=== MIGRATION HISTORY ==="
+          if [ "$(jq -r '[.result[]?.results[]? | select(.name == "d1_migrations")] | length' /tmp/tables.json)" -eq 0 ]; then
+            echo "d1_migrations: MISSING"
           else
-            echo "Reading applied migration history..."
-            query_d1 "SELECT * FROM d1_migrations ORDER BY id" /tmp/d1-migrations.json
-            jq -r '.result[]?.results[]? | [.id, .name] | @tsv' /tmp/d1-migrations.json
+            query_d1 "SELECT * FROM d1_migrations ORDER BY id" /tmp/history.json
+            jq -r '.result[]?.results[]? | [.id, .name] | @tsv' /tmp/history.json
           fi
-
-          if [ "$(jq -r '[.result[]?.results[]? | select(.name == "agent_tasks")] | length' /tmp/d1-schema.json)" -eq 0 ]; then
-            echo "::warning::Expected application table agent_tasks is not present in production D1."
-          else
-            echo "Expected application table agent_tasks is present."
-          fi
-
-          echo "Read-only production D1 schema check completed."
