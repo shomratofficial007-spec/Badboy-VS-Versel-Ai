@@ -15,64 +15,48 @@ concurrency:
 
 jobs:
   status:
-    name: Diagnose and read production D1 status (read-only)
+    name: Read production D1 migration status (read-only)
     runs-on: ubuntu-latest
     environment: production
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 10.8.1
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Verify Cloudflare credentials
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Missing CLOUDFLARE_API_TOKEN secret"; exit 1; }
-          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Missing CLOUDFLARE_ACCOUNT_ID secret"; exit 1; }
-
-      - name: Diagnose Cloudflare token, account, and D1 access (read-only)
+      - name: Read D1 migration table through Cloudflare API (read-only)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           D1_DATABASE_ID: be5648fd-cbb2-487c-8d99-6a0f8c72cf46
         shell: bash
         run: |
-          set +e
-          diagnose() {
-            label="$1"
-            method="$2"
-            url="$3"
-            data="${4:-}"
-            if [ "$method" = "POST" ]; then
-              http_code=$(curl -sS -X POST "$url" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" --data "$data" -o /tmp/cf-response.json -w "%{http_code}")
-            else
-              http_code=$(curl -sS "$url" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -o /tmp/cf-response.json -w "%{http_code}")
+          set -euo pipefail
+          API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$D1_DATABASE_ID/query"
+
+          query_d1() {
+            local sql="$1"
+            local output="$2"
+            local status
+            status=$(curl -sS -X POST "$API" \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              -H "Content-Type: application/json" \
+              --data "$(jq -n --arg sql "$sql" '{sql:$sql}')" \
+              -o "$output" -w "%{http_code}")
+            echo "Cloudflare D1 API HTTP status: $status"
+            if [ "$status" -lt 200 ] || [ "$status" -ge 300 ] || [ "$(jq -r '.success // false' "$output")" != "true" ]; then
+              jq -c '{success, errors}' "$output" || true
+              return 1
             fi
-            echo "=== $label ==="
-            echo "HTTP_STATUS=$http_code"
-            jq -c '{success, errors: [.errors[]? | {code, message}], result: (if (.result|type) == "object" then (.result | {id, name, status}) else null end)}' /tmp/cf-response.json 2>/dev/null || echo "Response was not valid JSON"
           }
 
-          diagnose "TOKEN_VERIFY" GET "https://api.cloudflare.com/client/v4/user/tokens/verify"
-          diagnose "D1_DATABASE_READ" GET "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$D1_DATABASE_ID"
-          diagnose "D1_READ_ONLY_QUERY" POST "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$D1_DATABASE_ID/query" '{"sql":"SELECT 1 AS connectivity_check"}'
+          echo "Checking whether the D1 migration history table exists..."
+          query_d1 "SELECT name FROM sqlite_master WHERE type='table' AND name='d1_migrations'" /tmp/d1-schema.json
 
-      - name: Read production migration status (no changes)
-        run: pnpm exec wrangler d1 migrations list badboy-agent-db --remote --config wrangler.json
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          if [ "$(jq -r '[.result[]?.results[]? | select(.name == "d1_migrations")] | length' /tmp/d1-schema.json)" -eq 0 ]; then
+            echo "::notice::The d1_migrations table does not exist in this database. No migration history has been recorded there."
+            exit 0
+          fi
+
+          echo "Reading applied migration history..."
+          query_d1 "SELECT * FROM d1_migrations ORDER BY id" /tmp/d1-migrations.json
+          jq -r '.result[]?.results[]? | [.id, .name, (.applied_at // "timestamp unavailable")] | @tsv' /tmp/d1-migrations.json
+          echo "Read-only migration history check completed."
