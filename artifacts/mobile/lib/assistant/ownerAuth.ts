@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 const OWNER_TOKEN_KEY = 'badboy-owner-token-v1';
 const DEFAULT_NATIVE_API_DOMAIN = 'https://badboy-vs-versel-ai.shomratofficial007.workers.dev';
 
@@ -7,15 +9,10 @@ function isWebPlatform(): boolean {
   const expoOs = process.env.EXPO_OS;
   if (expoOs) return expoOs === 'web';
 
-  // EXPO_OS is normally inlined by Expo. Some custom/native builds omit it;
-  // React Native has a window object but no browser location.origin.
-  // Node-based tests have no window and should use the in-memory web path.
-  return !(
-    typeof window !== 'undefined' &&
-    (typeof window.location === 'undefined' ||
-      typeof window.location.origin !== 'string' ||
-      !window.location.origin.startsWith('http'))
-  );
+  // EXPO_OS may be absent in custom builds. Use React Native's runtime
+  // platform instead of inspecting window/location, which can exist in native
+  // Android runtimes and must never cause SecureStore to be skipped.
+  return Platform.OS === 'web';
 }
 
 function authApiUrl() {
