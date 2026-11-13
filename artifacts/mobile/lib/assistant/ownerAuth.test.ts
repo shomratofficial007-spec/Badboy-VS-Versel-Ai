@@ -16,15 +16,6 @@ const originalFetch = globalThis.fetch;
 const originalExpoOs = process.env.EXPO_OS;
 let secureStoreToken: string | null = null;
 
-mock.module('expo-secure-store', {
-  namedExports: {
-    getItemAsync: async () => secureStoreToken,
-    setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
-    deleteItemAsync: async () => { secureStoreToken = null; },
-  },
-  cache: false,
-});
-
 before(async () => {
   ({
     clearOwnerToken,
@@ -39,6 +30,11 @@ beforeEach(() => {
   process.env.EXPO_OS = 'android';
   mockPlatform.OS = 'android';
   Reflect.set(globalThis, '__BADBOY_TEST_PLATFORM__', 'native');
+  Reflect.set(globalThis, '__BADBOY_TEST_SECURE_STORE__', {
+    getItemAsync: async () => secureStoreToken,
+    setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
+    deleteItemAsync: async () => { secureStoreToken = null; },
+  });
   globalThis.fetch = (async () => new Response(JSON.stringify({ authenticated: true }), { status: 200 })) as typeof fetch;
 });
 
@@ -50,6 +46,8 @@ afterEach(async () => {
   if (originalExpoOs === undefined) delete process.env.EXPO_OS;
   else process.env.EXPO_OS = originalExpoOs;
   secureStoreToken = null;
+  Reflect.deleteProperty(globalThis, '__BADBOY_TEST_SECURE_STORE__');
+  Reflect.deleteProperty(globalThis, '__BADBOY_TEST_PLATFORM__');
 });
 
 test('keeps the owner session in SecureStore and restores it', { concurrency: false }, async () => {
