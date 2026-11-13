@@ -20,189 +20,59 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - name: Resolve exact or verified-equivalent Cloudflare preview
+      - name: Provision isolated PR Worker and D1 preview (or select production for non-PR scans)
         id: target
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         shell: bash
         run: |
+          set -euo pipefail
           if [[ "$EVENT_NAME" != "pull_request" ]]; then
             echo "url=https://badboy-vs-versel-ai.shomratofficial007.workers.dev" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          comments_url="https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments?per_page=100"
+          pnpm/action-setup@v6 --version 10.8.1
+          pnpm install --frozen-lockfile
+          pnpm --filter @workspace/mobile run build
 
-          for attempt in $(seq 1 30); do
-            curl --silent --show-error --fail \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              "$comments_url" -o "$RUNNER_TEMP/pr-comments.json"
+          DB_NAME="badboy-zap-pr-${PR_NUMBER}-${RUN_ID}"
+          WORKER_NAME="badboy-zap-pr-${PR_NUMBER}-${RUN_ID}"
+          echo "$DB_NAME" > "$RUNNER_TEMP/zap-db-name"
+          echo "$WORKER_NAME" > "$RUNNER_TEMP/zap-worker-name"
 
-            target_url="$(PR_HEAD_SHA="$PR_HEAD_SHA" PR_BASE_SHA="$PR_BASE_SHA" COMMENTS_FILE="$RUNNER_TEMP/pr-comments.json" GH_TOKEN="$GH_TOKEN" REPOSITORY="$REPOSITORY" node --input-type=module <<'NODE'
-          import fs from 'node:fs';
+          create_output="$(pnpm exec wrangler d1 create "$DB_NAME" --location apac)"
+          printf '%s\n' "$create_output"
+          DB_ID="$(printf '%s\n' "$create_output" | sed -nE 's/.*database_id = "([^"]+)".*/\1/p' | head -n 1)"
+          if [[ -z "$DB_ID" ]]; then
+            echo "::error::Could not parse the isolated preview D1 database ID."
+            exit 1
+          fi
 
-          const sha = process.env.PR_HEAD_SHA ?? '';
-          const baseSha = process.env.PR_BASE_SHA ?? '';
-          const token = process.env.GH_TOKEN ?? '';
-          const repository = process.env.REPOSITORY ?? '';
-          const comments = JSON.parse(fs.readFileSync(process.env.COMMENTS_FILE, 'utf8'));
-          const botComment = [...comments].reverse().find((comment) =>
-            comment.user?.login === 'cloudflare-workers-and-pages[bot]'
-          );
-          const body = botComment?.body ?? '';
-          const rows = [...body.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map((match) => match[1]);
+          jq --arg worker "$WORKER_NAME" --arg dbname "$DB_NAME" --arg dbid "$DB_ID" '
+            .name = $worker |
+            .d1_databases = (.d1_databases | map(
+              if .binding == "AGENT_DB" then
+                .database_name = $dbname | .database_id = $dbid
+              else . end
+            ))
+          ' wrangler.json > wrangler.zap.json
 
-          function parseRow(row) {
-            const cells = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)]
-              .map((match) => match[1]);
-            const commit = (cells[2] ?? '').replace(/<[^>]*>/g, '').trim();
-            return {
-              commit,
-              url: row.match(/https:\/\/[a-z0-9.-]+\.workers\.dev/i)?.[0] ?? '',
-              success: /<b>Build:<\/b>\s*Success/i.test(row) &&
-                /<b>Deployment:<\/b>\s*Success/i.test(row),
-              failed: /<b>(?:Build|Deployment):<\/b>\s*Failed/i.test(row),
-              inProgress: /<b>(?:Build|Deployment):<\/b>\s*In progress/i.test(row),
-            };
-          }
-
-          const deployments = rows.map(parseRow);
-          const exact = deployments.find((deployment) => deployment.commit.startsWith(sha.slice(0, 7)));
-
-          if (exact?.failed) {
-            throw new Error(`Cloudflare preview build failed for current PR commit ${sha.slice(0, 7)}.`);
-          }
-
-          if (exact?.success && exact.url) {
-            process.stderr.write(`Using exact successful Cloudflare preview for ${exact.commit}.\n`);
-            process.stdout.write(exact.url);
-            process.exit(0);
-          }
-
-          if (!exact) {
-            const latestSuccessful = deployments.find((deployment) =>
-              deployment.success && deployment.url && deployment.commit
-            );
-
-            // Mobile-only changes do not alter the Cloudflare Worker. If the
-            // Workers integration has not posted a preview comment, compare
-            // the complete PR diff against its base and scan the production
-            // Worker only when every changed path is client-side or CI config.
-            if (!latestSuccessful && baseSha) {
-              const compareUrl = `https://api.github.com/repos/${repository}/compare/${baseSha}...${sha}`;
-              const response = await fetch(compareUrl, {
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  Accept: 'application/vnd.github+json',
-                  'X-GitHub-Api-Version': '2022-11-28',
-                },
-              });
-              if (!response.ok) {
-                throw new Error(`GitHub PR diff verification returned ${response.status}; cannot select a ZAP target.`);
-              }
-              const comparison = await response.json();
-              const files = comparison.files ?? [];
-              const workerUnaffected = files.length > 0 && files.every((file) =>
-                file.filename.startsWith('artifacts/mobile/') ||
-                file.filename.startsWith('.github/') ||
-                file.filename.startsWith('functions/vitest/') ||
-                file.filename === 'eslint.config.js' ||
-                file.filename === 'vitest.config.ts' ||
-                file.filename === 'package.json' ||
-                file.filename === 'pnpm-lock.yaml' ||
-                file.filename === 'pnpm-workspace.yaml'
-              );
-              if (workerUnaffected) {
-                process.stderr.write(
-                  `PR changes are limited to mobile client/CI files; Worker runtime is unchanged. Scanning the production Worker for API/security regression coverage. Changed files: ${files.map((file) => file.filename).join(', ')}.\\n`
-                );
-                process.stdout.write('https://badboy-vs-versel-ai.shomratofficial007.workers.dev');
-                process.exit(0);
-              }
-            }
-
-            if (latestSuccessful) {
-              const compareUrl = `https://api.github.com/repos/${repository}/compare/${latestSuccessful.commit}...${sha}`;
-              const response = await fetch(compareUrl, {
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  Accept: 'application/vnd.github+json',
-                  'X-GitHub-Api-Version': '2022-11-28',
-                },
-              });
-              if (!response.ok) {
-                throw new Error(`GitHub compare API returned ${response.status}; cannot verify preview equivalence.`);
-              }
-
-              const comparison = await response.json();
-              const files = comparison.files ?? [];
-              const unsafe = [];
-
-              for (const file of files) {
-                if (
-                  file.filename.startsWith('.github/') ||
-                  // Mobile app changes do not modify the Cloudflare Worker runtime.
-                  file.filename.startsWith('artifacts/mobile/') ||
-                  file.filename === 'SECURITY-EXCEPTIONS.md' ||
-                  file.filename === 'pnpm-lock.yaml' ||
-                  file.filename === 'pnpm-workspace.yaml' ||
-                  file.filename.startsWith('functions/vitest/') ||
-                  file.filename === 'eslint.config.js' ||
-                  file.filename === 'vitest.config.ts' ||
-                  file.filename === 'package.json'
-                ) {
-                  continue;
-                }
-
-                if (file.filename === 'functions/api/[[path]].ts' && file.patch) {
-                  const changedLines = file.patch.split('\n')
-                    .filter((line) => /^[+-]/.test(line) && !/^(---|\+\+\+)/.test(line));
-                  if (changedLines.length > 0 && changedLines.every((line) => /^[+-]\s*\/\//.test(line.trim()))) {
-                    continue;
-                  }
-                }
-
-                unsafe.push(file.filename);
-              }
-
-              if (files.length > 0 && unsafe.length === 0) {
-                process.stderr.write(
-                  `Current PR has no runtime-code changes since successful preview ${latestSuccessful.commit}; verified changed files: ${files.map((file) => file.filename).join(', ')}.\n`
-                );
-                process.stdout.write(latestSuccessful.url);
-                process.exit(0);
-              }
-
-              process.stderr.write(
-                `Latest successful preview ${latestSuccessful.commit} is stale for runtime files: ${unsafe.join(', ') || 'comparison did not contain a verifiable file list'}.\n`
-              );
-            }
-          } else if (exact.inProgress || !exact.url) {
-            process.stderr.write(`Cloudflare is still building current commit ${sha.slice(0, 7)}.\n`);
-          }
-
-          process.stdout.write('');
-          NODE
-          )"
-
-            if [[ -n "$target_url" ]]; then
-              echo "url=$target_url" >> "$GITHUB_OUTPUT"
-              echo "Resolved a preview whose runtime code matches this PR."
-              exit 0
-            fi
-
-            echo "Waiting for a current or verifiably equivalent Cloudflare preview (attempt $attempt/30)."
-            sleep 10
-          done
-
-          echo "::error::No current or verifiably equivalent successful Cloudflare preview was available."
-          exit 1
+          # Only the disposable preview D1 receives migrations. Production D1 is never referenced.
+          pnpm exec wrangler d1 migrations apply "$DB_NAME" --remote --config wrangler.zap.json
+          deploy_output="$(pnpm exec wrangler deploy --config wrangler.zap.json 2>&1)"
+          printf '%s\n' "$deploy_output"
+          preview_url="$(printf '%s\n' "$deploy_output" | grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' | tail -n 1)"
+          if [[ -z "$preview_url" ]]; then
+            echo "::error::Wrangler did not return a workers.dev URL for the isolated preview."
+            exit 1
+          fi
+          echo "url=$preview_url" >> "$GITHUB_OUTPUT"
+          echo "Provisioned isolated preview Worker: $preview_url"
 
       - name: Verify security headers on the selected preview deployment
         if: github.event_name == 'pull_request'
@@ -269,3 +139,20 @@ jobs:
 
           console.log(`ZAP policy passed: no Medium/High alerts; ${alerts.length} Low/Informational finding(s) retained in the report.`);
           NODE
+
+      - name: Delete isolated preview Worker and D1 database
+        if: always() && github.event_name == 'pull_request'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set +e
+          if [[ -f "$RUNNER_TEMP/zap-worker-name" && -f wrangler.zap.json ]]; then
+            worker_name="$(cat "$RUNNER_TEMP/zap-worker-name")"
+            pnpm exec wrangler delete --name "$worker_name" --force --config wrangler.zap.json
+          fi
+          if [[ -f "$RUNNER_TEMP/zap-db-name" ]]; then
+            db_name="$(cat "$RUNNER_TEMP/zap-db-name")"
+            pnpm exec wrangler d1 delete "$db_name" --skip-confirmation
+          fi
