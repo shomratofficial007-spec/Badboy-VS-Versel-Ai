@@ -8,7 +8,6 @@ let restoreOwnerSession: typeof import('./ownerAuth').restoreOwnerSession;
 let saveOwnerToken: typeof import('./ownerAuth').saveOwnerToken;
 let verifyOwnerToken: typeof import('./ownerAuth').verifyOwnerToken;
 let setOwnerSessionStorageForTests: typeof import('./ownerAuth').__setOwnerSessionStorageForTests;
-let setOwnerPlatformForTests: typeof import('./ownerAuth').__setOwnerPlatformForTests;
 
 mock.module('react-native', { namedExports: { Platform: mockPlatform } });
 const OWNER_TOKEN = 'a'.repeat(43);
@@ -25,14 +24,12 @@ before(async () => {
     saveOwnerToken,
     verifyOwnerToken,
     __setOwnerSessionStorageForTests: setOwnerSessionStorageForTests,
-    __setOwnerPlatformForTests: setOwnerPlatformForTests,
   } = await import('./ownerAuth'));
 });
 
 beforeEach(() => {
   process.env.EXPO_OS = 'android';
   mockPlatform.OS = 'android';
-  setOwnerPlatformForTests('native');
   setOwnerSessionStorageForTests({
     getItemAsync: async () => secureStoreToken,
     setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
@@ -46,7 +43,6 @@ afterEach(async () => {
   globalThis.fetch = originalFetch;
   mockPlatform.OS = 'android';
   setOwnerSessionStorageForTests(null);
-  setOwnerPlatformForTests(null);
   if (originalExpoOs === undefined) delete process.env.EXPO_OS;
   else process.env.EXPO_OS = originalExpoOs;
   secureStoreToken = null;
@@ -109,7 +105,6 @@ test('keeps web sessions in memory without writing the native SecureStore', { co
   try {
     process.env.EXPO_OS = 'web';
     setOwnerSessionStorageForTests(null);
-    setOwnerPlatformForTests('web');
     mockPlatform.OS = 'web';
     Object.defineProperty(globalThis, 'document', { configurable: true, value: {} });
     await saveOwnerToken(SESSION_TOKEN);
