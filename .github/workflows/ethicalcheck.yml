@@ -79,9 +79,9 @@ jobs:
 
           # Only the disposable preview D1 receives migrations. Production D1 is never referenced.
           pnpm exec wrangler d1 migrations apply "$DB_NAME" --remote --config wrangler.zap.json
-          deploy_output="$(pnpm exec wrangler deploy --config wrangler.zap.json 2>&1)"
-          printf '%s\n' "$deploy_output"
-          preview_url="$(printf '%s\n' "$deploy_output" | grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' | tail -n 1)"
+          preview_output="$(pnpm exec wrangler preview --name "$WORKER_NAME" --config wrangler.zap.json --json 2>&1)"
+          printf '%s\n' "$preview_output"
+          preview_url="$(printf '%s\n' "$preview_output" | grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' | tail -n 1)"
           if [[ -z "$preview_url" ]]; then
             echo "::error::Wrangler did not return a workers.dev URL for the isolated preview."
             exit 1
@@ -165,7 +165,7 @@ jobs:
           set +e
           if [[ -f "$RUNNER_TEMP/zap-worker-name" && -f wrangler.zap.json ]]; then
             worker_name="$(cat "$RUNNER_TEMP/zap-worker-name")"
-            pnpm exec wrangler delete --name "$worker_name" --force --config wrangler.zap.json
+            pnpm exec wrangler preview delete --name "$worker_name" --skip-confirmation --config wrangler.zap.json
           fi
           if [[ -f "$RUNNER_TEMP/zap-db-name" ]]; then
             db_name="$(cat "$RUNNER_TEMP/zap-db-name")"
