@@ -1,5 +1,5 @@
 import { Platform } from "react-native";
-import { getOwnerToken } from "./ownerAuth";
+import { expireOwnerSession, getOwnerToken } from "./ownerAuth";
 
 const DEFAULT_NATIVE_API_DOMAIN =
   "https://badboy-vs-versel-ai.shomratofficial007.workers.dev";
@@ -48,6 +48,7 @@ export function createOwnerJsonRequester(
     });
     const payload = await response.json().catch(() => ({})) as T & { error?: string };
     if (!response.ok) {
+      if (response.status === 401) await expireOwnerSession();
       throw new Error(payload.error ?? `Badboy API request failed (HTTP ${response.status}).`);
     }
     return payload;
