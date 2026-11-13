@@ -9,7 +9,14 @@ let saveOwnerToken: typeof import('./ownerAuth').saveOwnerToken;
 let verifyOwnerToken: typeof import('./ownerAuth').verifyOwnerToken;
 let setOwnerSessionStorageForTests: typeof import('./ownerAuth').__setOwnerSessionStorageForTests;
 
-mock.module('react-native', { namedExports: { Platform: mockPlatform }, cache: false });
+mock.module('react-native', { namedExports: { Platform: mockPlatform } });
+mock.module('expo-secure-store', {
+  namedExports: {
+    getItemAsync: async () => secureStoreToken,
+    setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
+    deleteItemAsync: async () => { secureStoreToken = null; },
+  },
+});
 
 const OWNER_TOKEN = 'a'.repeat(43);
 const SESSION_TOKEN = 'b'.repeat(64);
