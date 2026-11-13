@@ -123,7 +123,7 @@ test('keeps web sessions in memory without writing the native SecureStore', { co
       getItemAsync: async () => secureStoreToken,
       setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
       deleteItemAsync: async () => { secureStoreToken = null; },
-    });
+    }, true);
     await saveOwnerToken(SESSION_TOKEN);
     assert.equal(secureStoreToken, null);
     assert.equal(await getOwnerToken(), SESSION_TOKEN);
