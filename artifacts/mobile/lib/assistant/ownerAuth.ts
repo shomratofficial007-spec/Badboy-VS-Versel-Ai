@@ -13,6 +13,7 @@ type OwnerSessionStorage = {
 };
 
 let ownerSessionStorageOverride: OwnerSessionStorage | null = null;
+let ownerPlatformOverride: 'web' | 'native' | null = null;
 
 async function getOwnerSessionStorage(): Promise<OwnerSessionStorage> {
   return ownerSessionStorageOverride ?? await import('expo-secure-store');
@@ -21,6 +22,11 @@ async function getOwnerSessionStorage(): Promise<OwnerSessionStorage> {
 /** Test-only storage injection; production always uses Expo SecureStore. */
 export function __setOwnerSessionStorageForTests(adapter: OwnerSessionStorage | null): void {
   ownerSessionStorageOverride = adapter;
+}
+
+/** Test-only platform injection keeps native/web storage tests deterministic. */
+export function __setOwnerPlatformForTests(platform: 'web' | 'native' | null): void {
+  ownerPlatformOverride = platform;
 }
 
 export function subscribeToOwnerSessionExpiry(listener: () => void): () => void {
@@ -41,8 +47,7 @@ export async function expireOwnerSession(): Promise<void> {
 }
 
 function isWebPlatform(): boolean {
-  // An injected storage adapter is used only by native-session unit tests.
-  if (ownerSessionStorageOverride) return false;
+  if (ownerPlatformOverride !== null) return ownerPlatformOverride === 'web';
   return Platform.OS === 'web' && typeof document !== 'undefined';
 }
 function sessionApiUrl() {
