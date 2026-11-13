@@ -14,7 +14,7 @@ type OwnerSessionStorage = {
 let ownerSessionStorageOverride: OwnerSessionStorage | null = null;
 
 async function getOwnerSessionStorage(): Promise<OwnerSessionStorage> {
-  return ownerSessionStorageOverride ?? await getOwnerSessionStorage();
+  return ownerSessionStorageOverride ?? await import('expo-secure-store');
 }
 
 /** Injects a storage adapter for isolated unit tests; production uses Expo SecureStore. */
