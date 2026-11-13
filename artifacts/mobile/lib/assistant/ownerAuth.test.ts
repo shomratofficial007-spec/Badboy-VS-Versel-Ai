@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { afterEach, mock, test } from 'node:test';
+import { afterEach, beforeEach, mock, test } from 'node:test';
 import { Platform } from 'react-native';
 import {
   clearOwnerToken,
@@ -21,9 +21,13 @@ mock.module('expo-secure-store', {
   },
 });
 
+beforeEach(() => {
+  globalThis.fetch = (async () => new Response(JSON.stringify({ authenticated: true }), { status: 200 })) as typeof fetch;
+});
+
 afterEach(async () => {
-  globalThis.fetch = originalFetch;
   await clearOwnerToken();
+  globalThis.fetch = originalFetch;
   secureStoreToken = null;
 });
 
