@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import { getOwnerToken } from "./ownerAuth";
 
 const DEFAULT_NATIVE_API_DOMAIN =
@@ -5,6 +6,7 @@ const DEFAULT_NATIVE_API_DOMAIN =
 
 export function apiUrl(path: string): string {
   if (
+    Platform.OS === "web" &&
     typeof window !== "undefined" &&
     typeof window.location?.origin === "string" &&
     window.location.origin.startsWith("http")
@@ -30,7 +32,7 @@ export function createOwnerJsonRequester(
   ): Promise<T> {
     const token = await getToken();
     if (!token) {
-      throw new Error("Owner login is required. Enter your Badboy Owner Token to continue.");
+      throw new Error("Owner login session is required. Please sign in again.");
     }
 
     const headers: Record<string, string> = {
