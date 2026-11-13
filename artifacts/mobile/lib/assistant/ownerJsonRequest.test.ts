@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { createOwnerJsonRequester } from "./ownerJsonRequest";
+import { mock, test } from "node:test";
+
+mock.module("react-native", { namedExports: { Platform: { OS: "web" } } });
+const { createOwnerJsonRequester } = await import("./ownerJsonRequest");
 
 test("adds the verified owner token and JSON body to a POST request", async () => {
   let sentUrl = "";
