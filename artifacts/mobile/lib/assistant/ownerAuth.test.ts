@@ -1,14 +1,12 @@
 import assert from 'node:assert/strict';
-import { afterEach, before, beforeEach, mock, test } from 'node:test';
+import { afterEach, before, beforeEach, test } from 'node:test';
 
-const mockPlatform = { OS: 'android' };
 let clearOwnerToken: typeof import('./ownerAuth').clearOwnerToken;
 let getOwnerToken: typeof import('./ownerAuth').getOwnerToken;
 let restoreOwnerSession: typeof import('./ownerAuth').restoreOwnerSession;
 let saveOwnerToken: typeof import('./ownerAuth').saveOwnerToken;
 let verifyOwnerToken: typeof import('./ownerAuth').verifyOwnerToken;
-
-mock.module('react-native', { namedExports: { Platform: mockPlatform }, cache: false });
+let setOwnerSessionStorageForTests: typeof import('./ownerAuth').__setOwnerSessionStorageForTests;
 
 before(async () => {
   ({
@@ -17,6 +15,7 @@ before(async () => {
     restoreOwnerSession,
     saveOwnerToken,
     verifyOwnerToken,
+    __setOwnerSessionStorageForTests: setOwnerSessionStorageForTests,
   } = await import('./ownerAuth'));
 });
 
@@ -26,29 +25,24 @@ const originalFetch = globalThis.fetch;
 const originalExpoOs = process.env.EXPO_OS;
 let secureStoreToken: string | null = null;
 
-mock.module('expo-secure-store', {
-  namedExports: {
+beforeEach(() => {
+  // Keep tests independent of CI's build-time Expo platform setting.
+  process.env.EXPO_OS = 'android';
+  setOwnerSessionStorageForTests({
     getItemAsync: async () => secureStoreToken,
     setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
     deleteItemAsync: async () => { secureStoreToken = null; },
-  },
-  cache: false,
-});
-
-beforeEach(() => {
-  // The CI runner may export EXPO_OS=web; force native mode for the native tests.
-  mockPlatform.OS = 'android';
-  process.env.EXPO_OS = 'android';
+  });
   globalThis.fetch = (async () => new Response(JSON.stringify({ authenticated: true }), { status: 200 })) as typeof fetch;
 });
 
 afterEach(async () => {
   await clearOwnerToken();
-  mockPlatform.OS = 'android';
   globalThis.fetch = originalFetch;
   if (originalExpoOs === undefined) delete process.env.EXPO_OS;
   else process.env.EXPO_OS = originalExpoOs;
   secureStoreToken = null;
+  setOwnerSessionStorageForTests(null);
 });
 
 test('keeps the owner token in the active session and restores an existing session', { concurrency: false }, async () => {
@@ -70,8 +64,7 @@ test('uses SecureStore on native when EXPO_OS is omitted by a custom build', { c
   const testExpoOs = process.env.EXPO_OS;
   try {
     delete process.env.EXPO_OS;
-    mockPlatform.OS = 'android';
-    // Native runtimes can expose window; its presence must not imply web.
+      // Native runtimes can expose window; its presence must not imply web.
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: { location: { origin: 'http://localhost' } },
@@ -96,7 +89,7 @@ test('uses SecureStore on native when EXPO_OS is omitted by a custom build', { c
   }
 });
 
-test('uses SecureStore when the React Native runtime identifies Android', { concurrency: false }, async () => {
+test('uses SecureStore when Expo runtime identifies Android', { concurrency: false }, async () => {
   await saveOwnerToken(SESSION_TOKEN);
   assert.equal(secureStoreToken, SESSION_TOKEN);
   assert.equal(await restoreOwnerSession(), true);
@@ -106,13 +99,11 @@ test('keeps web sessions in memory without writing the native SecureStore', { co
   const testExpoOs = process.env.EXPO_OS;
   try {
     process.env.EXPO_OS = 'web';
-    mockPlatform.OS = 'web';
     await saveOwnerToken(SESSION_TOKEN);
     assert.equal(secureStoreToken, null);
     assert.equal(await getOwnerToken(), SESSION_TOKEN);
   } finally {
-    mockPlatform.OS = 'android';
-    if (testExpoOs === undefined) delete process.env.EXPO_OS;
+      if (testExpoOs === undefined) delete process.env.EXPO_OS;
     else process.env.EXPO_OS = testExpoOs;
   }
 });
