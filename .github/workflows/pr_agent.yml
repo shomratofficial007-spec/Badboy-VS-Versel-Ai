@@ -19,10 +19,11 @@ jobs:
       - id: pr-agent
         uses: Codium-ai/pr-agent@main
         env:
-          PR_MODELER.PROVIDER: "google"
-          PR_MODELER.MODEL: "gemini-1.5-pro"
-          GOOGLE.API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          config.allow_bugs: true
+          # Use the Google AI Studio LiteLLM provider explicitly. A bare
+          # Gemini model name can route to Vertex AI and require ADC.
+          config.model: "gemini/gemini-2.5-flash"
+          config.fallback_models: '[]'
+          GOOGLE_AI_STUDIO.GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           config.git_provider: "github"
-          
+          config.allow_bugs: "true"
