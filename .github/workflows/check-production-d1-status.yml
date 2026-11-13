@@ -15,14 +15,14 @@ concurrency:
 
 jobs:
   status:
-    name: Read production D1 migration status (read-only)
+    name: Read production D1 schema and migration status (read-only)
     runs-on: ubuntu-latest
     environment: production
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Read D1 migration table through Cloudflare API (read-only)
+      - name: Read production D1 schema and migration history (read-only)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -48,15 +48,22 @@ jobs:
             fi
           }
 
-          echo "Checking whether the D1 migration history table exists..."
-          query_d1 "SELECT name FROM sqlite_master WHERE type='table' AND name='d1_migrations'" /tmp/d1-schema.json
+          echo "Reading existing production D1 tables..."
+          query_d1 "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name" /tmp/d1-schema.json
+          jq -r '.result[]?.results[]?.name' /tmp/d1-schema.json
 
           if [ "$(jq -r '[.result[]?.results[]? | select(.name == "d1_migrations")] | length' /tmp/d1-schema.json)" -eq 0 ]; then
-            echo "::notice::The d1_migrations table does not exist in this database. No migration history has been recorded there."
-            exit 0
+            echo "::notice::No d1_migrations history table exists. This database has no recorded Wrangler migration history."
+          else
+            echo "Reading applied migration history..."
+            query_d1 "SELECT * FROM d1_migrations ORDER BY id" /tmp/d1-migrations.json
+            jq -r '.result[]?.results[]? | [.id, .name] | @tsv' /tmp/d1-migrations.json
           fi
 
-          echo "Reading applied migration history..."
-          query_d1 "SELECT * FROM d1_migrations ORDER BY id" /tmp/d1-migrations.json
-          jq -r '.result[]?.results[]? | [.id, .name, (.applied_at // "timestamp unavailable")] | @tsv' /tmp/d1-migrations.json
-          echo "Read-only migration history check completed."
+          if [ "$(jq -r '[.result[]?.results[]? | select(.name == "agent_tasks")] | length' /tmp/d1-schema.json)" -eq 0 ]; then
+            echo "::warning::Expected application table agent_tasks is not present in production D1."
+          else
+            echo "Expected application table agent_tasks is present."
+          fi
+
+          echo "Read-only production D1 schema check completed."
