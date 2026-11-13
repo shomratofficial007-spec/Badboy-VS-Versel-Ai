@@ -10,24 +10,42 @@ import {
 } from "./api/developerAgent.ts";
 
 const TEST_OWNER_TOKEN = "a".repeat(43);
+const TEST_SESSION_TOKEN = "b".repeat(64);
 
-function withTestOwner(context: any) {
-  const headers = new Headers(context.request.headers);
-  if (!headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${TEST_OWNER_TOKEN}`);
-  }
+function withTestSessionDatabase(database?: any) {
+  const base = database ?? testAgentDb();
   return {
-    ...context,
-    request: new Request(context.request, { headers }),
-    env: { ...context.env, BADBOY_OWNER_TOKEN: context.env.BADBOY_OWNER_TOKEN ?? TEST_OWNER_TOKEN },
+    prepare(sql: string) {
+      if (sql.includes("owner_sessions")) {
+        return {
+          bind(..._values: unknown[]) {
+            return {
+              first: async () => ({ owner_id: "badboy-personal-owner-v1" }),
+              run: async () => ({ success: true, meta: { changes: 1 } }),
+            };
+          },
+        };
+      }
+      return base.prepare(sql);
+    },
   };
 }
 
-// Existing endpoint tests exercise authenticated application behavior by default.
-// The dedicated /api/auth/verify tests below call the raw handlers to test credentials.
+function withTestOwner(context: any) {
+  const headers = new Headers(context.request.headers);
+  headers.set("Authorization", `Bearer ${TEST_SESSION_TOKEN}`);
+  return {
+    ...context,
+    request: new Request(context.request, { headers }),
+    env: { ...context.env, AGENT_DB: withTestSessionDatabase(context.env.AGENT_DB) },
+  };
+}
+
+// Application-route tests use a mock server session. The dedicated session
+// endpoint tests below call the raw handlers to verify Owner Token exchange.
 const onRequestGet = (context: any) => rawOnRequestGet(withTestOwner(context));
 const onRequestPost = (context: any) =>
-  new URL(context.request.url).pathname.replace(/\/+$/, "") === "/api/auth/verify"
+  new URL(context.request.url).pathname.replace(/\/+$/, "") === "/api/auth/session"
     ? rawOnRequestPost(context)
     : rawOnRequestPost(withTestOwner(context));
 
@@ -845,16 +863,13 @@ test("developer analysis forwards multiple buffered SSE events before the upstre
 
 test("authenticated D1 task creation uses only the server-assigned owner identity", async () => {
   const db = testAgentDb();
-  const response = await rawOnRequestPost({
+  const response = await onRequestPost({
     request: new Request("https://example.com/api/developer/tasks", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${TEST_OWNER_TOKEN}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: "Owner scoped task", ownerId: "forged-owner" }),
     }),
-    env: { BADBOY_OWNER_TOKEN: TEST_OWNER_TOKEN, AGENT_DB: db },
+    env: { AGENT_DB: db },
   } as any);
   assert.equal(response.status, 201);
   assert.equal(db.calls[0].values[1], "badboy-personal-owner-v1");
@@ -880,32 +895,44 @@ test("private Developer Agent D1 routes require configured storage after owner a
 });
 
 
-test("personal auth verify route accepts only the configured Worker secret", async () => {
+test("session login exchanges the Owner Token once and returns a server session", async () => {
   const token = "a".repeat(43);
-  const missing = await onRequestPost({
-    request: new Request("https://example.com/api/auth/verify", { method: "POST" }),
+  const database = withTestSessionDatabase(testAgentDb());
+  const missing = await rawOnRequestPost({
+    request: new Request("https://example.com/api/auth/session", { method: "POST" }),
     env: {},
   } as any);
   assert.equal(missing.status, 503);
 
-  const rejected = await onRequestPost({
-    request: new Request("https://example.com/api/auth/verify", {
+  const rejected = await rawOnRequestPost({
+    request: new Request("https://example.com/api/auth/session", {
       method: "POST",
       headers: { Authorization: `Bearer ${"b".repeat(43)}` },
     }),
-    env: { BADBOY_OWNER_TOKEN: token },
+    env: { BADBOY_OWNER_TOKEN: token, AGENT_DB: database },
   } as any);
   assert.equal(rejected.status, 401);
 
-  const accepted = await onRequestPost({
-    request: new Request("https://example.com/api/auth/verify", {
+  const accepted = await rawOnRequestPost({
+    request: new Request("https://example.com/api/auth/session", {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
     }),
-    env: { BADBOY_OWNER_TOKEN: token },
+    env: { BADBOY_OWNER_TOKEN: token, AGENT_DB: database },
   } as any);
   assert.equal(accepted.status, 200);
-  assert.deepEqual(await accepted.json(), { authenticated: true });
+  const payload = await accepted.json() as { authenticated: boolean; sessionToken: string; expiresAt: number };
+  assert.equal(payload.authenticated, true);
+  assert.match(payload.sessionToken, /^[a-f0-9]{64}$/);
+  assert.ok(payload.expiresAt > Math.floor(Date.now() / 1000));
+
+  const privateRouteWithOwnerToken = await rawOnRequestGet({
+    request: new Request("https://example.com/api/developer/tasks", {
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+    env: { BADBOY_OWNER_TOKEN: token, AGENT_DB: database },
+  } as any);
+  assert.equal(privateRouteWithOwnerToken.status, 401);
 });
 
 test("onRequestPost - stops fallback when an upstream returns HTTP 200 without a response body", async () => {
@@ -998,24 +1025,23 @@ test("requires owner authentication for private API and Developer Agent routes",
   assert.equal(publicHealth.status, 200);
 });
 
-test("D1 data endpoints are available only after the owner is authenticated and storage is configured", async () => {
+test("private API requires a session and session storage fails closed when D1 is missing", async () => {
   const unauthorized = await rawOnRequestGet({
     request: new Request("https://example.com/api/developer/tasks"),
     env: { BADBOY_OWNER_TOKEN: TEST_OWNER_TOKEN },
   } as any);
   assert.equal(unauthorized.status, 401);
 
-  const missingStorage = await rawOnRequestGet({
-    request: new Request("https://example.com/api/developer/tasks", {
+  const missingStorage = await rawOnRequestPost({
+    request: new Request("https://example.com/api/auth/session", {
+      method: "POST",
       headers: { Authorization: `Bearer ${TEST_OWNER_TOKEN}` },
     }),
     env: { BADBOY_OWNER_TOKEN: TEST_OWNER_TOKEN },
   } as any);
   assert.equal(missingStorage.status, 503);
-  const payload = await missingStorage.json() as any;
-  assert.equal(payload.code, "AGENT_STORAGE_NOT_CONFIGURED");
+  assert.equal((await missingStorage.json() as any).code, "SESSION_STORAGE_UNAVAILABLE");
 });
-
 
 test("authenticated Developer Data routes exercise task list and create success branches", async () => {
   const db = testAgentDb();
