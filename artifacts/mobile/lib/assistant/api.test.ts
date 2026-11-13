@@ -21,7 +21,7 @@ mock.module('expo-file-system/legacy', {
   },
 });
 mock.module('./ownerAuth.ts', {
-  namedExports: { getOwnerToken: async () => 'owner-token-test' },
+  namedExports: { getOwnerToken: async () => 'owner-session-test', expireOwnerSession: async () => {} },
 });
 mock.module('./ownerJsonRequest.ts', {
   namedExports: { apiUrl: (path: string) => `https://worker.example${path}` },
@@ -58,7 +58,7 @@ test('streamReply sends owner-authenticated request and parses split SSE frames'
   fetchHandler = async (input, init) => {
     url = String(input);
     sent = JSON.parse(String(init.body));
-    assert.equal(authFrom(init), 'Bearer owner-token-test');
+    assert.equal(authFrom(init), 'Bearer owner-session-test');
     return streamResponse([
       'data: {"content":"বাংলা ',
       'উত্তর"}\n\n',
@@ -112,7 +112,7 @@ test('streamDeveloperAnalysis returns task metadata and streams analysis chunks'
   let sent: any;
   fetchHandler = async (_input, init) => {
     sent = JSON.parse(String(init.body));
-    assert.equal(authFrom(init), 'Bearer owner-token-test');
+    assert.equal(authFrom(init), 'Bearer owner-session-test');
     return streamResponse([
       'data: {"taskId":"task-123","engine":"native"}\n\n',
       'data: {"content":"প্রথম অংশ"}\n\n',
@@ -157,7 +157,7 @@ test('transcribeAudio maps language, sends audio and returns trimmed transcript'
   let sent: any;
   fetchHandler = async (url, init) => {
     assert.equal(String(url), 'https://worker.example/assistant/transcribe');
-    assert.equal(authFrom(init), 'Bearer owner-token-test');
+    assert.equal(authFrom(init), 'Bearer owner-session-test');
     assert.ok(init.signal instanceof AbortSignal, 'transcription request must be cancellable');
     assert.equal(init.signal.aborted, false);
     sent = JSON.parse(String(init.body));
@@ -191,7 +191,7 @@ test('requestSpeech returns audio bytes and rejects HTTP or empty audio response
   const { requestSpeech } = await apiPromise;
   fetchHandler = async (url, init) => {
     assert.equal(String(url), 'https://worker.example/assistant/speech');
-    assert.equal(authFrom(init), 'Bearer owner-token-test');
+    assert.equal(authFrom(init), 'Bearer owner-session-test');
     assert.ok(init.signal instanceof AbortSignal, 'speech request must be cancellable');
     assert.equal(init.signal.aborted, false);
     assert.deepEqual(JSON.parse(String(init.body)), { text: 'হ্যালো', language: 'bn-BD' });
