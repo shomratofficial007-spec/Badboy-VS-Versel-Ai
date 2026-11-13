@@ -56,9 +56,9 @@ export async function createOwnerSession(request: Request, env: SessionEnv): Pro
 
 /** All subsequent private API requests validate only the opaque session, never the Owner Token. */
 export async function authenticateOwnerSession(request: Request, env: SessionEnv) {
-  if (!env.AGENT_DB) return { ok: false as const, response: unavailable() };
   const token = bearer(request);
   if (!token) return { ok: false as const, response: json({ code: "SESSION_REQUIRED", error: "Owner login session is required." }, 401) };
+  if (!env.AGENT_DB) return { ok: false as const, response: unavailable() };
   try {
     const tokenHash = await digest(token);
     const now = Math.floor(Date.now() / 1000);
