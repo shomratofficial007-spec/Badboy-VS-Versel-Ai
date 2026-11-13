@@ -24,7 +24,6 @@ export async function expireOwnerSession(): Promise<void> {
 }
 
 function isWebPlatform(): boolean {
-  if (ownerSessionWebOverride !== null) return ownerSessionWebOverride;
   const runtimeProcess = Reflect.get(globalThis, 'process') as { env?: Record<string, string | undefined> } | undefined;
   const expoOs = runtimeProcess?.env?.EXPO_OS;
   if (expoOs === 'web') return true;
