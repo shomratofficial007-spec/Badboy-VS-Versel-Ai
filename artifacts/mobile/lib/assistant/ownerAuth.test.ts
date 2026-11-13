@@ -8,7 +8,7 @@ let restoreOwnerSession: typeof import('./ownerAuth').restoreOwnerSession;
 let saveOwnerToken: typeof import('./ownerAuth').saveOwnerToken;
 let verifyOwnerToken: typeof import('./ownerAuth').verifyOwnerToken;
 
-mock.module('react-native', { namedExports: { Platform: mockPlatform } });
+mock.module('react-native', { namedExports: { Platform: mockPlatform }, cache: false });
 
 const OWNER_TOKEN = 'a'.repeat(43);
 const SESSION_TOKEN = 'b'.repeat(64);
