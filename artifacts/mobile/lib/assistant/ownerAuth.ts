@@ -59,7 +59,14 @@ export async function clearOwnerToken(): Promise<void> {
   }
 }
 export async function restoreOwnerSession(): Promise<boolean> {
-  if (isWebPlatform()) return Boolean(activeSession);
-  activeSession = null;
-  return Boolean(await getOwnerToken());
+  const session = isWebPlatform() ? activeSession : (activeSession = null, await getOwnerToken());
+  if (!session) return false;
+  try {
+    const response = await fetch(sessionApiUrl(), {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${session}`, Accept: 'application/json' },
+    });
+    if (response.ok) return true;
+  } catch { /* Treat network failure as unavailable, not as an invalid session. */ }
+  return false;
 }
