@@ -2,7 +2,7 @@ import { fetch as expoFetch } from 'expo/fetch';
 import * as FileSystem from 'expo-file-system/legacy';
 import type { AssistantSettings } from '@/lib/assistant/types';
 import { getTranscriptionLanguageCode } from './transcriptionLanguage';
-import { getOwnerToken } from './ownerAuth';
+import { expireOwnerSession, getOwnerToken } from './ownerAuth';
 
 // This repository deploys its own Worker; do not send native APK traffic to the
 // unrelated legacy Voice-Memory-Assistant Worker.
@@ -35,6 +35,7 @@ export async function streamReply(
   });
 
   if (!response.ok) {
+    if (response.status === 401) await expireOwnerSession();
     const body = (await response.json().catch(() => ({}))) as {
       error?: string;
       code?: string;
@@ -167,6 +168,7 @@ export async function transcribeAudio(
       error?: string;
     };
     if (!response.ok) {
+      if (response.status === 401) await expireOwnerSession();
       throw new Error(result.error ?? `Speech transcription failed (HTTP ${response.status}).`);
     }
     if (!result.text?.trim()) throw new Error('কোনো কথা শনাক্ত করা যায়নি। আবার চেষ্টা করুন।');
@@ -207,6 +209,7 @@ export async function requestSpeech(text: string, language: string): Promise<Uin
       signal: controller.signal,
     });
     if (!response.ok) {
+      if (response.status === 401) await expireOwnerSession();
       const body = (await response.json().catch(() => ({}))) as { error?: string };
       throw new Error(body.error ?? `Speech generation failed (HTTP ${response.status}).`);
     }
