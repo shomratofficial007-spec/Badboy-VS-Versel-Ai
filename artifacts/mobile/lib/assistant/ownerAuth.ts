@@ -6,12 +6,8 @@ const DEFAULT_NATIVE_API_DOMAIN = 'https://badboy-vs-versel-ai.shomratofficial00
 let activeToken: string | null = null;
 
 function isWebPlatform(): boolean {
-  const expoOs = process.env.EXPO_OS;
-  if (expoOs) return expoOs === 'web';
-
-  // EXPO_OS may be absent in custom builds. Use React Native's runtime
-  // platform instead of inspecting window/location, which can exist in native
-  // Android runtimes and must never cause SecureStore to be skipped.
+  // React Native's runtime platform is authoritative. Do not infer web from
+  // EXPO_OS or window/location because native Android runtimes may expose both.
   return Platform.OS === 'web';
 }
 
