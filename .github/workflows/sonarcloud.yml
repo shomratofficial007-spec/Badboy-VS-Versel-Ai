@@ -63,6 +63,8 @@ jobs:
           --exclude='**/*.spec.ts'
           --
           sh -c '
+          pnpm run test:vitest
+          &&
           node --experimental-strip-types --experimental-test-isolation=none --test
           functions/functions.test.ts
           functions/developerAgent.test.ts
