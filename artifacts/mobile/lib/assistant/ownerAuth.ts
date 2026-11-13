@@ -22,9 +22,11 @@ async function getOwnerSessionStorage(): Promise<OwnerSessionStorage> {
 export function __setOwnerSessionStorageForTests(
   adapter: OwnerSessionStorage | null,
   platform: 'web' | 'native' | null = null,
+  resetMemory = false,
 ): void {
   ownerSessionStorageOverride = adapter;
   ownerSessionPlatformOverride = platform;
+  if (resetMemory) activeSession = null;
 }
 
 export function subscribeToOwnerSessionExpiry(listener: () => void): () => void {
