@@ -24,10 +24,8 @@ export async function expireOwnerSession(): Promise<void> {
 }
 
 function isWebPlatform(): boolean {
-  const runtimeProcess = Reflect.get(globalThis, 'process') as { env?: Record<string, string | undefined> } | undefined;
-  const expoOs = runtimeProcess?.env?.EXPO_OS;
-  if (expoOs === 'web') return true;
-  if (expoOs === 'android' || expoOs === 'ios') return false;
+  // React Native Platform.OS is the runtime source of truth; build-time Expo env
+  // values can be stale or inlined incorrectly in custom native builds.
   return Platform.OS === 'web';
 }
 function sessionApiUrl() {
