@@ -23,7 +23,12 @@ export async function expireOwnerSession(): Promise<void> {
   for (const listener of sessionExpiryListeners) listener();
 }
 
-function isWebPlatform(): boolean { return Platform.OS === 'web'; }
+function isWebPlatform(): boolean {
+  // Expo may inline EXPO_OS in managed builds; custom native builds can omit it.
+  // React Native's Platform.OS remains the authoritative fallback in that case.
+  const expoOs = process.env.EXPO_OS;
+  return expoOs ? expoOs === 'web' : Platform.OS === 'web';
+}
 function sessionApiUrl() {
   if (isWebPlatform() && typeof window !== 'undefined' && typeof window.location?.origin === 'string' && window.location.origin.startsWith('http')) {
     return `${window.location.origin}/api/auth/session`;
