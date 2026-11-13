@@ -876,22 +876,15 @@ test("authenticated D1 task creation uses only the server-assigned owner identit
   assert.equal(db.calls[0].values.includes("forged-owner"), false);
 });
 
-test("private Developer Agent D1 routes require configured storage after owner authentication", async () => {
-  const paths = [
-    "/api/developer/tasks",
-    "/api/developer/projects",
-    "/api/developer/project-memory?projectId=project-1",
-  ];
-  for (const path of paths) {
-    const context = {
-      request: new Request(`https://example.com${path}`),
-      env: {},
-    } as any;
-    const response = await onRequestGet(context);
-    assert.equal(response.status, 503);
-    const payload = await response.json() as any;
-    assert.equal(payload.code, "AGENT_STORAGE_NOT_CONFIGURED");
-  }
+test("authenticated private routes share the configured session and Developer Agent D1 binding", async () => {
+  const db = testAgentDb();
+  const response = await onRequestGet({
+    request: new Request("https://example.com/api/developer/tasks"),
+    env: { AGENT_DB: db },
+  } as any);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { tasks: [] });
+  assert.match(db.calls[0].sql, /FROM agent_tasks/);
 });
 
 
