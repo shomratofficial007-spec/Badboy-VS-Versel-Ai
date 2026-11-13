@@ -41,7 +41,10 @@ export async function expireOwnerSession(): Promise<void> {
 }
 
 function isWebPlatform(): boolean {
-  // Native runtimes may expose a window polyfill; a real web document is required.
+  // An explicit test runtime prevents CI's browser-like globals from changing
+  // native SecureStore behavior during unit tests.
+  if (process.env.BADBOY_TEST_PLATFORM === 'native') return false;
+  if (process.env.BADBOY_TEST_PLATFORM === 'web') return true;
   return Platform.OS === 'web' && typeof document !== 'undefined';
 }
 function sessionApiUrl() {
