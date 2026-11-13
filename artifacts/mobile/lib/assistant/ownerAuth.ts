@@ -24,8 +24,11 @@ export async function expireOwnerSession(): Promise<void> {
 }
 
 function isWebPlatform(): boolean {
-  // React Native's runtime platform is authoritative. EXPO_OS may be inlined
-  // by a build-time transform and can disagree with a custom native runtime.
+  // Bracket access keeps Expo's EXPO_OS value runtime-readable in tests and
+  // custom builds instead of allowing a build-time transform to freeze it.
+  const expoOs = process.env['EXPO_OS'];
+  if (expoOs === 'web') return true;
+  if (expoOs === 'android' || expoOs === 'ios') return false;
   return Platform.OS === 'web';
 }
 function sessionApiUrl() {
