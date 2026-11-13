@@ -12,16 +12,18 @@ This is a card-free, single-owner authentication foundation for a personal Badbo
 3. Add a **Secret** named `BADBOY_OWNER_TOKEN` and paste the generated value directly into the Cloudflare secret field.
 4. Do not paste the key into GitHub, source code, chat, screenshots, or logs.
 
-Enter the same key in Badboy's Owner Login screen. On Android/iOS it is stored with Expo SecureStore; it is never written to AsyncStorage, source code, or logs. On web, the key remains in memory for the current page session because SecureStore is not available there.
+Enter the key in Badboy's Owner Login screen. The Worker exchanges it once for a random 256-bit session token. The Owner Token is never persisted by the app; only the session token is stored in Android/iOS Expo SecureStore (or in memory on web).
 
-## Current API contract
+## Session API contract
 
-- `POST /api/auth/verify` with `Authorization: Bearer <key>` returns `{ "authenticated": true }`.
-- Every other API route requires the same bearer token, including Chat, Developer Analysis, Transcription, Speech, and Developer Agent health.
-- Only `GET /api/health`, `GET /api/healthz`, CORS preflight, and the token verifier are public.
-- Missing Worker configuration returns 503 (fail closed); missing or invalid credentials return 401.
-- The verifier assigns the fixed server-side owner key `badboy-personal-owner-v1`; client-supplied owner IDs are ignored.
-- Authentication errors include no-store and CORS headers. The endpoint never returns the owner key or credential and never logs either.
+- `POST /api/auth/session` accepts the Owner Token once and returns a random opaque session token plus its expiry.
+- `GET /api/auth/session` validates the session on the Badboy Worker.
+- `DELETE /api/auth/session` revokes the current session (Logout).
+- Every other private API route accepts only the session token; the Owner Token is not accepted or rechecked there.
+- Sessions expire after 30 days. Expired/revoked sessions return 401 and require Owner Login again.
+- The Worker stores only a SHA-256 hash of each session token in D1; the raw session token is stored only in the app's SecureStore.
+- Authentication/session operations do not call Gemini, OpenRouter, Groq, or any AI provider. Provider quota is used only when an AI feature actually invokes that provider.
+- Session creation fails closed with 503 until the additive `0002_owner_sessions.sql` migration has been applied to the configured D1 database.
 
 ## Private Developer Agent D1 data
 
@@ -38,7 +40,7 @@ The authenticated Worker now exposes owner-scoped Developer Agent data routes:
 
 ### Apply the additive D1 migration
 
-The migration file is `migrations/0001_agent_persistence.sql`. It only creates Developer Agent tables and indexes; it does not migrate or delete existing mobile-local data.
+The migrations are `migrations/0001_agent_persistence.sql` (Developer Agent data) and `migrations/0002_owner_sessions.sql` (hashed, revocable owner sessions). Both are additive and do not migrate or delete existing mobile-local data.
 
 After reviewing the migration and confirming the intended Cloudflare database, apply it deliberately from a trusted local environment:
 
@@ -48,9 +50,9 @@ Do not run this against an unintended database. Until the migration is applied, 
 
 ## Security and rollout boundaries
 
-- The key is a long-lived bearer credential. Anyone who obtains it can act as the personal owner until it is rotated. Keep it private.
-- Rotate/revoke it by replacing the Worker secret, then sign in again on trusted devices.
+- The Owner Token is used only to create a session. Anyone who obtains an active session token can act as the personal owner until it expires or is revoked. Keep device storage protected.
+- Revoke a device session with Logout. Replacing the Worker Owner Token prevents future logins with the old key; existing sessions should be revoked separately.
 - Send it only over HTTPS. Do not put it in URL parameters.
 - Chat History and personal Memory remain on-device in their existing storage; owner login does not migrate or clear them.
-- Developer Agent D1 persistence routes are protected by the owner token and store only owner-scoped Developer Agent tasks, projects, and project notes. No D1 migration is applied remotely by CI.
+- Developer Agent D1 persistence routes are protected by the owner session and store only owner-scoped Developer Agent tasks, projects, and project notes. No D1 migration is applied remotely by CI.
 - No production deployment, merge, or APK build is performed.
