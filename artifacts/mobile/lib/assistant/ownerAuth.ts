@@ -6,7 +6,7 @@ let activeSession: string | null = null;
 
 function isWebPlatform(): boolean { return Platform.OS === 'web'; }
 function sessionApiUrl() {
-  if (typeof window !== 'undefined' && typeof window.location?.origin === 'string' && window.location.origin.startsWith('http')) {
+  if (isWebPlatform() && typeof window !== 'undefined' && typeof window.location?.origin === 'string' && window.location.origin.startsWith('http')) {
     return `${window.location.origin}/api/auth/session`;
   }
   const domain = process.env.EXPO_PUBLIC_DOMAIN?.trim() || DEFAULT_NATIVE_API_DOMAIN;
