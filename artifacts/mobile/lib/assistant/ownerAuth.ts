@@ -4,6 +4,24 @@ const SESSION_KEY = 'badboy-owner-session-v1';
 const LEGACY_OWNER_TOKEN_KEY = 'badboy-owner-token-v1';
 const DEFAULT_NATIVE_API_DOMAIN = 'https://badboy-vs-versel-ai.shomratofficial007.workers.dev';
 let activeSession: string | null = null;
+const sessionExpiryListeners = new Set<() => void>();
+
+export function subscribeToOwnerSessionExpiry(listener: () => void): () => void {
+  sessionExpiryListeners.add(listener);
+  return () => sessionExpiryListeners.delete(listener);
+}
+
+export async function expireOwnerSession(): Promise<void> {
+  activeSession = null;
+  if (!isWebPlatform()) {
+    try {
+      const SecureStore = await import('expo-secure-store');
+      await SecureStore.deleteItemAsync(SESSION_KEY);
+      await SecureStore.deleteItemAsync(LEGACY_OWNER_TOKEN_KEY);
+    } catch { /* The in-memory credential is still cleared. */ }
+  }
+  for (const listener of sessionExpiryListeners) listener();
+}
 
 function isWebPlatform(): boolean { return Platform.OS === 'web'; }
 function sessionApiUrl() {
@@ -70,6 +88,7 @@ export async function restoreOwnerSession(): Promise<boolean> {
       headers: { Authorization: `Bearer ${session}`, Accept: 'application/json' },
     });
     if (response.ok) return true;
+    if (response.status === 401) await expireOwnerSession();
   } catch { /* Treat network failure as unavailable, not as an invalid session. */ }
   return false;
 }
