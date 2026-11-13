@@ -41,7 +41,6 @@ beforeEach(() => {
 afterEach(async () => {
   await clearOwnerToken();
   globalThis.fetch = originalFetch;
-  mockPlatform.OS = 'android';
   if (originalExpoOs === undefined) delete process.env.EXPO_OS;
   else process.env.EXPO_OS = originalExpoOs;
   secureStoreToken = null;
@@ -55,6 +54,11 @@ test('keeps the owner token in the active session and restores an existing sessi
 
   await saveOwnerToken(SESSION_TOKEN);
   assert.equal(await getOwnerToken(), SESSION_TOKEN);
+  setOwnerSessionStorageForTests({
+    getItemAsync: async () => secureStoreToken,
+    setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
+    deleteItemAsync: async () => { secureStoreToken = null; },
+  }, 'native', true);
   assert.equal(await restoreOwnerSession(), true);
 
   await clearOwnerToken();
@@ -77,7 +81,12 @@ test('uses SecureStore on native when EXPO_OS is omitted by a custom build', { c
     assert.equal(secureStoreToken, SESSION_TOKEN);
     assert.equal(await getOwnerToken(), SESSION_TOKEN);
 
-    // A fresh app runtime must recover the token from SecureStore.
+    // Simulate a fresh app runtime with no in-memory session.
+    setOwnerSessionStorageForTests({
+      getItemAsync: async () => secureStoreToken,
+      setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
+      deleteItemAsync: async () => { secureStoreToken = null; },
+    }, 'native', true);
     assert.equal(await restoreOwnerSession(), true);
     assert.equal(await getOwnerToken(), SESSION_TOKEN);
 
@@ -95,6 +104,11 @@ test('uses SecureStore on native when EXPO_OS is omitted by a custom build', { c
 test('uses SecureStore when Expo runtime identifies Android', { concurrency: false }, async () => {
   await saveOwnerToken(SESSION_TOKEN);
   assert.equal(secureStoreToken, SESSION_TOKEN);
+  setOwnerSessionStorageForTests({
+    getItemAsync: async () => secureStoreToken,
+    setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
+    deleteItemAsync: async () => { secureStoreToken = null; },
+  }, 'native', true);
   assert.equal(await restoreOwnerSession(), true);
 });
 
