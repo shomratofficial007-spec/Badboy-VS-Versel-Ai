@@ -3,16 +3,26 @@ import { afterEach, test } from "node:test";
 import { handleApiRequest as rawHandleApiRequest } from "../../../../functions/api/[[path]].ts";
 
 
-const TEST_OWNER_TOKEN = "a".repeat(43);
+const TEST_SESSION_TOKEN = "b".repeat(64);
+const TEST_SESSION_DB = {
+  prepare(_query: string) {
+    return {
+      bind(..._values: unknown[]) {
+        return {
+          async first<T>() { return { owner_id: "badboy-personal-owner-v1" } as T; },
+          async run() { return { success: true, meta: { changes: 1 } }; },
+        };
+      },
+    };
+  },
+};
 
 async function handleApiRequest(request: Request, env: Parameters<typeof rawHandleApiRequest>[1]) {
   const headers = new Headers(request.headers);
-  if (!headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${TEST_OWNER_TOKEN}`);
-  }
+  headers.set("Authorization", `Bearer ${TEST_SESSION_TOKEN}`);
   return rawHandleApiRequest(
     new Request(request, { headers }),
-    { ...env, BADBOY_OWNER_TOKEN: env.BADBOY_OWNER_TOKEN ?? TEST_OWNER_TOKEN },
+    { ...env, AGENT_DB: TEST_SESSION_DB } as Parameters<typeof rawHandleApiRequest>[1],
   );
 }
 
