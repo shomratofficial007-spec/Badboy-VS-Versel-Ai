@@ -1,80 +1,65 @@
 import { Platform } from 'react-native';
 
-const OWNER_TOKEN_KEY = 'badboy-owner-token-v1';
+const SESSION_KEY = 'badboy-owner-session-v1';
 const DEFAULT_NATIVE_API_DOMAIN = 'https://badboy-vs-versel-ai.shomratofficial007.workers.dev';
+let activeSession: string | null = null;
 
-let activeToken: string | null = null;
-
-function isWebPlatform(): boolean {
-  // React Native's runtime platform is authoritative. Do not infer web from
-  // EXPO_OS or window/location because native Android runtimes may expose both.
-  return Platform.OS === 'web';
-}
-
-function authApiUrl() {
-  if (
-    typeof window !== 'undefined' &&
-    typeof window.location?.origin === 'string' &&
-    window.location.origin.startsWith('http')
-  ) {
-    return `${window.location.origin}/api/auth/verify`;
+function isWebPlatform(): boolean { return Platform.OS === 'web'; }
+function sessionApiUrl() {
+  if (typeof window !== 'undefined' && typeof window.location?.origin === 'string' && window.location.origin.startsWith('http')) {
+    return `${window.location.origin}/api/auth/session`;
   }
   const domain = process.env.EXPO_PUBLIC_DOMAIN?.trim() || DEFAULT_NATIVE_API_DOMAIN;
   const baseUrl = domain.startsWith('http') ? domain : `https://${domain}`;
-  return `${baseUrl.replace(/\/$/, '')}/api/auth/verify`;
+  return `${baseUrl.replace(/\/$/, '')}/api/auth/session`;
 }
-
 export async function getOwnerToken(): Promise<string | null> {
-  if (activeToken) return activeToken;
+  if (activeSession) return activeSession;
   if (isWebPlatform()) return null;
   try {
     const SecureStore = await import('expo-secure-store');
-    activeToken = await SecureStore.getItemAsync(OWNER_TOKEN_KEY);
-    return activeToken;
-  } catch {
-    return null;
-  }
+    activeSession = await SecureStore.getItemAsync(SESSION_KEY);
+    return activeSession;
+  } catch { return null; }
 }
-
-export async function saveOwnerToken(token: string): Promise<void> {
+export async function saveOwnerToken(sessionToken: string): Promise<void> {
   if (!isWebPlatform()) {
     const SecureStore = await import('expo-secure-store');
-    await SecureStore.setItemAsync(OWNER_TOKEN_KEY, token);
+    await SecureStore.setItemAsync(SESSION_KEY, sessionToken);
   }
-  activeToken = token;
+  activeSession = sessionToken;
 }
-
-export async function clearOwnerToken(): Promise<void> {
-  activeToken = null;
-  if (!isWebPlatform()) {
-    const SecureStore = await import('expo-secure-store');
-    await SecureStore.deleteItemAsync(OWNER_TOKEN_KEY);
-  }
-}
-
-export async function verifyOwnerToken(token: string): Promise<void> {
-  const response = await fetch(authApiUrl(), {
+/** Exchange the Owner Token for a server-generated session. The Owner Token is never persisted. */
+export async function verifyOwnerToken(ownerToken: string): Promise<string> {
+  const response = await fetch(sessionApiUrl(), {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    headers: { Authorization: `Bearer ${ownerToken}`, Accept: 'application/json' },
   });
   const payload = await response.json().catch(() => ({})) as {
-    authenticated?: boolean;
-    error?: string;
+    authenticated?: boolean; sessionToken?: string; error?: string;
   };
-  if (!response.ok || payload.authenticated !== true) {
-    const error = new Error(
-      payload.error ?? `Owner authentication failed (HTTP ${response.status}).`,
-    ) as Error & { status?: number };
+  if (!response.ok || payload.authenticated !== true || typeof payload.sessionToken !== 'string') {
+    const error = new Error(payload.error ?? `Owner authentication failed (HTTP ${response.status}).`) as Error & { status?: number };
     error.status = response.status;
     throw error;
   }
+  return payload.sessionToken;
 }
-
+export async function clearOwnerToken(): Promise<void> {
+  const session = await getOwnerToken();
+  activeSession = null;
+  if (session) {
+    try {
+      await fetch(sessionApiUrl(), { method: 'DELETE', headers: { Authorization: `Bearer ${session}`, Accept: 'application/json' } });
+    } catch { /* Local logout must still clear credentials when offline. */ }
+  }
+  if (!isWebPlatform()) {
+    const SecureStore = await import('expo-secure-store');
+    await SecureStore.deleteItemAsync(SESSION_KEY);
+  }
+}
 export async function restoreOwnerSession(): Promise<boolean> {
-  // Re-read native persistence at app startup instead of trusting this module's
-  // in-memory cache. This makes a fresh JS runtime restore test meaningful and
-  // detects a token that was cleared from SecureStore outside this module.
-  if (isWebPlatform()) return Boolean(activeToken);
-  activeToken = null;
+  if (isWebPlatform()) return Boolean(activeSession);
+  activeSession = null;
   return Boolean(await getOwnerToken());
 }
