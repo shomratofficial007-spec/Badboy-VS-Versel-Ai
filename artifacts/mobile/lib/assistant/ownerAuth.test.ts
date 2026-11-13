@@ -38,6 +38,7 @@ before(async () => {
 beforeEach(() => {
   process.env.EXPO_OS = 'android';
   mockPlatform.OS = 'android';
+  Reflect.set(globalThis, '__BADBOY_TEST_PLATFORM__', 'native');
   globalThis.fetch = (async () => new Response(JSON.stringify({ authenticated: true }), { status: 200 })) as typeof fetch;
 });
 
@@ -45,6 +46,7 @@ afterEach(async () => {
   await clearOwnerToken();
   globalThis.fetch = originalFetch;
   mockPlatform.OS = 'android';
+  Reflect.deleteProperty(globalThis, '__BADBOY_TEST_PLATFORM__');
   if (originalExpoOs === undefined) delete process.env.EXPO_OS;
   else process.env.EXPO_OS = originalExpoOs;
   secureStoreToken = null;
@@ -105,6 +107,7 @@ test('keeps web sessions in memory without writing the native SecureStore', { co
   try {
     process.env.EXPO_OS = 'web';
     mockPlatform.OS = 'web';
+    Reflect.set(globalThis, '__BADBOY_TEST_PLATFORM__', 'web');
     await saveOwnerToken(SESSION_TOKEN);
     assert.equal(secureStoreToken, null);
     assert.equal(await getOwnerToken(), SESSION_TOKEN);
