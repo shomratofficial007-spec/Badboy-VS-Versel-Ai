@@ -1,4 +1,4 @@
-# OWASP ZAP passive baseline scan against a verified Cloudflare preview for this PR.
+# OWASP ZAP baseline scan against the exact PR Worker code in a local, isolated Wrangler runtime.
 name: OWASP ZAP Baseline
 
 on:
@@ -12,7 +12,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
 
 jobs:
   zap-baseline:
@@ -23,113 +22,85 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Set up pnpm for isolated preview
-        if: github.event_name == 'pull_request'
+      - name: Set up pnpm
         uses: pnpm/action-setup@v6
         with:
           version: 10.8.1
 
-      - name: Set up Node.js for isolated preview
-        if: github.event_name == 'pull_request'
+      - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 22
+          cache: pnpm
 
-      - name: Install dependencies for isolated preview
-        if: github.event_name == 'pull_request'
+      - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Provision isolated PR Worker and D1 preview (or select production for non-PR scans)
-        id: target
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          RUN_ID: ${{ github.run_id }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Build the mobile web assets
+        run: pnpm --filter @workspace/mobile run build
+
+      - name: Apply D1 migrations to an isolated local database
+        run: pnpm exec wrangler d1 migrations apply badboy-agent-db --local
+
+      - name: Start the PR Worker locally
+        id: worker
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$EVENT_NAME" != "pull_request" ]]; then
-            echo "url=https://badboy-vs-versel-ai.shomratofficial007.workers.dev" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          npm exec --yes --package=wrangler@4.162.0 -- wrangler dev --local --ip 0.0.0.0 --port 8787 > "$RUNNER_TEMP/wrangler-zap.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/wrangler-zap.pid"
 
-          pnpm --filter @workspace/mobile run build
-
-          DB_NAME="badboy-zap-pr-${PR_NUMBER}-${RUN_ID}"
-          WORKER_NAME="badboy-zap-pr-${PR_NUMBER}-${RUN_ID}"
-          echo "$DB_NAME" > "$RUNNER_TEMP/zap-db-name"
-          echo "$WORKER_NAME" > "$RUNNER_TEMP/zap-worker-name"
-
-          create_output="$(pnpm exec wrangler d1 create "$DB_NAME" --location apac)"
-          printf '%s\n' "$create_output"
-          DB_ID="$(printf '%s\n' "$create_output" | sed -nE 's/.*database_id = "([^"]+)".*/\1/p' | head -n 1)"
-          if [[ -z "$DB_ID" ]]; then
-            echo "::error::Could not parse the isolated preview D1 database ID."
-            exit 1
-          fi
-
-          jq --arg worker "$WORKER_NAME" --arg dbname "$DB_NAME" --arg dbid "$DB_ID" '
-            .name = $worker |
-            .d1_databases = (.d1_databases | map(
-              if .binding == "AGENT_DB" then
-                .database_name = $dbname | .database_id = $dbid
-              else . end
-            ))
-          ' wrangler.json > wrangler.zap.json
-
-          # Only the disposable preview D1 receives migrations. Production D1 is never referenced.
-          pnpm exec wrangler d1 migrations apply "$DB_NAME" --remote --config wrangler.zap.json
-          preview_output="$(pnpm exec wrangler preview --name "$WORKER_NAME" --config wrangler.zap.json --json 2>&1)"
-          printf '%s\n' "$preview_output"
-          preview_url="$(printf '%s\n' "$preview_output" | grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' | tail -n 1)"
-          if [[ -z "$preview_url" ]]; then
-            echo "::error::Wrangler did not return a workers.dev URL for the isolated preview."
-            exit 1
-          fi
-          echo "url=$preview_url" >> "$GITHUB_OUTPUT"
-          echo "Provisioned isolated preview Worker: $preview_url"
-
-      - name: Verify security headers on the selected preview deployment
-        if: github.event_name == 'pull_request'
-        env:
-          TARGET_URL: ${{ steps.target.outputs.url }}
-        shell: bash
-        run: |
           for attempt in $(seq 1 30); do
-            headers="$(curl -fsS -D - -o /dev/null "$TARGET_URL/" || true)"
-            csp="$(printf '%s\n' "$headers" | grep -i '^content-security-policy:' | head -n 1 || true)"
-            if [[ -n "$csp" ]] \
-              && ! printf '%s' "$csp" | grep -qi 'unsafe-eval' \
-              && printf '%s\n' "$headers" | grep -qi '^cross-origin-embedder-policy: credentialless' \
-              && printf '%s\n' "$headers" | grep -qi '^cross-origin-opener-policy: same-origin' \
-              && printf '%s\n' "$headers" | grep -qi '^cross-origin-resource-policy: same-origin' \
-              && printf '%s\n' "$headers" | grep -qi '^permissions-policy:' \
-              && printf '%s\n' "$headers" | grep -qi '^x-frame-options:' \
-              && printf '%s\n' "$headers" | grep -qi '^strict-transport-security:' \
-              && printf '%s\n' "$headers" | grep -qi '^x-content-type-options:'; then
-              echo "Selected preview has the expected security headers and no unsafe-eval."
-              echo "$csp"
+            if curl --fail --silent http://127.0.0.1:8787/ -o /dev/null; then
+              echo "Local Wrangler Worker is responding."
               exit 0
             fi
-            echo "Selected preview not ready or CSP still permits unsafe-eval (attempt $attempt/30)."
-            sleep 10
+            if ! kill -0 "$(cat "$RUNNER_TEMP/wrangler-zap.pid")" 2>/dev/null; then
+              cat "$RUNNER_TEMP/wrangler-zap.log"
+              echo "::error::Local Wrangler Worker exited before becoming ready."
+              exit 1
+            fi
+            echo "Waiting for local Wrangler Worker (attempt $attempt/30)."
+            sleep 2
           done
-          echo "::error::Selected preview does not expose the expected secure CSP/headers."
+
+          cat "$RUNNER_TEMP/wrangler-zap.log"
+          echo "::error::Local Wrangler Worker did not become ready."
           exit 1
 
-      - name: Scan the verified Cloudflare deployment
+      - name: Verify security headers on the local Worker
+        if: steps.worker.outcome == 'success'
+        shell: bash
+        run: |
+          headers="$(curl -fsS -D - -o /dev/null http://127.0.0.1:8787/)"
+          csp="$(printf '%s\n' "$headers" | grep -i '^content-security-policy:' | head -n 1 || true)"
+          if [[ -z "$csp" ]] \
+            || printf '%s' "$csp" | grep -qi 'unsafe-eval' \
+            || ! printf '%s\n' "$headers" | grep -qi '^cross-origin-embedder-policy: credentialless' \
+            || ! printf '%s\n' "$headers" | grep -qi '^cross-origin-opener-policy: same-origin' \
+            || ! printf '%s\n' "$headers" | grep -qi '^cross-origin-resource-policy: same-origin' \
+            || ! printf '%s\n' "$headers" | grep -qi '^permissions-policy:' \
+            || ! printf '%s\n' "$headers" | grep -qi '^x-frame-options:' \
+            || ! printf '%s\n' "$headers" | grep -qi '^strict-transport-security:' \
+            || ! printf '%s\n' "$headers" | grep -qi '^x-content-type-options:'; then
+            echo "::error::Local Worker does not expose the expected secure CSP/headers."
+            printf '%s\n' "$headers"
+            exit 1
+          fi
+          echo "Local Worker exposes the expected security headers and no unsafe-eval."
+          echo "$csp"
+
+      - name: Scan the local Worker with OWASP ZAP
         id: zap
         uses: zaproxy/action-baseline@v0.15.0
         with:
-          target: ${{ steps.target.outputs.url }}
+          target: http://172.17.0.1:8787
           allow_issue_writing: false
           fail_action: false
           artifact_name: badboy-zap-baseline-report
 
       - name: Enforce ZAP risk threshold (no Medium or High alerts)
-        if: always() && steps.target.outcome == 'success' && steps.zap.outcome != 'skipped'
+        if: always() && steps.worker.outcome == 'success' && steps.zap.outcome != 'skipped'
         shell: bash
         run: |
           node --input-type=module <<'NODE'
@@ -142,7 +113,7 @@ jobs:
 
           const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
           const alerts = (report.site ?? []).flatMap((site) => site.alerts ?? []);
-          const blocking = alerts.filter((alert) => /^(High|Medium)\b/.test(alert.riskdesc ?? ''));
+          const blocking = alerts.filter((alert) => (alert.riskdesc ?? '').startsWith('High') || (alert.riskdesc ?? '').startsWith('Medium'));
 
           for (const alert of alerts) {
             console.log(`${alert.riskdesc ?? 'Unknown risk'}: ${alert.name}`);
@@ -158,19 +129,10 @@ jobs:
           console.log(`ZAP policy passed: no Medium/High alerts; ${alerts.length} Low/Informational finding(s) retained in the report.`);
           NODE
 
-      - name: Delete isolated preview Worker and D1 database
-        if: always() && github.event_name == 'pull_request'
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Stop the local Worker
+        if: always() && steps.worker.outcome != 'skipped'
         shell: bash
         run: |
-          set +e
-          if [[ -f "$RUNNER_TEMP/zap-worker-name" && -f wrangler.zap.json ]]; then
-            worker_name="$(cat "$RUNNER_TEMP/zap-worker-name")"
-            pnpm exec wrangler preview delete --name "$worker_name" --skip-confirmation --config wrangler.zap.json
-          fi
-          if [[ -f "$RUNNER_TEMP/zap-db-name" ]]; then
-            db_name="$(cat "$RUNNER_TEMP/zap-db-name")"
-            pnpm exec wrangler d1 delete "$db_name" --skip-confirmation
+          if [[ -f "$RUNNER_TEMP/wrangler-zap.pid" ]]; then
+            kill "$(cat "$RUNNER_TEMP/wrangler-zap.pid")" 2>/dev/null || true
           fi
