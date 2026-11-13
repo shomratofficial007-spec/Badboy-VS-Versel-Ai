@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { afterEach, before, beforeEach, test } from 'node:test';
+import { afterEach, before, beforeEach, mock, test } from 'node:test';
 
 let clearOwnerToken: typeof import('./ownerAuth').clearOwnerToken;
 let getOwnerToken: typeof import('./ownerAuth').getOwnerToken;
@@ -7,6 +7,8 @@ let restoreOwnerSession: typeof import('./ownerAuth').restoreOwnerSession;
 let saveOwnerToken: typeof import('./ownerAuth').saveOwnerToken;
 let verifyOwnerToken: typeof import('./ownerAuth').verifyOwnerToken;
 let setOwnerSessionStorageForTests: typeof import('./ownerAuth').__setOwnerSessionStorageForTests;
+
+mock.module('react-native', { namedExports: { Platform: { OS: 'android' } } });
 
 before(async () => {
   ({
