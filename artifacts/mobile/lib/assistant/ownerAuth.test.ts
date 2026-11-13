@@ -8,8 +8,9 @@ let restoreOwnerSession: typeof import('./ownerAuth').restoreOwnerSession;
 let saveOwnerToken: typeof import('./ownerAuth').saveOwnerToken;
 let verifyOwnerToken: typeof import('./ownerAuth').verifyOwnerToken;
 
+mock.module('react-native', { namedExports: { Platform: mockPlatform } });
+
 before(async () => {
-  mock.module('react-native', { namedExports: { Platform: mockPlatform } });
   ({
     clearOwnerToken,
     getOwnerToken,
