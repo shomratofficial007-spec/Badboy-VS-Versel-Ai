@@ -35,7 +35,7 @@ beforeEach(() => {
     getItemAsync: async () => secureStoreToken,
     setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
     deleteItemAsync: async () => { secureStoreToken = null; },
-  });
+  }, false);
   globalThis.fetch = (async () => new Response(JSON.stringify({ authenticated: true }), { status: 200 })) as typeof fetch;
 });
 
@@ -60,7 +60,7 @@ test('keeps the owner token in the active session and restores an existing sessi
     getItemAsync: async () => secureStoreToken,
     setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
     deleteItemAsync: async () => { secureStoreToken = null; },
-  }, true);
+  }, false, true);
   assert.equal(await restoreOwnerSession(), true);
 
   await clearOwnerToken();
@@ -88,7 +88,7 @@ test('uses SecureStore on native when EXPO_OS is omitted by a custom build', { c
       getItemAsync: async () => secureStoreToken,
       setItemAsync: async (_key: string, value: string) => { secureStoreToken = value; },
       deleteItemAsync: async () => { secureStoreToken = null; },
-    }, true);
+    }, false, true);
     assert.equal(await restoreOwnerSession(), true);
     assert.equal(await getOwnerToken(), SESSION_TOKEN);
 
