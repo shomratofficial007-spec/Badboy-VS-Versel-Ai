@@ -1,4 +1,4 @@
-name: Check Production D1 Migration Status
+name: Reconcile Production D1 Migration History
 
 on:
   workflow_dispatch:
@@ -14,15 +14,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  status:
-    name: Verify production D1 migration objects (read-only)
+  reconcile:
+    name: Reconcile D1 migration ledger after schema verification
     runs-on: ubuntu-latest
     environment: production
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Verify production D1 schema and migration objects (read-only)
+      - name: Verify existing schema and reconcile migration ledger
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -41,16 +41,28 @@ jobs:
               return 1
             fi
           }
+
           query_d1 "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name" /tmp/tables.json
           query_d1 "SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%' ORDER BY name" /tmp/indexes.json
-          echo "=== TABLES ==="
-          jq -r '.result[]?.results[]?.name' /tmp/tables.json
-          echo "=== INDEXES ==="
-          jq -r '.result[]?.results[]?.name' /tmp/indexes.json
-          echo "=== MIGRATION HISTORY ==="
-          if [ "$(jq -r '[.result[]?.results[]? | select(.name == "d1_migrations")] | length' /tmp/tables.json)" -eq 0 ]; then
-            echo "d1_migrations: MISSING"
-          else
-            query_d1 "SELECT * FROM d1_migrations ORDER BY id" /tmp/history.json
-            jq -r '.result[]?.results[]? | [.id, .name] | @tsv' /tmp/history.json
-          fi
+
+          expected_tables='["agent_tasks","agent_task_events","agent_projects","agent_project_memory","agent_audit_logs"]'
+          expected_indexes='["idx_agent_tasks_owner_updated","idx_agent_tasks_owner_status_created","idx_agent_task_events_owner_task_created","idx_agent_projects_owner_updated","idx_agent_memory_owner_project_updated","idx_agent_audit_owner_created"]'
+
+          for name in $(echo "$expected_tables" | jq -r '.[]'); do
+            if [ "$(jq --arg n "$name" '[.result[]?.results[]? | select(.name == $n)] | length' /tmp/tables.json)" -eq 0 ]; then
+              echo "::error::Required table $name is missing; refusing to alter migration history."
+              exit 1
+            fi
+          done
+          for name in $(echo "$expected_indexes" | jq -r '.[]'); do
+            if [ "$(jq --arg n "$name" '[.result[]?.results[]? | select(.name == $n)] | length' /tmp/indexes.json)" -eq 0 ]; then
+              echo "::error::Required index $name is missing; refusing to alter migration history."
+              exit 1
+            fi
+          done
+
+          echo "All tables and indexes from 0001_agent_persistence.sql already exist."
+          query_d1 "CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)" /tmp/create-ledger.json
+          query_d1 "INSERT INTO d1_migrations (name) SELECT '0001_agent_persistence.sql' WHERE NOT EXISTS (SELECT 1 FROM d1_migrations WHERE name='0001_agent_persistence.sql')" /tmp/record-migration.json
+
+          echo "Migration ledger reconciliation complete. No application tables or records were changed."
