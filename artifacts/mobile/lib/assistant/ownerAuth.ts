@@ -41,10 +41,8 @@ export async function expireOwnerSession(): Promise<void> {
 }
 
 function isWebPlatform(): boolean {
-  // An explicit test runtime prevents CI's browser-like globals from changing
-  // native SecureStore behavior during unit tests.
-  if (process.env.BADBOY_TEST_PLATFORM === 'native') return false;
-  if (process.env.BADBOY_TEST_PLATFORM === 'web') return true;
+  // An injected storage adapter is used only by native-session unit tests.
+  if (ownerSessionStorageOverride) return false;
   return Platform.OS === 'web' && typeof document !== 'undefined';
 }
 function sessionApiUrl() {
