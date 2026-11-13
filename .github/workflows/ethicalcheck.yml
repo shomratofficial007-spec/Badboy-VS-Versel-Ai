@@ -47,7 +47,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pnpm exec wrangler dev --local --ip 0.0.0.0 --port 8787 --persist-to "$RUNNER_TEMP/wrangler-zap" > "$RUNNER_TEMP/wrangler-zap.log" 2>&1 &
+          pnpm exec wrangler dev --local --ip 0.0.0.0 --port 8787 > "$RUNNER_TEMP/wrangler-zap.log" 2>&1 &
           echo "$!" > "$RUNNER_TEMP/wrangler-zap.pid"
 
           for attempt in $(seq 1 30); do
