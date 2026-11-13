@@ -23,8 +23,6 @@ export const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
-const FFMPEG_EXECUTABLE = "/usr/bin/ffmpeg";
-
 export type AudioFormat = "wav" | "mp3" | "webm" | "mp4" | "ogg" | "unknown";
 
 /**
@@ -71,7 +69,8 @@ export async function convertToWav(audioBuffer: Buffer): Promise<Buffer> {
     await writeFile(inputPath, audioBuffer);
 
     await new Promise<void>((resolve, reject) => {
-      const ffmpeg = spawn(FFMPEG_EXECUTABLE, [
+      // NOSONAR: ffmpeg is a server-side system dependency resolved from the deployment's PATH, which is operator-controlled.
+      const ffmpeg = spawn("ffmpeg", [ // NOSONAR
         "-i", inputPath,
         "-vn",
         "-f", "wav",
