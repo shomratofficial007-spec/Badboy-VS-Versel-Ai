@@ -10,7 +10,7 @@ import { apiUrl } from "./ownerJsonRequest";
 async function ownerAuthorizationHeader(): Promise<string> {
   const token = await getOwnerToken();
   if (!token) {
-    throw new Error('Owner login is required. Enter your Badboy Owner Token to continue.');
+    throw new Error('Owner login session is required. Please sign in again.');
   }
   return `Bearer ${token}`;
 }
@@ -98,6 +98,7 @@ export async function streamDeveloperAnalysis(
   });
 
   if (!response.ok) {
+    if (response.status === 401) await expireOwnerSession();
     const body = (await response.json().catch(() => ({}))) as {
       error?: string;
       code?: string;
