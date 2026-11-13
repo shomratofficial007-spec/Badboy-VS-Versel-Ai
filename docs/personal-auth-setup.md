@@ -33,7 +33,7 @@ The authenticated Worker now exposes owner-scoped Developer Agent data routes:
 - `GET/POST /api/developer/projects` — list and upsert the owner's projects.
 - `GET/POST/DELETE /api/developer/project-memory` — list, add, and delete project notes.
 - Each Developer Agent analysis creates a private D1 task record and records its completed/failed lifecycle.
-- The server derives the owner ID from the verified `BADBOY_OWNER_TOKEN`; client-supplied `ownerId` values are ignored.
+- The server derives the owner ID from the verified session; client-supplied `ownerId` values are ignored.
 - Task, project, and project-memory queries are scoped by that server-derived owner ID. A project memory cannot be attached to another owner's project.
 - These D1 records are separate from Chat History and personal Memory, which remain in the app's existing on-device storage.
 - Owner project notes with `private` or `general` privacy levels may be included in Developer Agent analysis context; notes marked `sensitive` are excluded from AI requests.
@@ -46,7 +46,7 @@ After reviewing the migration and confirming the intended Cloudflare database, a
 
 `pnpm exec wrangler d1 migrations apply badboy-agent-db --remote`
 
-Do not run this against an unintended database. Until the migration is applied, private D1 endpoints return a storage/database error and Developer Agent analysis cannot persist its task record. No remote migration is run automatically by CI.
+Do not run this against an unintended database. Until both migrations are applied, session login fails closed and Developer Agent D1 endpoints cannot persist task records. No remote migration is run automatically by CI.
 
 ## Security and rollout boundaries
 
