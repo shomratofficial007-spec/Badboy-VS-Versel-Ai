@@ -218,3 +218,73 @@ No default should be interpreted as permission to weaken the device-only memory 
 ## 14. This PR's change boundary
 
 This PR adds this architecture document only. It intentionally does not implement, configure, test, deploy, migrate, or enable any of the proposed features. Review and explicit owner approval are required before implementation work begins.
+
+
+## 15. Owner-exclusive authority and tamper-resistance (mandatory security requirement)
+
+The owner's requirement is that no user, public user, normal-mode session, external AI provider, or Developer Agent process other than the authenticated owner can unlock, authorize, or weaken the Private Vault. This is a strict design objective and a release-blocking acceptance requirement.
+
+**No software system can honestly guarantee literal 100% invulnerability.** A compromised owner device, stolen owner credentials, compromised hosting/GitHub administrator account, vulnerable operating system, or implementation defect can defeat controls. The implementation must therefore use defense in depth, minimize trust, and make unauthorized access or changes difficult, detectable, and recoverable rather than claiming impossible absolute security.
+
+### Required controls
+
+1. **Strong owner identity**
+   - Require a dedicated owner identity/session, not merely knowledge of a hidden UI route or shared phrase.
+   - Prefer passkey/WebAuthn or platform-backed strong authentication, with device biometric/PIN as an additional local unlock factor.
+   - Keep the Owner Verified Access Code separate from the normal login credential; store only a salted, purpose-bound verifier or cryptographic derivation, never plaintext.
+   - Do not let an AI model/provider authenticate the owner or decide that a user is the owner.
+
+2. **Multi-layer authorization**
+   - Enforce authorization on every sensitive backend operation and at the local Vault storage boundary; UI hiding is never sufficient.
+   - Use deny-by-default access control and explicit allowlists for each capability.
+   - Bind private sessions to the authenticated owner and approved device context where technically supportable.
+   - Use short-lived, revocable sessions; rotate credentials; invalidate sessions on logout, expiry, device removal, or suspected compromise.
+   - Require fresh owner re-authentication for high-risk actions such as changing security settings, exporting private data, granting new integrations, or authorizing repository writes.
+
+3. **Owner-only control plane**
+   - Only the Badboy Native control plane may interpret the Owner Capability Override policy.
+   - External/third-party/second-party providers receive neither the Owner Secret nor owner session tokens, private storage credentials, GitHub installation credentials, or permission to invoke privileged tools.
+   - Tool execution must receive narrowly scoped, short-lived capabilities from the trusted backend, never broad owner credentials.
+   - The model's text output is not authorization. A separate deterministic policy/permission service must approve every privileged action.
+
+4. **Anti-brute-force and anti-replay**
+   - Apply server-side and local rate limits, progressive delays, lockout/step-up verification, and security event logging to failed unlock attempts.
+   - Use high-entropy, rotatable secrets; one-time challenges/nonces where appropriate; replay-resistant session and command handling.
+   - Do not expose whether a guessed code was close or reveal secret metadata in error messages.
+
+5. **Device and data protection**
+   - Keep Private Vault memory, chat, files, and settings encrypted locally with keys protected by Android Keystore/platform secure hardware when available.
+   - Exclude Vault content and keys from cloud backups, analytics, crash reports, clipboard, and ordinary app logs.
+   - Lock the Vault on app backgrounding or configurable inactivity; require re-authentication to unlock.
+   - Detect unsupported or compromised device states where feasible and clearly communicate residual risk; do not silently fall back to weaker storage.
+
+6. **Repository and development safeguards**
+   - Keep the separate Developer Repository private and grant the agent only the minimum GitHub App permissions needed.
+   - Protect its default branch with required owner review, restricted push permissions, and no agent bypass.
+   - The agent may prepare branches, diffs, test evidence, and draft PRs; it cannot approve or merge its own PR.
+   - Require a distinct explicit owner approval for every merge and separately for production migration, deployment, release, or secret changes.
+   - Store GitHub credentials only in the trusted backend/ephemeral runner, never in prompts, mobile storage, or the Private Vault memory database.
+
+7. **Tamper-evident audit and alerts**
+   - Record unlocks, failed attempts, session issuance/revocation, permission grants, tool executions, file exports/deletions, repository writes, and approval decisions.
+   - Keep the local audit trail append-oriented and tamper-evident where practical; protect it separately from ordinary workspace content.
+   - Alert the owner to unexpected device/session changes, repeated failures, new integrations, or privileged actions.
+   - Do not include secrets or private content in audit events.
+
+8. **Recovery and emergency lock**
+   - Provide an owner-controlled emergency lock that revokes active private sessions and disables privileged tool execution.
+   - Define secure credential rotation and device-loss procedures before release.
+   - Do not create a hidden universal bypass, provider override, developer backdoor, or support override. Recovery must use a separately documented owner-controlled recovery method.
+   - If the owner loses the only recovery credential and no approved offline recovery exists, fail closed rather than silently weakening authentication.
+
+### Release acceptance tests (for a future implementation; not run in this documentation PR)
+
+- A normal user/session cannot discover or access Private Vault data or privileged routes, even by direct API calls.
+- A third-party AI provider cannot receive Owner Secret/session credentials or invoke privileged actions.
+- A forged client-side owner flag, modified UI, replayed command, expired session, or guessed code cannot unlock the Vault.
+- An agent cannot approve or merge its own changes, bypass protected branches, or initiate production-impacting actions without separate owner approval.
+- Private data does not appear in network requests, logs, telemetry, crash reports, or cloud backups.
+- Revocation/emergency lock invalidates active sessions and blocks privileged actions.
+- Security failures are fail-closed and produce an owner-visible, non-sensitive audit event.
+
+These controls are mandatory design requirements for the future implementation. They do not authorize adding code, changing repository settings, configuring secrets, or enabling any feature in this PR.
