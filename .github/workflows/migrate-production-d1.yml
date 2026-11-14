@@ -21,6 +21,7 @@ jobs:
     name: Apply pending migrations to production D1
     if: ${{ inputs.confirm_production == true }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: production
     steps:
       - name: Checkout repository
@@ -49,13 +50,57 @@ jobs:
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Missing CLOUDFLARE_ACCOUNT_ID secret"; exit 1; }
 
       - name: Show production migration status
-        run: pnpm exec wrangler d1 migrations list badboy-agent-db --remote --config wrangler.json
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          for attempt in 1 2 3 4 5; do
+            if output=$(pnpm exec wrangler d1 migrations list badboy-agent-db --remote --config wrangler.json 2>&1); then
+              printf '%s\n' "$output"
+              exit 0
+            else
+              status=$?
+            fi
+            printf '%s\n' "$output"
+            if ! grep -q '\[code: 7500\]' <<<"$output"; then
+              echo "::error::D1 migration status failed with a non-retryable error."
+              exit "$status"
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "::error::D1 returned transient internal error 7500 after 5 attempts."
+              exit 1
+            fi
+            delay=$((5 * (2 ** (attempt - 1))))
+            echo "D1 internal error 7500; retrying in ${delay}s (attempt $((attempt + 1))/5)."
+            sleep "$delay"
+          done
 
       - name: Apply production D1 migrations
-        run: pnpm exec wrangler d1 migrations apply badboy-agent-db --remote --config wrangler.json
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          for attempt in 1 2 3 4 5; do
+            if output=$(pnpm exec wrangler d1 migrations apply badboy-agent-db --remote --config wrangler.json 2>&1); then
+              printf '%s\n' "$output"
+              exit 0
+            else
+              status=$?
+            fi
+            printf '%s\n' "$output"
+            if ! grep -q '\[code: 7500\]' <<<"$output"; then
+              echo "::error::D1 migration apply failed with a non-retryable error."
+              exit "$status"
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "::error::D1 returned transient internal error 7500 after 5 apply attempts."
+              exit 1
+            fi
+            delay=$((5 * (2 ** (attempt - 1))))
+            echo "D1 internal error 7500; retrying in ${delay}s (attempt $((attempt + 1))/5)."
+            sleep "$delay"
+          done

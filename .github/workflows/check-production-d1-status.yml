@@ -1,10 +1,7 @@
-name: Reconcile Production D1 Migration History
+name: Verify Production D1 Schema
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/workflows/check-production-d1-status.yml"
 
 permissions:
   contents: read
@@ -14,15 +11,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  reconcile:
-    name: Reconcile D1 migration ledger after schema verification
+  verify:
+    name: Verify production D1 schema (read-only)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: production
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Verify existing schema and reconcile migration ledger
+      - name: Verify existing schema without modifying production
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -31,15 +26,32 @@ jobs:
         run: |
           set -euo pipefail
           API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$D1_DATABASE_ID/query"
+
           query_d1() {
-            local sql="$1" output="$2"
-            local status
-            status=$(curl -sS -X POST "$API" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" --data "$(jq -n --arg sql "$sql" '{sql:$sql}')" -o "$output" -w "%{http_code}")
-            echo "Cloudflare D1 API HTTP status: $status"
-            if [ "$status" -lt 200 ] || [ "$status" -ge 300 ] || [ "$(jq -r '.success // false' "$output")" != "true" ]; then
+            local sql="$1" output="$2" status attempt delay
+            for attempt in 1 2 3 4 5; do
+              status=$(curl -sS -X POST "$API" \
+                -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+                -H "Content-Type: application/json" \
+                --data "$(jq -n --arg sql "$sql" '{sql:$sql}')" \
+                -o "$output" -w "%{http_code}")
+              if [ "$status" -ge 200 ] && [ "$status" -lt 300 ] && [ "$(jq -r '.success // false' "$output")" = "true" ]; then
+                return 0
+              fi
+
               jq -c '{success, errors}' "$output" || true
-              return 1
-            fi
+              if ! jq -e 'any(.errors[]?; .code == 7500)' "$output" >/dev/null; then
+                echo "::error::D1 schema verification failed with a non-retryable API error (HTTP $status)."
+                return 1
+              fi
+              if [ "$attempt" -eq 5 ]; then
+                echo "::error::D1 returned transient internal error 7500 after 5 attempts."
+                return 1
+              fi
+              delay=$((5 * (2 ** (attempt - 1))))
+              echo "D1 internal error 7500; retrying in ${delay}s (attempt $((attempt + 1))/5)."
+              sleep "$delay"
+            done
           }
 
           query_d1 "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name" /tmp/tables.json
@@ -50,19 +62,15 @@ jobs:
 
           for name in $(echo "$expected_tables" | jq -r '.[]'); do
             if [ "$(jq --arg n "$name" '[.result[]?.results[]? | select(.name == $n)] | length' /tmp/tables.json)" -eq 0 ]; then
-              echo "::error::Required table $name is missing; refusing to alter migration history."
+              echo "::error::Required table $name is missing."
               exit 1
             fi
           done
           for name in $(echo "$expected_indexes" | jq -r '.[]'); do
             if [ "$(jq --arg n "$name" '[.result[]?.results[]? | select(.name == $n)] | length' /tmp/indexes.json)" -eq 0 ]; then
-              echo "::error::Required index $name is missing; refusing to alter migration history."
+              echo "::error::Required index $name is missing."
               exit 1
             fi
           done
 
-          echo "All tables and indexes from 0001_agent_persistence.sql already exist."
-          query_d1 "CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)" /tmp/create-ledger.json
-          query_d1 "INSERT INTO d1_migrations (name) SELECT '0001_agent_persistence.sql' WHERE NOT EXISTS (SELECT 1 FROM d1_migrations WHERE name='0001_agent_persistence.sql')" /tmp/record-migration.json
-
-          echo "Migration ledger reconciliation complete. No application tables or records were changed."
+          echo "Production D1 schema verification passed. This workflow performed SELECT queries only."
