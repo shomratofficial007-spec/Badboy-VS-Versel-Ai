@@ -60,8 +60,9 @@ jobs:
             if output=$(pnpm exec wrangler d1 migrations list badboy-agent-db --remote --config wrangler.json 2>&1); then
               printf '%s\n' "$output"
               exit 0
+            else
+              status=$?
             fi
-            status=$?
             printf '%s\n' "$output"
             if ! grep -q '\[code: 7500\]' <<<"$output"; then
               echo "::error::D1 migration status failed with a non-retryable error."
@@ -87,8 +88,9 @@ jobs:
             if output=$(pnpm exec wrangler d1 migrations apply badboy-agent-db --remote --config wrangler.json 2>&1); then
               printf '%s\n' "$output"
               exit 0
+            else
+              status=$?
             fi
-            status=$?
             printf '%s\n' "$output"
             if ! grep -q '\[code: 7500\]' <<<"$output"; then
               echo "::error::D1 migration apply failed with a non-retryable error."
