@@ -1,28 +1,44 @@
-name: Reconcile Production D1 Migration History
+name: Inspect Production D1 Schema (Manual)
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/workflows/check-production-d1-status.yml"
 
 permissions:
   contents: read
 
 concurrency:
-  group: badboy-production-d1-status-check
+  group: badboy-production-d1-inspection
   cancel-in-progress: false
 
 jobs:
-  reconcile:
-    name: Reconcile D1 migration ledger after schema verification
+  inspect:
+    name: Read-only production D1 inspection
     runs-on: ubuntu-latest
     environment: production
+    timeout-minutes: 5
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
+      - name: Verify Cloudflare token and required secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Missing CLOUDFLARE_API_TOKEN secret."; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Missing CLOUDFLARE_ACCOUNT_ID secret."; exit 1; }
 
-      - name: Verify existing schema and reconcile migration ledger
+          response="$(curl --silent --show-error --fail-with-body \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            https://api.cloudflare.com/client/v4/user/tokens/verify)"
+          status="$(printf '%s' "$response" | jq -r '.result.status // empty')"
+          if [[ "$status" != "active" ]]; then
+            echo "::error::Cloudflare API token is not active. Check the GitHub CLOUDFLARE_API_TOKEN secret."
+            exit 1
+          fi
+          echo "Cloudflare API token is active. D1 account/database access will be checked separately."
+
+      - name: Inspect production D1 schema (read-only)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -31,38 +47,40 @@ jobs:
         run: |
           set -euo pipefail
           API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$D1_DATABASE_ID/query"
+
           query_d1() {
             local sql="$1" output="$2"
             local status
-            status=$(curl -sS -X POST "$API" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" --data "$(jq -n --arg sql "$sql" '{sql:$sql}')" -o "$output" -w "%{http_code}")
-            echo "Cloudflare D1 API HTTP status: $status"
-            if [ "$status" -lt 200 ] || [ "$status" -ge 300 ] || [ "$(jq -r '.success // false' "$output")" != "true" ]; then
+            status="$(curl --silent --show-error -X POST "$API" \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              -H "Content-Type: application/json" \
+              --data "$(jq -n --arg sql "$sql" '{sql:$sql}')" \
+              -o "$output" -w "%{http_code}")"
+
+            if [[ "$status" -lt 200 || "$status" -ge 300 ]] || [[ "$(jq -r '.success // false' "$output")" != "true" ]]; then
+              echo "::error::Cloudflare D1 API request failed (HTTP $status)."
               jq -c '{success, errors}' "$output" || true
+              if [[ "$status" == "401" || "$status" == "403" ]]; then
+                echo "::error::The token must belong to the configured Cloudflare account and include D1 Read permission for this account."
+              fi
               return 1
             fi
           }
 
-          query_d1 "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name" /tmp/tables.json
-          query_d1 "SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%' ORDER BY name" /tmp/indexes.json
+          query_d1 "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name" /tmp/d1-tables.json
+          query_d1 "SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%' ORDER BY name" /tmp/d1-indexes.json
 
-          expected_tables='["agent_tasks","agent_task_events","agent_projects","agent_project_memory","agent_audit_logs"]'
-          expected_indexes='["idx_agent_tasks_owner_updated","idx_agent_tasks_owner_status_created","idx_agent_task_events_owner_task_created","idx_agent_projects_owner_updated","idx_agent_memory_owner_project_updated","idx_agent_audit_owner_created"]'
+          echo "=== TABLES ==="
+          jq -r '.result[]?.results[]?.name' /tmp/d1-tables.json
+          echo "=== INDEXES ==="
+          jq -r '.result[]?.results[]?.name' /tmp/d1-indexes.json
 
-          for name in $(echo "$expected_tables" | jq -r '.[]'); do
-            if [ "$(jq --arg n "$name" '[.result[]?.results[]? | select(.name == $n)] | length' /tmp/tables.json)" -eq 0 ]; then
-              echo "::error::Required table $name is missing; refusing to alter migration history."
-              exit 1
-            fi
-          done
-          for name in $(echo "$expected_indexes" | jq -r '.[]'); do
-            if [ "$(jq --arg n "$name" '[.result[]?.results[]? | select(.name == $n)] | length' /tmp/indexes.json)" -eq 0 ]; then
-              echo "::error::Required index $name is missing; refusing to alter migration history."
-              exit 1
-            fi
-          done
+          if [[ "$(jq '[.result[]?.results[]? | select(.name == "d1_migrations")] | length' /tmp/d1-tables.json)" -gt 0 ]]; then
+            query_d1 "SELECT id, name, applied_at FROM d1_migrations ORDER BY id" /tmp/d1-history.json
+            echo "=== RECORDED MIGRATIONS ==="
+            jq -r '.result[]?.results[]? | [.id, .name, .applied_at] | @tsv' /tmp/d1-history.json
+          else
+            echo "No d1_migrations ledger table is present."
+          fi
 
-          echo "All tables and indexes from 0001_agent_persistence.sql already exist."
-          query_d1 "CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)" /tmp/create-ledger.json
-          query_d1 "INSERT INTO d1_migrations (name) SELECT '0001_agent_persistence.sql' WHERE NOT EXISTS (SELECT 1 FROM d1_migrations WHERE name='0001_agent_persistence.sql')" /tmp/record-migration.json
-
-          echo "Migration ledger reconciliation complete. No application tables or records were changed."
+          echo "Read-only inspection complete. No production tables, records, or migration history were changed."
