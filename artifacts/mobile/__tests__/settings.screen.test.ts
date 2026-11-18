@@ -85,6 +85,7 @@ const roadmap = {
   automationHub: false, releaseRecovery: false, integrations: false, localMemoryControls: false,
 };
 const settings = {
+  aiProvider: 'server', aiModel: 'openrouter/free', aiBaseUrl: '', aiFallbackProvider: 'none', aiFallbackModel: '', floatingAssistantEnabled: false,
   personality: 'Helpful and concise', onlineAI: true, developerEngine: 'auto',
   theme: 'dark', autoImprove: false, developerMode: false,
   voiceProcessingConsent: false, voiceInputEnabled: true, voiceOutputEnabled: true,
