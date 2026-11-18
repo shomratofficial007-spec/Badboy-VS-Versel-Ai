@@ -14,7 +14,6 @@ type NativeJarvisModule = {
 function nativeModule(): NativeJarvisModule {
   if (Platform.OS !== 'android') throw new Error('Jarvis native controls are available on Android only.');
   // Lazy load keeps web builds and Node unit tests independent of Expo native runtime.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   return require('expo-modules-core').requireNativeModule('BadboyJarvis') as NativeJarvisModule;
 }
 
