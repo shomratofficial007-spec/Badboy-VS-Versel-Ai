@@ -81,8 +81,9 @@ async function streamOpenAICompatibleResponse(response: Response, onChunk: (chun
       const payload = line.slice(5).trim();
       if (!payload) continue;
       if (payload === '[DONE]') { complete = true; break; }
-      let event: { choices?: Array<{ delta?: { content?: unknown } }> };
+      let event: { error?: unknown; choices?: Array<{ delta?: { content?: unknown } }> };
       try { event = JSON.parse(payload) as typeof event; } catch { continue; }
+      if (event.error) throw new Error('AI Provider stream error.');
       const content = event.choices?.[0]?.delta?.content;
       if (typeof content === 'string' && content) onChunk(content);
     }
@@ -90,28 +91,39 @@ async function streamOpenAICompatibleResponse(response: Response, onChunk: (chun
 }
 
 async function streamConfiguredProviderReply(message: string, settings: AssistantSettings, onChunk: (chunk: string) => void, history: ChatHistoryItem[] = [], memoryContext = '', skillContext = ''): Promise<void> {
-  // Owner authentication remains mandatory; the owner token is never sent to the AI provider.
+  // Keep Owner Login mandatory; the Owner Token is never sent to a third-party provider.
   await ownerAuthorizationHeader();
   const providerId = settings.aiProvider;
   const preset = AI_PROVIDER_PRESETS.find((item) => item.id === providerId);
   const baseUrl = normalizeProviderBaseUrl(settings.aiBaseUrl || preset?.baseUrl || '');
   const model = settings.aiModel.trim();
   if (!model) throw new Error('Settings থেকে একটি Model নির্বাচন করুন।');
-  const apiKey = await getProviderApiKey(providerId);
-  if (!apiKey) throw new Error('এই Provider-এর API Key সংরক্ষিত নেই। Settings থেকে API Key যোগ করুন।');
-  const response = await expoFetch(baseUrl + '/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: 'Bearer ' + apiKey },
-    body: JSON.stringify({
-      model, stream: true, max_tokens: 4096,
-      messages: [
-        { role: 'system', content: settings.personality + '\n\nLanguage preference: ' + settings.voiceLanguage + (settings.developerMode ? '\nDeveloper mode is enabled. Preserve existing behavior and explain code changes clearly.' : '') + (memoryContext ? '\n\nRelevant project memory:\n' + memoryContext.slice(0, 5000) : '') + (skillContext ? '\n\nLocal skill guidance:\n' + skillContext.slice(0, 4000) : '') },
-        ...history.slice(-8).map(({ role, content }) => ({ role, content: content.slice(0, 3000) })),
-        { role: 'user', content: message.trim() },
-      ],
-    }),
-  });
-  await streamOpenAICompatibleResponse(response, onChunk);
+  const messages = [
+    { role: 'system', content: settings.personality + '\n\nLanguage preference: ' + settings.voiceLanguage + (settings.developerMode ? '\nDeveloper mode is enabled. Preserve existing behavior and explain code changes clearly.' : '') + (memoryContext ? '\n\nRelevant project memory:\n' + memoryContext.slice(0, 5000) : '') + (skillContext ? '\n\nLocal skill guidance:\n' + skillContext.slice(0, 4000) : '') },
+    ...history.slice(-8).map(({ role, content }) => ({ role, content: content.slice(0, 3000) })),
+    { role: 'user', content: message.trim() },
+  ];
+  const attempt = async (id: Exclude<typeof providerId, 'server'>, endpoint: string, selectedModel: string, onText: (chunk: string) => void) => {
+    const apiKey = await getProviderApiKey(id);
+    if (!apiKey) throw new Error('Provider ' + id + ' এর API Key Secure Storage-এ নেই।');
+    const response = await expoFetch(endpoint + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: 'Bearer ' + apiKey },
+      body: JSON.stringify({ model: selectedModel, stream: true, max_tokens: 4096, messages }),
+    });
+    await streamOpenAICompatibleResponse(response, onText);
+  };
+  let primaryEmitted = false;
+  try {
+    await attempt(providerId, baseUrl, model, (chunk) => { primaryEmitted = true; onChunk(chunk); });
+  } catch (primaryError) {
+    const fallbackId = settings.aiFallbackProvider ?? 'none';
+    const fallbackModel = settings.aiFallbackModel?.trim() ?? '';
+    const fallbackPreset = AI_PROVIDER_PRESETS.find((item) => item.id === fallbackId);
+    // Retry only if the primary failed before producing any text; never splice two model answers.
+    if (primaryEmitted || fallbackId === 'none' || fallbackId === providerId || !fallbackPreset || !fallbackModel) throw primaryError;
+    await attempt(fallbackId, normalizeProviderBaseUrl(fallbackPreset.baseUrl), fallbackModel, onChunk);
+  }
 }
 export async function streamReply(
   message: string,
