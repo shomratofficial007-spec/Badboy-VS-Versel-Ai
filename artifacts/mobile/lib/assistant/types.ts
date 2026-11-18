@@ -21,6 +21,10 @@ export type DeveloperEngineMode = 'native' | 'copilot' | 'auto';
 export type ThemeName = 'badboy' | 'neon' | 'ocean' | 'purple' | 'emerald' | 'sunset' | 'light';
 
 export interface AssistantSettings {
+  /** Selected provider; server preserves the existing owner-managed OpenRouter route. */
+  aiProvider: 'server' | 'openai' | 'openrouter' | 'gemini' | 'groq' | 'together' | 'custom';
+  aiModel: string;
+  aiBaseUrl: string;
   theme: ThemeName;
   onlineAI: boolean;
   personality: string;
@@ -55,6 +59,9 @@ export interface AssistantSettings {
 }
 
 export const DEFAULT_SETTINGS: AssistantSettings = {
+  aiProvider: 'server',
+  aiModel: 'openrouter/free',
+  aiBaseUrl: '',
   theme: 'badboy',
   onlineAI: true,
   personality: 'Warm, thoughtful, clear, and practical. Always reply in Bangla (Bengali).',
