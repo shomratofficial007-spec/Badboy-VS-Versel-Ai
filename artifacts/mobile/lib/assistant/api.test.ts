@@ -30,7 +30,7 @@ mock.module('./providerSettings.ts', {
   namedExports: {
     AI_PROVIDER_PRESETS: [{ id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1' }],
     getProviderApiKey: async () => 'provider-key-test',
-    normalizeProviderBaseUrl: (value: string) => new URL(value).toString().replace(/\\/$/, ''),
+    normalizeProviderBaseUrl: (value: string) => value.replace(/\\/+$/, ''),
   },
 });
 
