@@ -89,7 +89,7 @@ async function streamOpenAICompatibleResponse(response: Response, onChunk: (chun
   }
 }
 
-async function streamConfiguredProviderReply(message: string, settings: AssistantSettings, onChunk: (chunk: string) => void): Promise<void> {
+async function streamConfiguredProviderReply(message: string, settings: AssistantSettings, onChunk: (chunk: string) => void, history: ChatHistoryItem[] = [], memoryContext = '', skillContext = ''): Promise<void> {
   // Owner authentication remains mandatory; the owner token is never sent to the AI provider.
   await ownerAuthorizationHeader();
   const providerId = settings.aiProvider;
@@ -105,7 +105,8 @@ async function streamConfiguredProviderReply(message: string, settings: Assistan
     body: JSON.stringify({
       model, stream: true, max_tokens: 4096,
       messages: [
-        { role: 'system', content: settings.personality + '\n\nLanguage preference: ' + settings.voiceLanguage + (settings.developerMode ? '\nDeveloper mode is enabled. Preserve existing behavior and explain code changes clearly.' : '') },
+        { role: 'system', content: settings.personality + '\n\nLanguage preference: ' + settings.voiceLanguage + (settings.developerMode ? '\nDeveloper mode is enabled. Preserve existing behavior and explain code changes clearly.' : '') + (memoryContext ? '\n\nRelevant project memory:\n' + memoryContext.slice(0, 5000) : '') + (skillContext ? '\n\nLocal skill guidance:\n' + skillContext.slice(0, 4000) : '') },
+        ...history.slice(-8).map(({ role, content }) => ({ role, content: content.slice(0, 3000) })),
         { role: 'user', content: message.trim() },
       ],
     }),
@@ -147,6 +148,10 @@ export async function streamAgenticReply(
   skillContext = '',
   enabledPluginIds: AgentPluginId[] = DEFAULT_AGENT_PLUGIN_IDS,
 ) {
+  if (settings.aiProvider && settings.aiProvider !== 'server') {
+    await streamConfiguredProviderReply(message, settings, onChunk, history, memoryContext, skillContext);
+    return;
+  }
   const safeMemoryContext = memoryContext.trim().slice(0, 5000);
   const safeSkillContext = skillContext.trim().slice(0, 4000);
   const response = await expoFetch(apiUrl('/assistant/agent'), {
