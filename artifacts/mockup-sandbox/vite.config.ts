@@ -1,54 +1,91 @@
-import { defineConfig } from "vite";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+import { cartographer } from "@replit/vite-plugin-cartographer";
 import { mockupPreviewPlugin } from "./mockupPreviewPlugin";
+import {
+  parseAllowedHosts,
+  parsePort,
+  resolveApiProxyTarget,
+} from "./vite.config.helpers";
 
-const rawPort = process.env.PORT || "4173";
-const parsedPort = Number(rawPort);
-const port = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 4173;
-const basePath = process.env.BASE_PATH || "/";
+const configDir = path.dirname(fileURLToPath(import.meta.url));
 
-export default defineConfig({
-  base: basePath,
-  plugins: [
-    mockupPreviewPlugin(),
-    react(),
-    tailwindcss(),
-    runtimeErrorOverlay(),
-    ...(process.env.NODE_ENV !== "production" &&
-    process.env.REPL_ID !== undefined
-      ? [
-          await import("@replit/vite-plugin-cartographer").then((m) =>
-            m.cartographer({
-              root: path.resolve(import.meta.dirname, ".."),
-            }),
-          ),
-        ]
-      : []),
-  ],
-  resolve: {
-    alias: {
-      "@": path.resolve(import.meta.dirname, "src"),
+export default defineConfig(({ mode, command }) => {
+  // Only load the public Vite variables and explicitly server-side API settings.
+  const env = loadEnv(mode, configDir, ["VITE_", "API_"]);
+  const port = parsePort(process.env.PORT, 4173);
+  const configuredHosts = [
+    env.VITE_ALLOWED_HOSTS,
+    process.env.REPLIT_DOMAINS,
+    process.env.REPLIT_DEV_DOMAIN,
+  ]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .join(",");
+  const allowedHosts = parseAllowedHosts(configuredHosts);
+  const apiProxyTarget = resolveApiProxyTarget(
+    env.API_PROXY_TARGET,
+    env.API_PORT,
+  );
+  const isReplitDev = command === "serve" && Boolean(process.env.REPL_ID);
+
+  const replitPlugins = isReplitDev
+    ? [
+        runtimeErrorOverlay(),
+        cartographer({ root: path.resolve(configDir, "..") }),
+      ]
+    : [];
+
+  return {
+    base: process.env.BASE_PATH || "/",
+    plugins: [
+      mockupPreviewPlugin(),
+      react(),
+      tailwindcss(),
+      ...replitPlugins,
+    ],
+    resolve: {
+      alias: {
+        "@": path.resolve(configDir, "src"),
+      },
     },
-  },
-  root: path.resolve(import.meta.dirname),
-  build: {
-    outDir: path.resolve(import.meta.dirname, "dist"),
-    emptyOutDir: true,
-  },
-  server: {
-    port,
-    host: "0.0.0.0",
-    allowedHosts: true,
-    fs: {
-      strict: true,
+    root: configDir,
+    build: {
+      outDir: path.resolve(configDir, "dist"),
+      emptyOutDir: true,
+      minify: "esbuild",
+      sourcemap: false,
+      esbuild: {
+        drop: mode === "production" ? ["debugger"] : [],
+      },
     },
-  },
-  preview: {
-    port,
-    host: "0.0.0.0",
-    allowedHosts: true,
-  },
+    server: {
+      port,
+      host: "0.0.0.0",
+      allowedHosts,
+      proxy: {
+        "/api": {
+          target: apiProxyTarget,
+          changeOrigin: true,
+        },
+      },
+      fs: {
+        strict: true,
+      },
+    },
+    preview: {
+      port,
+      host: "0.0.0.0",
+      allowedHosts,
+      proxy: {
+        "/api": {
+          target: apiProxyTarget,
+          changeOrigin: true,
+        },
+      },
+    },
+  };
 });
