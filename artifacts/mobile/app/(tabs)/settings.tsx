@@ -33,6 +33,7 @@ import {
 } from '@/lib/assistant/developerData';
 import { buildExpertReviewPrompt, inspectBadboyRepository, type RepositoryEvidence } from '@/lib/assistant/expertReview';
 import { useColors } from '@/hooks/useColors';
+import { ProviderManagerSection } from '@/components/ProviderManagerSection';
 import {
   bindTelegramOwnerChat,
   checkTelegramMessages,
@@ -1332,6 +1333,8 @@ export default function SettingsScreen() {
           </Text>
         )}
       </View>
+
+      <ProviderManagerSection />
 
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
