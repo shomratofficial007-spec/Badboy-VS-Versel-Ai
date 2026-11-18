@@ -116,7 +116,7 @@ test('streamAgenticReply falls back to a second provider only before any primary
   fetchHandler = async (input) => {
     urls.push(String(input));
     if (urls.length === 1) return jsonResponse({ error: 'rate limited' }, 429);
-    return streamResponse(['data: {"choices":[{"delta":{"content":"fallback answer"}}]}\\n\\n', 'data: [DONE]\\n\\n']);
+    return streamResponse(['data: {"choices":[{"delta":{"content":"fallback answer"}}]}\n\n', 'data: [DONE]\n\n']);
   };
   const chunks: string[] = [];
   await streamAgenticReply('hello', { aiProvider: 'openai', aiModel: 'primary-model', aiBaseUrl: 'https://api.openai.com/v1', aiFallbackProvider: 'groq', aiFallbackModel: 'fallback-model', personality: 'helpful', voiceLanguage: 'en-US', developerMode: false } as any, [], (chunk) => chunks.push(chunk));
