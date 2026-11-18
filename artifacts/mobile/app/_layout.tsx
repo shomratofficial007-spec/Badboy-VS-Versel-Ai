@@ -5,11 +5,10 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { AssistantProvider } from '@/context/AssistantContext';
+import { AssistantProvider, useAssistant } from '@/context/AssistantContext';
 import { OwnerAuthProvider, useOwnerAuth } from '@/context/OwnerAuthContext';
 import { setAuthTokenGetter, setBaseUrl } from '@workspace/api-client-react';
 import { getOwnerToken } from '@/lib/assistant/ownerAuth';
-import { useAssistant } from '@/context/AssistantContext';
 import { canDrawFloatingAssistant, startFloatingAssistant, stopFloatingAssistant } from '@/lib/assistant/jarvis';
 import { Stack } from 'expo-router';
 

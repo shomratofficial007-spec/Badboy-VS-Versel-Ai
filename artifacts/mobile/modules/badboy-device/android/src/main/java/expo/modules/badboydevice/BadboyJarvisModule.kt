@@ -11,8 +11,7 @@ class BadboyJarvisModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("BadboyJarvis")
     Function("canDrawOverlays") {
-      val context = appContext.reactContext ?: return@Function false
-      Settings.canDrawOverlays(context)
+      appContext.reactContext?.let { Settings.canDrawOverlays(it) } ?: false
     }
     AsyncFunction("openOverlayPermissionSettings") {
       val context = appContext.reactContext ?: throw IllegalStateException("Android context unavailable")
@@ -32,10 +31,12 @@ class BadboyJarvisModule : Module() {
       true
     }
     Function("isAccessibilityEnabled") {
-      val context = appContext.reactContext ?: return@Function false
-      val enabled = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return@Function false
-      val expected = ComponentName(context, BadboyScreenReaderService::class.java).flattenToString()
-      enabled.split(':').any { it.equals(expected, ignoreCase = true) }
+      val context = appContext.reactContext
+      if (context == null) false else {
+        val enabled = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+        val expected = ComponentName(context, BadboyScreenReaderService::class.java).flattenToString()
+        enabled.split(':').any { it.equals(expected, ignoreCase = true) }
+      }
     }
     AsyncFunction("openAccessibilitySettings") {
       val context = appContext.reactContext ?: throw IllegalStateException("Android context unavailable")
