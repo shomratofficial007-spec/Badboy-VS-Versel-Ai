@@ -3,7 +3,7 @@ import {
   parseAllowedHosts,
   parsePort,
   resolveApiProxyTarget,
-} from "../../artifacts/mockup-sandbox/vite.config.helpers";
+} from "./vite.config.helpers";
 
 describe("Vite config helpers", () => {
   it("uses localhost-only defaults instead of a wildcard host rule", () => {
