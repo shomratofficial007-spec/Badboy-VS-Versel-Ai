@@ -123,7 +123,7 @@ export function ProviderManagerSection() {
   const saveSelection = () => {
     try {
       const normalizedBaseUrl = providerId === 'server' ? '' : normalizeProviderBaseUrl(baseUrl);
-      if (fallbackProvider !== 'none' && (fallbackProvider === providerId || !fallbackModel.trim() || !fallbackKeyConfigured)) {
+      if (fallbackProvider !== 'none' && (providerId === 'server' || fallbackProvider === providerId || !fallbackModel.trim() || !fallbackKeyConfigured)) {
         throw new Error('Fallback চালাতে আলাদা Provider, Model এবং সেই Provider-এর Secure Storage API Key প্রয়োজন।');
       }
       updateSettings({ aiProvider: providerId, aiBaseUrl: normalizedBaseUrl, aiModel: model.trim(), aiFallbackProvider: fallbackProvider, aiFallbackModel: fallbackProvider === 'none' ? '' : fallbackModel.trim() });
@@ -190,11 +190,11 @@ export function ProviderManagerSection() {
       )}
       <View style={{ borderTopWidth: 1, borderColor: colors.border, paddingTop: 11, gap: 8 }}>
         <Text style={{ color: colors.foreground, fontWeight: '800', fontSize: 13 }}>Multi-AI Fallback Routing</Text>
-        <Text style={{ color: colors.mutedForeground, fontSize: 11, lineHeight: 16 }}>Primary provider unavailable হলে প্রথম উত্তর আসার আগেই বিকল্প Provider-এ চেষ্টা করবে। উত্তর আংশিক আসার পর fallback হবে না, যাতে duplicate reply না হয়।</Text>
+        <Text style={{ color: colors.mutedForeground, fontSize: 11, lineHeight: 16 }}>External Primary provider unavailable হলে প্রথম উত্তর আসার আগেই বিকল্প Provider-এ চেষ্টা করবে। Server AI-এর fallback তার নিজস্ব server routing দিয়ে নিয়ন্ত্রিত। উত্তর আংশিক আসার পর fallback হবে না, যাতে duplicate reply না হয়।</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
           {[{ id: 'none', label: 'Off' }, ...AI_PROVIDER_PRESETS.filter((item) => item.id !== 'custom').map((item) => ({ id: item.id, label: item.label }))].map((item) => {
             const selected = fallbackProvider === item.id;
-            return <Pressable key={item.id} onPress={() => setFallbackProvider(item.id as typeof fallbackProvider)} style={{ minHeight: 36, paddingHorizontal: 10, borderRadius: 10, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.secondary : colors.background, justifyContent: 'center' }}><Text style={{ color: selected ? colors.primary : colors.foreground, fontSize: 11, fontWeight: selected ? '800' : '600' }}>{item.label}</Text></Pressable>;
+            return <Pressable key={item.id} onPress={() => setFallbackProvider(item.id as typeof fallbackProvider)} disabled={providerId === 'server' && item.id !== 'none'} style={{ minHeight: 36, paddingHorizontal: 10, borderRadius: 10, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.secondary : colors.background, justifyContent: 'center', opacity: providerId === 'server' && item.id !== 'none' ? 0.4 : 1 }}><Text style={{ color: selected ? colors.primary : colors.foreground, fontSize: 11, fontWeight: selected ? '800' : '600' }}>{item.label}</Text></Pressable>;
           })}
         </ScrollView>
         {fallbackProvider !== 'none' ? <View style={{ gap: 7 }}>
@@ -203,7 +203,7 @@ export function ProviderManagerSection() {
         </View> : null}
       </View>
       {error ? <Text accessibilityRole="alert" style={{ color: colors.destructive, fontSize: 12, lineHeight: 17 }}>{error}</Text> : null}
-      <Pressable onPress={saveSelection} disabled={(providerId !== 'server' && (!model.trim() || !baseUrl.trim() || !keyConfigured)) || (fallbackProvider !== 'none' && (fallbackProvider === providerId || !fallbackModel.trim() || !fallbackKeyConfigured))} style={{ minHeight: 44, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', opacity: ((providerId !== 'server' && (!model.trim() || !baseUrl.trim() || !keyConfigured)) || (fallbackProvider !== 'none' && (fallbackProvider === providerId || !fallbackModel.trim() || !fallbackKeyConfigured))) ? 0.45 : 1 }}>
+      <Pressable onPress={saveSelection} disabled={(providerId !== 'server' && (!model.trim() || !baseUrl.trim() || !keyConfigured)) || (fallbackProvider !== 'none' && (providerId === 'server' || fallbackProvider === providerId || !fallbackModel.trim() || !fallbackKeyConfigured))} style={{ minHeight: 44, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', opacity: ((providerId !== 'server' && (!model.trim() || !baseUrl.trim() || !keyConfigured)) || (fallbackProvider !== 'none' && (fallbackProvider === providerId || !fallbackModel.trim() || !fallbackKeyConfigured))) ? 0.45 : 1 }}>
         <Text style={{ color: colors.primaryForeground, fontWeight: '800' }}>Save Provider & Model</Text>
       </Pressable>
       <Text style={{ color: colors.mutedForeground, fontSize: 11, lineHeight: 16 }}>API Key শুধু এই Provider-এর জন্য Secure Storage-এ রাখা হয়। Chat request-এ Owner Login যাচাই করার পর Key সরাসরি নির্বাচিত HTTPS provider/proxy-তে পাঠানো হয়; Owner Token তৃতীয় পক্ষের কাছে পাঠানো হয় না। Server AI mode-এ Agent tools থাকে; custom provider mode-এ provider-এর OpenAI-compatible text chat ব্যবহৃত হয়।</Text>
