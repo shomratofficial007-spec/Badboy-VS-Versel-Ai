@@ -9,6 +9,7 @@ import {
   fetchProviderModels,
   getProviderApiKey,
   saveProviderApiKey,
+  normalizeProviderBaseUrl,
   type AIProviderId,
 } from '@/lib/assistant/providerSettings';
 
@@ -106,8 +107,13 @@ export function ProviderManagerSection() {
   };
 
   const saveSelection = () => {
-    updateSettings({ aiProvider: providerId, aiBaseUrl: providerId === 'server' ? '' : baseUrl.trim(), aiModel: model.trim() });
-    Alert.alert('AI সেটিংস সংরক্ষিত', 'পরবর্তী Chat request-এ নির্বাচিত Provider ও Model ব্যবহার হবে।');
+    try {
+      const normalizedBaseUrl = providerId === 'server' ? '' : normalizeProviderBaseUrl(baseUrl);
+      updateSettings({ aiProvider: providerId, aiBaseUrl: normalizedBaseUrl, aiModel: model.trim() });
+      Alert.alert('AI সেটিংস সংরক্ষিত', 'পরবর্তী Chat request-এ নির্বাচিত Provider ও Model ব্যবহার হবে।');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Provider configuration সঠিক নয়।');
+    }
   };
 
   return (
@@ -169,7 +175,7 @@ export function ProviderManagerSection() {
       <Pressable onPress={saveSelection} disabled={providerId !== 'server' && (!model.trim() || !baseUrl.trim() || !keyConfigured)} style={{ minHeight: 44, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', opacity: providerId !== 'server' && (!model.trim() || !baseUrl.trim() || !keyConfigured) ? 0.45 : 1 }}>
         <Text style={{ color: colors.primaryForeground, fontWeight: '800' }}>Save Provider & Model</Text>
       </Pressable>
-      <Text style={{ color: colors.mutedForeground, fontSize: 11, lineHeight: 16 }}>API Key শুধু এই Provider-এর জন্য Secure Storage-এ রাখা হয়। Chat request-এ Owner Login যাচাই করার পর Key সরাসরি নির্বাচিত HTTPS provider/proxy-তে পাঠানো হয়; Owner Token তৃতীয় পক্ষের কাছে পাঠানো হয় না।</Text>
+      <Text style={{ color: colors.mutedForeground, fontSize: 11, lineHeight: 16 }}>API Key শুধু এই Provider-এর জন্য Secure Storage-এ রাখা হয়। Chat request-এ Owner Login যাচাই করার পর Key সরাসরি নির্বাচিত HTTPS provider/proxy-তে পাঠানো হয়; Owner Token তৃতীয় পক্ষের কাছে পাঠানো হয় না। Server AI mode-এ Agent tools থাকে; custom provider mode-এ provider-এর OpenAI-compatible text chat ব্যবহৃত হয়।</Text>
     </View>
   );
 }
