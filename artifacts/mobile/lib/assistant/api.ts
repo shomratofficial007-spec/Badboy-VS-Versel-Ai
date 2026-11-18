@@ -70,6 +70,16 @@ async function streamOpenAICompatibleResponse(response: Response, onChunk: (chun
   const decoder = new TextDecoder();
   let buffer = '';
   let complete = false;
+  const emitLine = (line: string) => {
+    if (!line.startsWith('data:')) return;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === '[DONE]') return;
+    let event: { error?: unknown; choices?: Array<{ delta?: { content?: unknown } }> };
+    try { event = JSON.parse(payload) as typeof event; } catch { return; }
+    if (event.error) throw new Error('AI Provider stream error.');
+    const content = event.choices?.[0]?.delta?.content;
+    if (typeof content === 'string' && content) onChunk(content);
+  };
   while (!complete) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -77,19 +87,15 @@ async function streamOpenAICompatibleResponse(response: Response, onChunk: (chun
     const lines = buffer.split('\n');
     buffer = lines.pop() ?? '';
     for (const line of lines) {
-      if (!line.startsWith('data:')) continue;
-      const payload = line.slice(5).trim();
-      if (!payload) continue;
-      if (payload === '[DONE]') { complete = true; break; }
-      let event: { error?: unknown; choices?: Array<{ delta?: { content?: unknown } }> };
-      try { event = JSON.parse(payload) as typeof event; } catch { continue; }
-      if (event.error) throw new Error('AI Provider stream error.');
-      const content = event.choices?.[0]?.delta?.content;
-      if (typeof content === 'string' && content) onChunk(content);
+      if (line.trim() === 'data: [DONE]') { complete = true; break; }
+      emitLine(line);
     }
   }
+  buffer += decoder.decode();
+  if (!complete && buffer.trim()) {
+    for (const line of buffer.split('\n')) emitLine(line.trim());
+  }
 }
-
 async function streamConfiguredProviderReply(message: string, settings: AssistantSettings, onChunk: (chunk: string) => void, history: ChatHistoryItem[] = [], memoryContext = '', skillContext = ''): Promise<void> {
   // Keep Owner Login mandatory; the Owner Token is never sent to a third-party provider.
   await ownerAuthorizationHeader();
