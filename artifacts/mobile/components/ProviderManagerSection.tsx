@@ -47,7 +47,7 @@ export function ProviderManagerSection() {
       setKeyConfigured(false);
     }
     return () => { active = false; };
-  }, [providerId]);
+  }, [providerId, settings.aiBaseUrl, settings.aiModel, preset?.baseUrl]);
 
   const selectProvider = (id: AIProviderId) => {
     const nextPreset = AI_PROVIDER_PRESETS.find((item) => item.id === id);
@@ -145,7 +145,7 @@ export function ProviderManagerSection() {
             <TextInput value={keyDraft} onChangeText={setKeyDraft} secureTextEntry autoCapitalize="none" autoCorrect={false} placeholder={keyConfigured ? 'Saved key আছে • নতুন Key দিলে replace হবে' : 'Paste your provider API key'} placeholderTextColor={colors.mutedForeground} style={{ flex: 1, padding: 11, color: colors.foreground, fontSize: 13 }} />
             <Feather name="lock" size={15} color={colors.primary} />
           </View>
-          {keyConfigured ? <Text style={{ color: colors.primary, fontSize: 11 }}> <Feather name="check-circle" size={11} color={colors.primary} /> API Key Secure Storage-এ সংরক্ষিত (সম্পূর্ণ Key দেখানো হয় না)।</Text> : null}
+          {keyConfigured ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}><Feather name="check-circle" size={12} color={colors.primary} /><Text style={{ color: colors.primary, fontSize: 11 }}>API Key Secure Storage-এ সংরক্ষিত (সম্পূর্ণ Key দেখানো হয় না)।</Text></View> : null}
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Pressable onPress={() => void saveKey()} disabled={!keyDraft.trim() || busy} style={{ flex: 1, minHeight: 42, borderRadius: 11, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', opacity: !keyDraft.trim() || busy ? 0.5 : 1 }}>
               {busy ? <ActivityIndicator color={colors.primaryForeground} /> : <Text style={{ color: colors.primaryForeground, fontWeight: '800', fontSize: 12 }}>Save API Key</Text>}
