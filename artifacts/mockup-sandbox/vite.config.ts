@@ -3,6 +3,8 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+import { cartographer } from "@replit/vite-plugin-cartographer";
 import { mockupPreviewPlugin } from "./mockupPreviewPlugin";
 import {
   parseAllowedHosts,
@@ -12,7 +14,7 @@ import {
 
 const configDir = path.dirname(fileURLToPath(import.meta.url));
 
-export default defineConfig(async ({ mode, command }) => {
+export default defineConfig(({ mode, command }) => {
   // Only load the public Vite variables and explicitly server-side API settings.
   const env = loadEnv(mode, configDir, ["VITE_", "API_"]);
   const port = parsePort(process.env.PORT, 4173);
@@ -32,10 +34,8 @@ export default defineConfig(async ({ mode, command }) => {
 
   const replitPlugins = isReplitDev
     ? [
-        (await import("@replit/vite-plugin-runtime-error-modal")).default(),
-        (
-          await import("@replit/vite-plugin-cartographer")
-        ).cartographer({ root: path.resolve(configDir, "..") }),
+        runtimeErrorOverlay(),
+        cartographer({ root: path.resolve(configDir, "..") }),
       ]
     : [];
 
