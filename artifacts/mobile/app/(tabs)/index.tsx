@@ -1178,7 +1178,7 @@ export default function ChatScreen() {
           >
             <Feather name="grid" size={18} color={colors.primary} />
             <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: '700', flex: 1 }}>Tools &amp; Features</Text>
-            <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>8 tools + more</Text>
+            <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>9 tools + more</Text>
             <Feather name="chevron-right" size={17} color={colors.primary} />
           </Pressable>
         </View>

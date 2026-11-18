@@ -35,6 +35,7 @@ import {
 } from '@/lib/assistant/developerData';
 import { buildExpertReviewPrompt, inspectBadboyRepository, type RepositoryEvidence } from '@/lib/assistant/expertReview';
 import { useColors } from '@/hooks/useColors';
+import { canDrawFloatingAssistant, openFloatingAssistantPermissionSettings, startFloatingAssistant, stopFloatingAssistant, isScreenAwarenessEnabled, openScreenAwarenessSettings } from '@/lib/assistant/jarvis';
 import { ProviderManagerSection } from '@/components/ProviderManagerSection';
 import {
   bindTelegramOwnerChat,
@@ -1465,6 +1466,41 @@ export default function SettingsScreen() {
       </View>
 
       <ProviderManagerSection />
+
+      <View style={[styles.section, sectionCard]}>
+        <View style={styles.sectionTitleRow}>
+          <Feather name="aperture" size={17} color={colors.primary} />
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Jarvis Assistant & Quick Access</Text>
+        </View>
+        <Text style={[styles.body, { color: colors.mutedForeground }]}>
+          অন্য অ্যাপের উপর Badboy bubble দেখাবে। Bubble ট্যাপ করলে Chat খুলবে; long-press করলে অনুমোদিত Screen Awareness service থেকে দৃশ্যমান লেখা সংগ্রহ করে Chat draft-এ দেবে। কিছুই স্বয়ংক্রিয়ভাবে পাঠানো হবে না।
+        </Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+          <Pressable accessibilityRole="button" onPress={() => { void (async () => {
+            if (Platform.OS !== 'android') { Alert.alert('Android only', 'Floating assistant শুধু Android-এ পাওয়া যায়।'); return; }
+            if (!canDrawFloatingAssistant()) {
+              await openFloatingAssistantPermissionSettings();
+              Alert.alert('Permission প্রয়োজন', 'Android Settings-এ Display over other apps অনুমতি দিন, তারপর এখানে ফিরে Start Bubble চাপুন।');
+              return;
+            }
+            await startFloatingAssistant();
+            updateSettings({ floatingAssistantEnabled: true });
+            Alert.alert('Jarvis চালু', 'Floating assistant bubble এখন অন্য অ্যাপের উপর দেখা যাবে।');
+          })().catch((cause) => Alert.alert('চালু করা যায়নি', cause instanceof Error ? cause.message : 'Floating assistant চালু করা যায়নি।')); }} style={[styles.secondaryButton, { backgroundColor: colors.secondary, flexGrow: 1 }]}>
+            <Feather name="circle" size={14} color={colors.secondaryForeground} /><Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>Start Bubble</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" onPress={() => { void stopFloatingAssistant().then(() => updateSettings({ floatingAssistantEnabled: false })).catch((cause) => Alert.alert('বন্ধ করা যায়নি', cause instanceof Error ? cause.message : 'সমস্যা হয়েছে।')); }} style={[styles.secondaryButton, { backgroundColor: colors.secondary, flexGrow: 1 }]}>
+            <Feather name="x-circle" size={14} color={colors.secondaryForeground} /><Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>Stop Bubble</Text>
+          </Pressable>
+        </View>
+        <View style={[styles.rule, { backgroundColor: colors.border }]} />
+        <Text style={[styles.label, { color: colors.foreground }]}>Screen Awareness · {isScreenAwarenessEnabled() ? 'Enabled' : 'Not enabled'}</Text>
+        <Text style={[styles.smallNote, { color: colors.mutedForeground }]}>এই permission শুধু দৃশ্যমান UI text পড়তে ব্যবহৃত হয়। Password ও editable field বাদ দেওয়া হয়; email/phone pattern mask হয়। কোনো click, typing বা background recording নেই। Android Accessibility settings-এ গিয়ে “Badboy Screen Reader” নিজে enable করতে হবে।</Text>
+        <Pressable accessibilityRole="button" onPress={() => { void openScreenAwarenessSettings().catch((cause) => Alert.alert('Settings খুলতে সমস্যা', cause instanceof Error ? cause.message : 'সমস্যা হয়েছে।')); }} style={[styles.secondaryButton, { backgroundColor: colors.secondary, marginTop: 8 }]}>
+          <Feather name="eye" size={14} color={colors.secondaryForeground} /><Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>Configure Screen Awareness</Text>
+        </Pressable>
+        <Text style={[styles.smallNote, { color: colors.mutedForeground }]}>Floating bubble: {settings.floatingAssistantEnabled ? 'On' : 'Off'}. Screen context draft-এ preview করা যাবে—Send চাপার আগে তুমি যাচাই করবে।</Text>
+      </View>
 
       <Text style={[styles.eyebrow, { color: colors.primary }]}>VOICE &amp; DEVICE</Text>
       <View style={[styles.section, sectionCard]}>

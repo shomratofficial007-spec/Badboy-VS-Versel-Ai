@@ -16,7 +16,8 @@
     <receiver
       android:name="expo.modules.badboydevice.ReminderBootReceiver"
       android:enabled="true"
-      android:exported="true">
+      android:exported="true"
+      android:label="@string/badboy_screen_reader_label">
       <intent-filter>
         <action android:name="android.intent.action.BOOT_COMPLETED" />
         <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />

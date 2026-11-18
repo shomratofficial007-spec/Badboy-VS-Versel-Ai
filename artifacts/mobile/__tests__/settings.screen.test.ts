@@ -95,6 +95,7 @@ mock.module('../assets/images/badboy-settings-avatar.jpg', { defaultExport: {} }
 mock.module('expo-router', { namedExports: { useRouter: () => ({ back: () => {} }) } });
 
 mock.module('../components/ProviderManagerSection.tsx', { namedExports: { ProviderManagerSection: () => null } });
+mock.module('../lib/assistant/jarvis.ts', { namedExports: { canDrawFloatingAssistant: () => false, openFloatingAssistantPermissionSettings: async () => {}, startFloatingAssistant: async () => {}, stopFloatingAssistant: async () => {}, isScreenAwarenessEnabled: () => false, openScreenAwarenessSettings: async () => {} } });
 
 mock.module('react-native', {
   namedExports: {
