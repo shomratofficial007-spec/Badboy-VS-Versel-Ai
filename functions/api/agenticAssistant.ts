@@ -47,8 +47,16 @@ type CompletionResponse = {
 type AgentPluginId = "web-research" | "home-assistant" | "slack-history" | "discord-history" | "google-calendar";
 type AgentToolName = "calculator" | "current_datetime" | "count_words" | "web_research" | "home_assistant_states" | "slack_history" | "discord_history" | "google_calendar_events";
 
+export type AgenticProviderConfig = {
+  providerId: "gemini" | "groq" | "cerebras" | "sambanova" | "mistral" | "openrouter" | "cloudflare" | "cohere" | "nvidia" | "custom";
+  baseUrl: string;
+  apiKey: string;
+  modelId: string;
+};
+
 export type AgenticPayload = {
   message: string;
+  provider?: AgenticProviderConfig;
   personality: string;
   developerMode: boolean;
   mode: "single" | "multi";
@@ -329,6 +337,56 @@ export function validateAgenticPayload(body: unknown): AgenticValidation {
     return { ok: false, code: "INVALID_AGENTIC_PLUGINS", error: "enabledPlugins must be a unique list of supported plugin IDs." };
   }
   const enabledPlugins = rawPlugins as AgentPluginId[];
+  let provider: AgenticProviderConfig | undefined;
+  if (value.provider !== undefined) {
+    if (!value.provider || typeof value.provider !== "object" || Array.isArray(value.provider)) {
+      return { ok: false, code: "INVALID_AGENTIC_PROVIDER", error: "Provider configuration must be an object." };
+    }
+    const raw = value.provider as Record<string, unknown>;
+    const allowedProviders = ["gemini", "groq", "cerebras", "sambanova", "mistral", "openrouter", "cloudflare", "cohere", "nvidia", "custom"];
+    if (typeof raw.providerId !== "string" || !allowedProviders.includes(raw.providerId)) {
+      return { ok: false, code: "INVALID_AGENTIC_PROVIDER", error: "This provider is not supported by Agentic Chat. Local OmniRoute cannot be reached by the cloud Worker." };
+    }
+    if (typeof raw.apiKey !== "string" || !raw.apiKey.trim() || raw.apiKey.length > 500 || /[\r\n]/.test(raw.apiKey)) {
+      return { ok: false, code: "INVALID_AGENTIC_PROVIDER", error: "Provider API key is missing or invalid." };
+    }
+    if (typeof raw.modelId !== "string" || !raw.modelId.trim() || raw.modelId.length > 200) {
+      return { ok: false, code: "INVALID_AGENTIC_PROVIDER", error: "A valid provider model must be selected." };
+    }
+    if (typeof raw.baseUrl !== "string" || raw.baseUrl.length > 300) {
+      return { ok: false, code: "INVALID_AGENTIC_PROVIDER", error: "Provider base URL is invalid." };
+    }
+    let endpoint: URL;
+    try { endpoint = new URL(raw.baseUrl); } catch {
+      return { ok: false, code: "INVALID_AGENTIC_PROVIDER", error: "Provider base URL must be a valid HTTPS URL." };
+    }
+    const host = endpoint.hostname.toLowerCase();
+    const isIpLiteral = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host) || host.startsWith("[") || host.includes(":");
+    const officialDomains: Partial<Record<AgenticProviderConfig["providerId"], string>> = {
+      gemini: "googleapis.com",
+      groq: "groq.com",
+      cerebras: "cerebras.ai",
+      sambanova: "sambanova.ai",
+      mistral: "mistral.ai",
+      openrouter: "openrouter.ai",
+      cloudflare: "cloudflare.com",
+      cohere: "cohere.com",
+      nvidia: "nvidia.com",
+    };
+    const officialDomain = officialDomains[raw.providerId as AgenticProviderConfig["providerId"]];
+    const wrongProviderHost = officialDomain !== undefined && host !== officialDomain && !host.endsWith(`.${officialDomain}`);
+    if (endpoint.protocol !== "https:" || endpoint.username || endpoint.password || endpoint.search || endpoint.hash
+      || (endpoint.port && endpoint.port !== "443") || isIpLiteral || wrongProviderHost
+      || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) {
+      return { ok: false, code: "INVALID_AGENTIC_PROVIDER", error: "Provider URL must use the provider's public HTTPS hostname without credentials, query strings, fragments, or custom ports." };
+    }
+    provider = {
+      providerId: raw.providerId as AgenticProviderConfig["providerId"],
+      baseUrl: endpoint.toString().replace(/\/+$/, ""),
+      apiKey: raw.apiKey.trim(),
+      modelId: raw.modelId.trim(),
+    };
+  }
   const memoryContext = value.memoryContext === undefined ? "" : value.memoryContext;
   const skillContext = value.skillContext === undefined ? "" : value.skillContext;
   if (typeof memoryContext !== "string" || memoryContext.length > 5000) return { ok: false, code: "INVALID_AGENTIC_CONTEXT", error: "memoryContext must be a string up to 5,000 characters." };
@@ -356,6 +414,7 @@ export function validateAgenticPayload(body: unknown): AgenticValidation {
     ok: true,
     value: {
       message: value.message.trim(),
+      ...(provider ? { provider } : {}),
       personality: typeof value.personality === "string" ? value.personality.trim() : "",
       developerMode: value.developerMode === true,
       mode,
@@ -375,8 +434,10 @@ function systemPrompt(personality: string, developerMode: boolean): string {
   return [base, developer, personality.slice(0, 1000)].filter(Boolean).join("\n\n");
 }
 
-function modelErrorMessage(payload: CompletionResponse, status: number): string {
-  return payload.error?.message?.slice(0, 300) || `OpenRouter returned HTTP ${status}.`;
+function modelErrorMessage(payload: CompletionResponse, status: number, secret?: string): string {
+  const message = payload.error?.message ?? `AI provider returned HTTP ${status}.`;
+  const safeMessage = secret ? message.split(secret).join("[redacted]") : message;
+  return safeMessage.slice(0, 300);
 }
 
 export function normalizeStructuredAgentPlan(content: string): string | null {
@@ -424,16 +485,20 @@ async function requestCompletion(
   apiKey: string,
   messages: ChatMessage[],
   options: { tools?: boolean; toolDefinitions?: readonly unknown[]; stream?: boolean; maxTokens?: number; responseFormat?: "json_object" } = {},
+  provider?: AgenticProviderConfig,
 ): Promise<Response> {
   let lastStatus = 503;
-  for (const model of selectAgentModels(messages)) {
+  const models = provider ? [provider.modelId] : selectAgentModels(messages);
+  for (const model of models) {
     // Only the dynamic free router and explicitly free model IDs are allowed.
-    if (model !== "openrouter/free" && !model.endsWith(":free")) continue;
-    const response = await fetch(OPENROUTER_URL, {
+    if (!provider && model !== "openrouter/free" && !model.endsWith(":free")) continue;
+    const response = await fetch(provider ? `${provider.baseUrl}/chat/completions` : OPENROUTER_URL, {
       method: "POST",
+      redirect: "error",
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${provider?.apiKey ?? apiKey}`,
         "Content-Type": "application/json",
+        "Cache-Control": "no-store",
         "X-Title": "Badboy Agentic Assistant",
       },
       body: JSON.stringify({
@@ -450,14 +515,16 @@ async function requestCompletion(
     if (![400, 404, 408, 429, 500, 502, 503, 504].includes(response.status)) return response;
     await response.body?.cancel().catch(() => undefined);
   }
-  return jsonResponse({ code: "AGENT_MODELS_UNAVAILABLE", error: `No configured free model is available (last HTTP ${lastStatus}).` }, lastStatus === 429 ? 429 : 502);
+  return provider
+    ? jsonResponse({ code: "AGENT_PROVIDER_UNAVAILABLE", error: `The selected provider/model is unavailable (HTTP ${lastStatus}). Check the provider model and tool-calling support.` }, lastStatus === 429 ? 429 : 502)
+    : jsonResponse({ code: "AGENT_MODELS_UNAVAILABLE", error: `No configured free model is available (last HTTP ${lastStatus}).` }, lastStatus === 429 ? 429 : 502);
 }
 
-async function completeText(apiKey: string, messages: ChatMessage[], tools = false, toolDefinitions?: readonly unknown[], responseFormat?: "json_object"): Promise<{ content: string; messages: ChatMessage[] }> {
-  const response = await requestCompletion(apiKey, messages, { tools, toolDefinitions, responseFormat, maxTokens: 1800 });
+async function completeText(apiKey: string, messages: ChatMessage[], tools = false, toolDefinitions?: readonly unknown[], responseFormat?: "json_object", provider?: AgenticProviderConfig): Promise<{ content: string; messages: ChatMessage[] }> {
+  const response = await requestCompletion(apiKey, messages, { tools, toolDefinitions, responseFormat, maxTokens: 1800 }, provider);
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as CompletionResponse;
-    throw new Error(modelErrorMessage(body, response.status));
+    throw new Error(modelErrorMessage(body, response.status, provider?.apiKey));
   }
   const body = await response.json() as CompletionResponse;
   const message = body.choices?.[0]?.message;
@@ -484,6 +551,7 @@ async function runToolAgent(
   emit: (event: Record<string, unknown>) => void,
   env: IntegrationEnv,
   enabledPlugins: AgentPluginId[],
+  provider?: AgenticProviderConfig,
 ): Promise<string> {
   const toolPluginMap: Record<string, AgentPluginId> = {
     web_research: "web-research",
@@ -499,7 +567,7 @@ async function runToolAgent(
   let current = [...messages];
   let totalCalls = 0;
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-    const result = await completeText(apiKey, current, true, enabledToolDefinitions);
+    const result = await completeText(apiKey, current, true, enabledToolDefinitions, undefined, provider);
     current = result.messages;
     const assistant = current[current.length - 1];
     const calls = assistant.tool_calls ?? [];
@@ -587,11 +655,12 @@ function parseOpenRouterDeltas(event: string): { content: string[]; done: boolea
 async function streamFinalAnswer(
   apiKey: string,
   messages: ChatMessage[],
+  provider?: AgenticProviderConfig,
 ): Promise<Response> {
-  const upstream = await requestCompletion(apiKey, messages, { stream: true, maxTokens: 2400 });
+  const upstream = await requestCompletion(apiKey, messages, { stream: true, maxTokens: 2400 }, provider);
   if (!upstream.ok || !upstream.body) {
     const body = await upstream.json().catch(() => ({})) as CompletionResponse;
-    return jsonResponse({ code: "AGENT_FINAL_RESPONSE_FAILED", error: modelErrorMessage(body, upstream.status) }, upstream.status === 429 ? 429 : 502);
+    return jsonResponse({ code: "AGENT_FINAL_RESPONSE_FAILED", error: modelErrorMessage(body, upstream.status, provider?.apiKey) }, upstream.status === 429 ? 429 : 502);
   }
   const encoder = new TextEncoder();
   const reader = upstream.body.getReader();
@@ -650,8 +719,9 @@ export async function handleAgenticAssistantRequest(request: Request, env: Agent
   if (rawBody instanceof Response) return rawBody;
   const validation = validateAgenticPayload(rawBody);
   if (!validation.ok) return jsonResponse({ code: validation.code, error: validation.error }, 400);
-  const apiKey = env.OPENROUTER_API_KEY?.trim();
-  if (!apiKey) return jsonResponse({ code: "AI_NOT_CONFIGURED", error: "OpenRouter is not configured on the server." }, 503);
+  const provider = validation.value.provider;
+  const apiKey = provider ? "" : (env.OPENROUTER_API_KEY?.trim() ?? "");
+  if (!provider && !apiKey) return jsonResponse({ code: "AI_NOT_CONFIGURED", error: "OpenRouter is not configured on the server." }, 503);
 
   const { message, personality, developerMode, mode, history, enabledPlugins, memoryContext, skillContext } = validation.value;
   const system = systemPrompt(personality, developerMode);
@@ -681,13 +751,13 @@ export async function handleAgenticAssistantRequest(request: Request, env: Agent
           ];
           let planned: { content: string; messages: ChatMessage[] };
           try {
-            planned = await completeText(apiKey, plannerMessages, false, undefined, "json_object");
+            planned = await completeText(apiKey, plannerMessages, false, undefined, "json_object", provider);
           } catch {
             // Provider/model may not support JSON mode; retry with an explicit JSON-only prompt.
             planned = await completeText(apiKey, [
               ...plannerMessages,
               { role: "system", content: "Fallback: return only valid JSON. Do not use Markdown fences." },
-            ]);
+            ], false, undefined, undefined, provider);
           }
           let structuredPlan = normalizeStructuredAgentPlan(planned.content);
           if (!structuredPlan) {
@@ -696,7 +766,7 @@ export async function handleAgenticAssistantRequest(request: Request, env: Agent
                 ...plannerMessages,
                 { role: "assistant", content: planned.content.slice(0, 3000) },
                 { role: "user", content: "Your previous plan was not valid structured JSON. Return a valid JSON object with goal, steps (1-8 task/success_criteria objects), and risks only." },
-              ], false, undefined, "json_object");
+              ], false, undefined, "json_object", provider);
               structuredPlan = normalizeStructuredAgentPlan(repaired.content);
               send({ type: "recovery", reason: "invalid_structured_plan", recovered: Boolean(structuredPlan) });
             } catch {
@@ -716,14 +786,14 @@ export async function handleAgenticAssistantRequest(request: Request, env: Agent
           ...baseMessages.slice(1),
           { role: "assistant", content: `পরিকল্পনা:\n${plan}` },
         ];
-        const execution = await runToolAgent(apiKey, executorMessages, send, env, enabledPlugins);
+        const execution = await runToolAgent(apiKey, executorMessages, send, env, enabledPlugins, provider);
         send({ type: "agent", agent: "executor", status: "completed" });
         if (mode === "multi") {
           send({ type: "agent", agent: "reviewer", status: "started" });
           const reviewed = await completeText(apiKey, [
             { role: "system", content: "You are Badboy Reviewer. Check the proposed answer for correctness, missing requirements, unsupported claims, and safety. Return concise review notes in Bangla. Do not invent facts." },
             { role: "user", content: `User request:\n${message}\n\nPlan:\n${plan}\n\nExecutor result:\n${execution}\n\nList any corrections needed.` },
-          ]);
+          ], false, undefined, undefined, provider);
           review = reviewed.content.slice(0, 3000) || review;
           send({ type: "agent", agent: "reviewer", status: "completed" });
         }
@@ -732,7 +802,7 @@ export async function handleAgenticAssistantRequest(request: Request, env: Agent
           { role: "system", content: `${system}\n\nYou are the final synthesizer in a multi-agent workflow. Answer the user's original request directly. Incorporate valid reviewer corrections, do not mention internal orchestration unless asked, and do not claim actions that were not performed.` },
           { role: "user", content: `Original request:\n${message}\n\nPlan:\n${plan}\n\nExecutor result (including any tool findings):\n${execution}\n\nReviewer notes:\n${review}\n\nWrite the final answer in Bangla unless English was explicitly requested.` },
         ];
-        const finalResponse = await streamFinalAnswer(apiKey, finalMessages);
+        const finalResponse = await streamFinalAnswer(apiKey, finalMessages, provider);
         if (!finalResponse.ok || !finalResponse.body) {
           const body = await finalResponse.text();
           send({ error: body.slice(0, 1000) || "Could not synthesize the final response." });

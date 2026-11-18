@@ -1,5 +1,6 @@
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -76,6 +77,7 @@ interface LocalTelegramMessage {
 export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { settings, updateSettings, clearChat, expertReviewDraft, clearExpertReviewDraft } = useAssistant();
   const { signOut } = useOwnerAuth();
   const [personalityDraft, setPersonalityDraft] = useState(settings.personality);
@@ -705,6 +707,20 @@ export default function SettingsScreen() {
       <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
         তোমার অভিজ্ঞতা, ভয়েস, গোপনীয়তা ও ডেভেলপার টুল—সব এক জায়গায়।
       </Text>
+
+      <View style={[styles.section, sectionCard, { padding: 0, overflow: 'hidden' }]}>
+        <Pressable onPress={() => router.push('/(tabs)/providers' as never)} style={{ minHeight: 68, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <View style={{ width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.secondary }}><Feather name="grid" size={18} color={colors.primary} /></View>
+          <View style={{ flex: 1, gap: 3 }}><Text style={[styles.label, { color: colors.foreground }]}>Model Provider</Text><Text style={[styles.body, { color: colors.mutedForeground }]}>Gemini, Groq, OmniRoute ও আরও Provider</Text></View>
+          <Feather name="chevron-right" size={19} color={colors.mutedForeground} />
+        </Pressable>
+        <View style={{ height: 1, backgroundColor: colors.border }} />
+        <Pressable onPress={() => router.push('/(tabs)/models' as never)} style={{ minHeight: 68, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <View style={{ width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.secondary }}><Feather name="list" size={18} color={colors.primary} /></View>
+          <View style={{ flex: 1, gap: 3 }}><Text style={[styles.label, { color: colors.foreground }]}>Default Models</Text><Text style={[styles.body, { color: colors.mutedForeground }]}>Badboy-এর default ও custom model বেছে নাও</Text></View>
+          <Feather name="chevron-right" size={19} color={colors.mutedForeground} />
+        </Pressable>
+      </View>
 
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}><Feather name="droplet" size={17} color={colors.primary} /><Text style={[styles.sectionTitle,{color:colors.foreground}]}>অ্যাপ থিম</Text></View>

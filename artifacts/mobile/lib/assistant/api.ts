@@ -3,6 +3,8 @@ import * as FileSystem from 'expo-file-system/legacy';
 import type { AssistantSettings } from '@/lib/assistant/types';
 import { getTranscriptionLanguageCode } from './transcriptionLanguage';
 import { getOwnerToken } from './ownerAuth';
+import { streamProviderReply } from './providerChat';
+import { getCloudflareAccountId, getDefaultModel, getProvider, getProviderBaseUrl, getProviderKey } from './providerManager';
 
 // This repository deploys its own Worker; do not send native APK traffic to the
 // unrelated legacy Voice-Memory-Assistant Worker.
@@ -64,6 +66,13 @@ export async function streamReply(
   settings: AssistantSettings,
   onChunk: (chunk: string) => void,
 ) {
+  // A locally selected provider/model takes precedence for ordinary chat.
+  // Agentic chat and developer workflows keep their existing owner-authenticated orchestration path.
+  const providerHandled = await streamProviderReply(
+    `${settings.personality}\n\nLanguage preference: ${settings.voiceLanguage}.\n\n${message}`,
+    onChunk,
+  );
+  if (providerHandled) return;
   const response = await expoFetch(apiUrl('/assistant/chat'), {
     method: 'POST',
     headers: {
@@ -80,6 +89,34 @@ export async function streamReply(
   await streamSseResponse(response, onChunk);
 }
 
+type AgenticProviderRequest = {
+  providerId: string;
+  baseUrl: string;
+  apiKey: string;
+  modelId: string;
+};
+
+async function getAgenticProviderRequest(): Promise<AgenticProviderRequest | undefined> {
+  const selected = await getDefaultModel();
+  if (!selected) return undefined;
+  const provider = getProvider(selected.providerId);
+  if (!provider) throw new Error('Selected AI provider is not supported.');
+  if (selected.providerId === 'omniroute') {
+    throw new Error('OmniRoute is running on this phone (127.0.0.1); cloud Agentic Chat cannot reach a phone-local endpoint. Use a public HTTPS provider for Agentic Chat.');
+  }
+  const apiKey = await getProviderKey(selected.providerId);
+  if (!apiKey) throw new Error(`${provider.name} API Key is missing. Reconnect this provider in Settings.`);
+  let baseUrl = (await getProviderBaseUrl(selected.providerId)).replace(/\/+$/, '');
+  if (provider.compatible === 'gemini') baseUrl += '/openai';
+  if (provider.compatible === 'cohere') baseUrl += '/compatibility/v1';
+  if (provider.compatible === 'cloudflare') {
+    const accountId = await getCloudflareAccountId();
+    if (!accountId) throw new Error('Cloudflare Account ID is required for Agentic Chat.');
+    baseUrl += `/accounts/${accountId}/ai/v1`;
+  }
+  return { providerId: selected.providerId, baseUrl, apiKey, modelId: selected.modelId };
+}
+
 /** Owner-authenticated agentic chat with bounded context, safe tools and an optional multi-agent workflow. */
 export async function streamAgenticReply(
   message: string,
@@ -92,6 +129,7 @@ export async function streamAgenticReply(
 ) {
   const safeMemoryContext = memoryContext.trim().slice(0, 5000);
   const safeSkillContext = skillContext.trim().slice(0, 4000);
+  const provider = await getAgenticProviderRequest();
   const response = await expoFetch(apiUrl('/assistant/agent'), {
     method: 'POST',
     headers: {
@@ -101,6 +139,7 @@ export async function streamAgenticReply(
     },
     body: JSON.stringify({
       message,
+      ...(provider ? { provider } : {}),
       personality: `${settings.personality}\n\nLanguage preference: ${settings.voiceLanguage}.`,
       memoryContext: safeMemoryContext,
       skillContext: safeSkillContext,

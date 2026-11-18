@@ -107,6 +107,33 @@ test("agentic request validates object, message, personality, mode, and bounded 
   assert.equal(validateAgenticPayload({ message: "hello", history: [null] }).ok, false);
 });
 
+test("Agentic provider payload accepts public HTTPS endpoints and rejects host spoofing or private targets", () => {
+  const provider = {
+    providerId: "groq",
+    baseUrl: "https://api.groq.com/openai/v1",
+    apiKey: "provider-secret",
+    modelId: "llama-3.3-70b-versatile",
+  };
+  const valid = validateAgenticPayload({ message: "hello", provider });
+  assert.equal(valid.ok, true);
+  if (valid.ok) {
+    assert.equal(valid.value.provider?.providerId, "groq");
+    assert.equal(valid.value.provider?.modelId, "llama-3.3-70b-versatile");
+  }
+  for (const baseUrl of [
+    "http://api.groq.com/v1",
+    "https://evil.example/v1",
+    "https://127.0.0.1/v1",
+    "https://localhost/v1",
+    "https://api.groq.com:8443/v1",
+    "https://user:pass@api.groq.com/v1",
+  ]) {
+    assert.equal(validateAgenticPayload({ message: "hello", provider: { ...provider, baseUrl } }).ok, false, baseUrl);
+  }
+  assert.equal(validateAgenticPayload({ message: "hello", provider: { ...provider, providerId: "omniroute" } }).ok, false);
+  assert.equal(validateAgenticPayload({ message: "hello", provider: { ...provider, apiKey: "" } }).ok, false);
+});
+
 test("agent context is typed, bounded, and rejects oversized memory or skill input", () => {
   const valid = validateAgenticPayload({
     message: "continue",
@@ -218,6 +245,45 @@ test("multi-agent endpoint plans, executes allowlisted tools, reviews, and strea
     assert.equal(calls.every((call) => call.model === "openrouter/free" || call.model.endsWith(":free")), true);
     assert.equal(calls[0].stream, false);
     assert.equal(calls[4].stream, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Agentic Chat uses the owner-selected provider, exact model, and ephemeral credential", async () => {
+  const calls: Array<{ url: string; authorization: string | null; redirect: string | null; model: string; stream: boolean }> = [];
+  globalThis.fetch = async (input, init) => {
+    const payload = JSON.parse(String(init?.body)) as { model: string; stream: boolean };
+    const headers = new Headers(init?.headers);
+    calls.push({
+      url: String(input),
+      authorization: headers.get("authorization"),
+      redirect: init?.redirect ?? null,
+      model: payload.model,
+      stream: payload.stream,
+    });
+    return payload.stream ? finalStream() : completion("উত্তর");
+  };
+  try {
+    const response = await handleAgenticAssistantRequest(agentRequest({
+      message: "হ্যালো",
+      mode: "single",
+      provider: {
+        providerId: "groq",
+        baseUrl: "https://api.groq.com/openai/v1",
+        apiKey: "ephemeral-provider-secret",
+        modelId: "llama-3.3-70b-versatile",
+      },
+    }), {});
+    assert.equal(response.status, 200);
+    const body = await response.text();
+    assert.match(body, /চূড়ান্ত/);
+    assert.doesNotMatch(body, /ephemeral-provider-secret/);
+    assert.equal(calls.length, 2);
+    assert.ok(calls.every((call) => call.url === "https://api.groq.com/openai/v1/chat/completions"));
+    assert.ok(calls.every((call) => call.authorization === "Bearer ephemeral-provider-secret"));
+    assert.ok(calls.every((call) => call.redirect === "error"));
+    assert.ok(calls.every((call) => call.model === "llama-3.3-70b-versatile"));
   } finally {
     globalThis.fetch = originalFetch;
   }

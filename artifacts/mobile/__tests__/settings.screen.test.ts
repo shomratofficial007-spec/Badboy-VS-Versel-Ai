@@ -1,3 +1,5 @@
+Object.defineProperty(globalThis, '__DEV__', { value: false, configurable: true });
+
 import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 import React from 'react';
@@ -96,7 +98,7 @@ mock.module('react-native', {
     ActivityIndicator: () => React.createElement('span', null, 'loading'),
     Alert: { alert: (title: string, message: string, buttons: any[] = []) => alerts.push({ title, message, buttons }) },
     Linking: { openURL: async (url: string) => { openedUrls.push(url); } },
-    Platform: { OS: 'android' },
+    Platform: { OS: 'android', select: (options: Record<string, unknown>) => options.android ?? options.default ?? options.ios },
     Pressable: host('button'),
     ScrollView: host('main'),
     Share: { share: async () => ({ action: 'dismissedAction' }) },
@@ -108,6 +110,7 @@ mock.module('react-native', {
   },
 });
 mock.module('@expo/vector-icons', { namedExports: { Feather: () => null } });
+mock.module('expo-router', { namedExports: { useRouter: () => ({ back: () => {}, push: () => {} }) } });
 mock.module('react-native-safe-area-context', {
   namedExports: { useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) },
 });
