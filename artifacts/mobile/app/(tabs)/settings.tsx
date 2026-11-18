@@ -35,7 +35,14 @@ import {
 } from '@/lib/assistant/developerData';
 import { buildExpertReviewPrompt, inspectBadboyRepository, type RepositoryEvidence } from '@/lib/assistant/expertReview';
 import { useColors } from '@/hooks/useColors';
-import { canDrawFloatingAssistant, openFloatingAssistantPermissionSettings, startFloatingAssistant, stopFloatingAssistant, isScreenAwarenessEnabled, openScreenAwarenessSettings } from '@/lib/assistant/jarvis';
+import {
+  canDrawFloatingAssistant,
+  openFloatingAssistantPermissionSettings,
+  startFloatingAssistant,
+  stopFloatingAssistant,
+  isScreenAwarenessEnabled,
+  openScreenAwarenessSettings,
+} from '@/lib/assistant/jarvis';
 import { ProviderManagerSection } from '@/components/ProviderManagerSection';
 import {
   bindTelegramOwnerChat,

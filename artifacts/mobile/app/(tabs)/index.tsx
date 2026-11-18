@@ -54,6 +54,7 @@ import { getActiveCustomSkillContext } from '@/lib/assistant/skillStorage';
 import { loadEnabledPluginIds } from '@/lib/assistant/pluginStorage';
 import { getDeveloperModeSkillContext } from '@/lib/assistant/developerModeSkill';
 import { readVisibleScreenText } from '@/lib/assistant/jarvis';
+import { normalizeVisibleScreenText } from '@/lib/assistant/screenContextCore';
 
 const VOICE_RECORDING_OPTIONS = {
   ...RecordingPresets.HIGH_QUALITY,
@@ -123,8 +124,9 @@ export default function ChatScreen() {
 
   useEffect(() => {
     const incoming = Array.isArray(routeParams.screen_context) ? routeParams.screen_context[0] : routeParams.screen_context;
-    if (!incoming?.trim()) return;
-    setDraft('এই স্ক্রিনের তথ্য বিশ্লেষণ করো। সংবেদনশীল তথ্য বাদ দিয়ে প্রয়োজনীয় বিষয় ব্যাখ্যা করো:\n\n' + incoming.slice(0, 4_500));
+    const safeContext = normalizeVisibleScreenText(incoming ?? '');
+    if (!safeContext) return;
+    setDraft('এই স্ক্রিনের তথ্য বিশ্লেষণ করো। সংবেদনশীল তথ্য বাদ দিয়ে প্রয়োজনীয় বিষয় ব্যাখ্যা করো:\n\n' + safeContext);
     setError(null);
     Alert.alert('Screen context প্রস্তুত', 'দৃশ্যমান লেখা Chat draft-এ যোগ হয়েছে। পাঠানোর আগে দেখে নাও।');
     router.replace('/(tabs)' as never);
@@ -669,7 +671,8 @@ export default function ChatScreen() {
 
   const captureCurrentScreen = useCallback(async () => {
     try {
-      const visibleText = await readVisibleScreenText();
+      const visibleText = normalizeVisibleScreenText(await readVisibleScreenText());
+      if (!visibleText) throw new Error('এই স্ক্রিনে পড়ার মতো লেখা পাওয়া যায়নি।');
       setDraft('এই স্ক্রিনের তথ্য বিশ্লেষণ করো। সংবেদনশীল তথ্য বাদ দিয়ে প্রয়োজনীয় বিষয় ব্যাখ্যা করো:\n\n' + visibleText);
       setError(null);
       Alert.alert('Screen context প্রস্তুত', 'দৃশ্যমান লেখা Chat draft-এ যোগ হয়েছে। পাঠানোর আগে দেখে নাও।');
