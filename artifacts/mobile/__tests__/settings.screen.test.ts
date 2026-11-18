@@ -91,11 +91,15 @@ const settings = {
   autoSpeakReplies: false, autoSubmitVoice: false, wakeWordEnabled: false,
   voiceLanguage: 'bn-BD', voiceIdentifier: null, roadmap,
 };
+mock.module('../assets/images/badboy-settings-avatar.jpg', { defaultExport: {} });
+mock.module('expo-router', { namedExports: { useRouter: () => ({ back: () => {} }) } });
+
 mock.module('react-native', {
   namedExports: {
     ActivityIndicator: () => React.createElement('span', null, 'loading'),
     Alert: { alert: (title: string, message: string, buttons: any[] = []) => alerts.push({ title, message, buttons }) },
     Linking: { openURL: async (url: string) => { openedUrls.push(url); } },
+    Image: host('img'),
     Platform: { OS: 'android' },
     Pressable: host('button'),
     ScrollView: host('main'),
@@ -217,6 +221,17 @@ test('Settings screen renders existing voice, privacy, developer and account con
   const html = renderToStaticMarkup(React.createElement(SettingsScreen));
   assert.match(html, /BADBOY|Badboy/);
   assert.match(html, /Settings|সেটিংস|ব্যক্তিগত/);
+  assert.match(html, /Customize your Badboy AI experience/);
+  assert.match(html, /AI Provider/);
+  assert.match(html, /OpenRouter/);
+  assert.match(html, /Automatic free-model routing/);
+  assert.match(html, /v1[.]0[.]0/);
+  assert.match(html, /Online/);
+  assert.match(html, /APPEARANCE/);
+  assert.match(html, /AI &amp; FEATURES|AI & FEATURES/);
+  assert.match(html, /APP MANAGEMENT/);
+  assert.ok(html.indexOf('ACCOUNT &amp; ACCESS') < html.indexOf('AI &amp; FEATURES'));
+  assert.ok(html.indexOf('AI &amp; FEATURES') < html.indexOf('APPEARANCE'));
   assert.match(html, /ভয়েস|Voice/);
   assert.match(html, /Wake Word|ওয়েক|Hey Badboy/i);
   assert.match(html, /Owner Sign Out/);

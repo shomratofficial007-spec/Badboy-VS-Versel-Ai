@@ -1,10 +1,12 @@
 import { Feather } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Linking,
+  Image,
   Platform,
   Pressable,
   ScrollView,
@@ -75,6 +77,7 @@ interface LocalTelegramMessage {
 
 export default function SettingsScreen() {
   const colors = useColors();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { settings, updateSettings, clearChat, expertReviewDraft, clearExpertReviewDraft } = useAssistant();
   const { signOut } = useOwnerAuth();
@@ -688,34 +691,148 @@ export default function SettingsScreen() {
       contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top, 12) + 14, paddingBottom: Math.max(insets.bottom, 20) + 90 }]}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={[styles.brandHeader, { borderColor: colors.border, backgroundColor: colors.card }]}>
-        <View style={[styles.brandMark, { backgroundColor: colors.primary }]}>
-          <Feather name="zap" size={19} color={colors.primaryForeground} />
+      <View style={styles.settingsHeading}>
+        <Pressable
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Back to chat"
+          style={[styles.backButton, { borderColor: colors.border, backgroundColor: colors.card }]}
+        >
+          <Feather name="arrow-left" size={21} color={colors.foreground} />
+        </Pressable>
+        <View style={[styles.crownMark, { borderColor: colors.border, backgroundColor: colors.card }]}>
+          <Feather name="award" size={27} color={colors.primary} />
         </View>
         <View style={styles.brandCopy}>
-          <Text style={[styles.brandName, { color: colors.foreground }]}>Badboy AI</Text>
-          <Text style={[styles.brandCaption, { color: colors.mutedForeground }]}>তোমার AI সহকারী · Settings</Text>
-        </View>
-        <View style={[styles.settingsPill, { borderColor: colors.border }]}>
-          <Feather name="sliders" size={14} color={colors.primary} />
+          <Text style={[styles.title, { color: colors.foreground }]}>Settings</Text>
+          <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>Customize your Badboy AI experience</Text>
         </View>
       </View>
-      <Text style={[styles.eyebrow, { color: colors.primary }]}>PERSONAL CONTROL CENTER</Text>
-      <Text style={[styles.title, { color: colors.foreground }]}>সেটিংস</Text>
-      <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-        তোমার অভিজ্ঞতা, ভয়েস, গোপনীয়তা ও ডেভেলপার টুল—সব এক জায়গায়।
-      </Text>
 
+      <View style={[styles.profileCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
+        <View style={styles.profileAvatarFrame}>
+          <Image
+            source={require('../../assets/images/badboy-settings-avatar.jpg')}
+            resizeMode="cover"
+            style={styles.profileAvatar}
+            accessibilityLabel="Badboy AI hooded avatar"
+          />
+        </View>
+        <View style={styles.profileDetails}>
+          <View style={styles.profileNameRow}>
+            <Text style={[styles.profileName, { color: colors.foreground }]}>Badboy AI</Text>
+            <Feather name="award" size={19} color="#ffbd35" />
+          </View>
+          <Text style={[styles.versionPill, { color: colors.secondaryForeground, backgroundColor: colors.secondary }]}>v1.0.0</Text>
+          <Text style={[styles.brandCaption, { color: colors.mutedForeground }]}>Smart · Secure · Powerful</Text>
+          <View style={styles.onlineStatus}>
+            <View style={styles.onlineDot} />
+            <Text style={[styles.brandCaption, { color: colors.foreground }]}>Online</Text>
+          </View>
+        </View>
+      </View>
+
+      <Text style={[styles.eyebrow, { color: colors.primary }]}>ACCOUNT &amp; ACCESS</Text>
       <View style={[styles.section, sectionCard]}>
-        <View style={styles.sectionTitleRow}><Feather name="droplet" size={17} color={colors.primary} /><Text style={[styles.sectionTitle,{color:colors.foreground}]}>অ্যাপ থিম</Text></View>
-        <Text style={[styles.body,{color:colors.mutedForeground,marginBottom:10}]}>পছন্দের রং বেছে নাও। পরিবর্তন সঙ্গে সঙ্গে পুরো অ্যাপে দেখা যাবে এবং এই ফোনেই সংরক্ষিত থাকবে।</Text>
-        <View style={{flexDirection:'row',flexWrap:'wrap',gap:9}}>
-          {([
-            {id:'badboy',label:'Badboy Neon Blue',color:'#00d9ff'}, {id:'neon',label:'Badboy Violet',color:'#9b8cff'}, {id:'ocean',label:'Ocean Blue',color:'#38bdf8'}, {id:'purple',label:'Purple',color:'#c084fc'}, {id:'emerald',label:'Emerald',color:'#34d399'}, {id:'sunset',label:'Sunset',color:'#fb923c'}, {id:'light',label:'Light',color:'#2563eb'},
-          ] as const).map(theme => { const selected=settings.theme===theme.id; return <Pressable key={theme.id} onPress={()=>updateSettings({theme:theme.id})} accessibilityRole="button" accessibilityState={{selected}} style={{width:'31%',minHeight:66,borderWidth:selected?2:1,borderColor:selected?colors.primary:colors.border,borderRadius:13,padding:9,alignItems:'center',justifyContent:'center',gap:6,backgroundColor:colors.background}}><View style={{width:22,height:22,borderRadius:11,backgroundColor:theme.color}}/><Text style={{fontSize:11,fontWeight:selected?'800':'600',color:colors.foreground}}>{theme.label}</Text>{selected?<Feather name="check-circle" size={13} color={colors.primary}/>:null}</Pressable>; })}
+        <View style={styles.sectionTitleRow}>
+          <Feather name="user" size={17} color={colors.primary} />
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Owner Panel</Text>
+        </View>
+        <Text style={[styles.body, { color: colors.mutedForeground }]}>Manage owner features & access</Text>
+        <View style={[styles.accountInfoRow, { borderColor: colors.border }]}>
+          <Feather name="key" size={19} color={colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.label, { color: colors.foreground }]}>Token Management</Text>
+            <Text style={[styles.body, { color: colors.mutedForeground }]}>Owner token is protected by Android SecureStore</Text>
+          </View>
+          <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+        </View>
+        <View style={[styles.accountInfoRow, { borderColor: colors.border }]}>
+          <Feather name="lock" size={19} color={colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.label, { color: colors.foreground }]}>Login Security</Text>
+            <Text style={[styles.body, { color: colors.mutedForeground }]}>Owner login is required to access the main app</Text>
+          </View>
+          <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
         </View>
       </View>
+      <Pressable
+        onPress={() => Alert.alert('চ্যাট ইতিহাস মুছবেন?', 'এই ফোনে সংরক্ষিত সব chat history মুছে যাবে।', [
+          { text: 'বাতিল', style: 'cancel' },
+          { text: 'মুছুন', style: 'destructive', onPress: () => void clearChat() },
+        ])}
+        style={[styles.dangerButton, { borderColor: colors.border }]}
+      >
+        <Feather name="trash-2" size={16} color={colors.destructive} />
+        <Text style={{ color: colors.destructive, fontWeight: '700' }}>চ্যাট ইতিহাস মুছুন</Text>
+      </Pressable>
 
+      <Pressable
+        onPress={() => Alert.alert('Owner Login থেকে বের হবেন?', 'আবার Badboy ব্যবহার করতে Owner Token দিতে হবে। ফোনের Chat History ও Memory মুছবে না।', [
+          { text: 'বাতিল', style: 'cancel' },
+          { text: 'Sign Out', style: 'destructive', onPress: () => void signOut().catch((cause) => Alert.alert('Sign Out ব্যর্থ', cause instanceof Error ? cause.message : 'SecureStore থেকে Token মুছতে সমস্যা হয়েছে।')) },
+        ])}
+        style={[styles.dangerButton, { borderColor: colors.border }]}
+      >
+        <Feather name="log-out" size={16} color={colors.destructive} />
+        <Text style={{ color: colors.destructive, fontWeight: '700' }}>Owner Sign Out</Text>
+      </Pressable>
+
+            <Text style={[styles.eyebrow, { color: colors.primary }]}>AI &amp; FEATURES</Text>
+      <View style={[styles.section, sectionCard]}>
+        <View style={styles.sectionTitleRow}>
+          <Feather name="zap" size={17} color={colors.primary} />
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>AI Provider &amp; Model</Text>
+        </View>
+        <Pressable
+          onPress={() => Alert.alert('AI Provider', 'এই অ্যাপের Agentic Assistant বর্তমানে OpenRouter API ব্যবহার করে।')}
+          style={styles.accountInfoRow}
+          accessibilityRole="button"
+        >
+          <Feather name="hexagon" size={19} color={colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.label, { color: colors.foreground }]}>AI Provider</Text>
+            <Text style={[styles.body, { color: colors.mutedForeground }]}>OpenRouter</Text>
+          </View>
+          <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+        </Pressable>
+        <Pressable
+          onPress={() => Alert.alert('Model Selection', 'Badboy task অনুযায়ী OpenRouter-এর free model-গুলোর মধ্যে স্বয়ংক্রিয়ভাবে model নির্বাচন ও fallback করে।')}
+          style={styles.accountInfoRow}
+          accessibilityRole="button"
+        >
+          <Feather name="cpu" size={19} color={colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.label, { color: colors.foreground }]}>Model Selection</Text>
+            <Text style={[styles.body, { color: colors.mutedForeground }]}>Automatic free-model routing</Text>
+          </View>
+          <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+        </Pressable>
+        <Pressable
+          onPress={() => Alert.alert('Multi-AI Settings', 'Free model routing task অনুযায়ী একাধিক OpenRouter model-এ fallback করতে পারে।')}
+          style={styles.accountInfoRow}
+          accessibilityRole="button"
+        >
+          <Feather name="layers" size={19} color={colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.label, { color: colors.foreground }]}>Multi-AI Settings</Text>
+            <Text style={[styles.body, { color: colors.mutedForeground }]}>Task-based free-model fallback</Text>
+          </View>
+          <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+        </Pressable>
+        <Pressable
+          onPress={() => Alert.alert('Features Control', `Online AI is currently ${settings.onlineAI ? 'enabled' : 'disabled'}. Change it in Privacy & Personalization below.`)}
+          style={styles.accountInfoRow}
+          accessibilityRole="button"
+        >
+          <Feather name="sliders" size={19} color={colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.label, { color: colors.foreground }]}>Features Control</Text>
+            <Text style={[styles.body, { color: colors.mutedForeground }]}>Online AI: {settings.onlineAI ? 'Enabled' : 'Disabled'}</Text>
+          </View>
+          <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+        </Pressable>
+      </View>
       {/* Central Agent Task Execution Engine */}
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
@@ -778,6 +895,18 @@ export default function SettingsScreen() {
         ) : null}
       </View>
 
+      <Text style={[styles.eyebrow, { color: colors.primary }]}>APPEARANCE</Text>
+      <View style={[styles.section, sectionCard]}>
+        <View style={styles.sectionTitleRow}><Feather name="droplet" size={17} color={colors.primary} /><Text style={[styles.sectionTitle,{color:colors.foreground}]}>অ্যাপ থিম</Text></View>
+        <Text style={[styles.body,{color:colors.mutedForeground,marginBottom:10}]}>পছন্দের রং বেছে নাও। পরিবর্তন সঙ্গে সঙ্গে পুরো অ্যাপে দেখা যাবে এবং এই ফোনেই সংরক্ষিত থাকবে।</Text>
+        <View style={{flexDirection:'row',flexWrap:'wrap',gap:9}}>
+          {([
+            {id:'badboy',label:'Badboy Neon Blue',color:'#c026ff'}, {id:'neon',label:'Badboy Violet',color:'#9b8cff'}, {id:'ocean',label:'Ocean Blue',color:'#38bdf8'}, {id:'purple',label:'Purple',color:'#c084fc'}, {id:'emerald',label:'Emerald',color:'#34d399'}, {id:'sunset',label:'Sunset',color:'#fb923c'}, {id:'light',label:'Light',color:'#2563eb'},
+          ] as const).map(theme => { const selected=settings.theme===theme.id; return <Pressable key={theme.id} onPress={()=>updateSettings({theme:theme.id})} accessibilityRole="button" accessibilityState={{selected}} style={{width:'31%',minHeight:66,borderWidth:selected?2:1,borderColor:selected?colors.primary:colors.border,borderRadius:13,padding:9,alignItems:'center',justifyContent:'center',gap:6,backgroundColor:colors.background}}><View style={{width:22,height:22,borderRadius:11,backgroundColor:theme.color}}/><Text style={{fontSize:11,fontWeight:selected?'800':'600',color:colors.foreground}}>{theme.label}</Text>{selected?<Feather name="check-circle" size={13} color={colors.primary}/>:null}</Pressable>; })}
+        </View>
+      </View>
+
+      <Text style={[styles.eyebrow, { color: colors.primary }]}>PRIVACY &amp; PERSONALIZATION</Text>
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
           <Feather name="wifi" size={17} color={colors.primary} />
@@ -874,6 +1003,7 @@ export default function SettingsScreen() {
         ) : null}
       </View>
 
+      <Text style={[styles.eyebrow, { color: colors.primary }]}>DEVELOPER TOOLS</Text>
       {/* Developer Control Center */}
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
@@ -1333,6 +1463,7 @@ export default function SettingsScreen() {
         )}
       </View>
 
+      <Text style={[styles.eyebrow, { color: colors.primary }]}>VOICE &amp; DEVICE</Text>
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
           <Feather name="mic" size={17} color={colors.primary} />
@@ -1462,6 +1593,7 @@ export default function SettingsScreen() {
         {deviceActionError ? <Text style={[styles.errorText, { color: colors.destructive }]}>{deviceActionError}</Text> : null}
       </View>
 
+      <Text style={[styles.eyebrow, { color: colors.primary }]}>APP MANAGEMENT</Text>
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
           <Feather name="layers" size={17} color={colors.primary} />
@@ -1588,27 +1720,10 @@ export default function SettingsScreen() {
         {telegramError ? <Text style={[styles.errorText, { color: colors.destructive }]}>{telegramError}</Text> : null}
       </View>
 
-      <Pressable
-        onPress={() => Alert.alert('চ্যাট ইতিহাস মুছবেন?', 'এই ফোনে সংরক্ষিত সব chat history মুছে যাবে।', [
-          { text: 'বাতিল', style: 'cancel' },
-          { text: 'মুছুন', style: 'destructive', onPress: () => void clearChat() },
-        ])}
-        style={[styles.dangerButton, { borderColor: colors.border }]}
-      >
-        <Feather name="trash-2" size={16} color={colors.destructive} />
-        <Text style={{ color: colors.destructive, fontWeight: '700' }}>চ্যাট ইতিহাস মুছুন</Text>
-      </Pressable>
-
-      <Pressable
-        onPress={() => Alert.alert('Owner Login থেকে বের হবেন?', 'আবার Badboy ব্যবহার করতে Owner Token দিতে হবে। ফোনের Chat History ও Memory মুছবে না।', [
-          { text: 'বাতিল', style: 'cancel' },
-          { text: 'Sign Out', style: 'destructive', onPress: () => void signOut().catch((cause) => Alert.alert('Sign Out ব্যর্থ', cause instanceof Error ? cause.message : 'SecureStore থেকে Token মুছতে সমস্যা হয়েছে।')) },
-        ])}
-        style={[styles.dangerButton, { borderColor: colors.border }]}
-      >
-        <Feather name="log-out" size={16} color={colors.destructive} />
-        <Text style={{ color: colors.destructive, fontWeight: '700' }}>Owner Sign Out</Text>
-      </Pressable>
+      <View style={styles.footerBrand}>
+        <Text style={[styles.footerTitle, { color: colors.primary }]}>♛  Badboy AI Manager  ♛</Text>
+        <Text style={[styles.smallNote, { color: colors.mutedForeground, marginTop: 0 }]}>Built for the Real Power Users… ♥</Text>
+      </View>
     </ScrollView>
   );
 }
@@ -1644,17 +1759,32 @@ function SettingSwitch({
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 16, gap: 13 },
-  brandHeader: { minHeight: 68, borderWidth: 1, borderRadius: 20, paddingHorizontal: 13, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 5 },
+  content: { paddingHorizontal: 13, gap: 13, width: '100%', maxWidth: 620, alignSelf: 'center' },
+  footerBrand: { alignItems: 'center', paddingVertical: 14, gap: 2 },
+  footerTitle: { fontSize: 14, fontWeight: '900', letterSpacing: 0.4 },
+  settingsHeading: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 3, marginBottom: 2 },
+  backButton: { width: 42, height: 42, borderWidth: 1.2, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  crownMark: { width: 54, height: 54, borderWidth: 1.5, borderRadius: 18, alignItems: 'center', justifyContent: 'center', shadowColor: '#c026ff', shadowOpacity: 0.35, shadowRadius: 10, elevation: 4 },
+  profileCard: { minHeight: 164, borderWidth: 1.5, borderRadius: 22, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 14, shadowColor: '#ff315e', shadowOpacity: 0.22, shadowRadius: 13, elevation: 5 },
+  profileAvatarFrame: { width: 108, height: 108, borderRadius: 54, padding: 3, borderWidth: 2, borderColor: '#c026ff', overflow: 'hidden', backgroundColor: '#100718' },
+  profileAvatar: { width: '100%', height: '100%', borderRadius: 52 },
+  accountInfoRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 12, borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: 9, marginTop: 10 },
+  profileDetails: { flex: 1, minWidth: 0, gap: 7 },
+  profileNameRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
+  profileName: { fontSize: 21, fontWeight: '900' },
+  versionPill: { alignSelf: 'flex-start', overflow: 'hidden', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 14, fontSize: 13, fontWeight: '700' },
+  onlineStatus: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 },
+  onlineDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: '#00e676' },
+  brandHeader: { minHeight: 82, borderWidth: 1.5, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 5, shadowColor: '#c026ff', shadowOpacity: 0.22, shadowRadius: 12, elevation: 5 },
   brandMark: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   brandCopy: { flex: 1, gap: 3 },
-  brandName: { fontSize: 16, fontWeight: '800', letterSpacing: 0.1 },
-  brandCaption: { fontSize: 12 },
+  brandName: { fontSize: 18, fontWeight: '900', letterSpacing: 0.1 },
+  brandCaption: { fontSize: 11, letterSpacing: 0.4 },
   settingsPill: { width: 34, height: 34, borderWidth: 1, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  eyebrow: { fontSize: 10, fontWeight: '800', letterSpacing: 1.2, marginTop: 1 },
-  title: { fontSize: 30, fontWeight: '800', letterSpacing: -0.8, marginTop: -7 },
-  subtitle: { fontSize: 14, lineHeight: 21, marginTop: -5, marginBottom: 7 },
-  section: { borderWidth: 1, borderRadius: 20, padding: 15 },
+  eyebrow: { fontSize: 12, fontWeight: '900', letterSpacing: 1.1, marginTop: 3, paddingLeft: 3, textShadowColor: '#c026ff', textShadowRadius: 8 },
+  title: { fontSize: 25, fontWeight: '900', letterSpacing: -0.4 },
+  subtitle: { fontSize: 11, lineHeight: 16, marginTop: 1 },
+  section: { borderWidth: 1.4, borderRadius: 18, padding: 13, shadowColor: '#d946ef', shadowOpacity: 0.2, shadowRadius: 9, elevation: 3 },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 14 },
   sectionTitle: { fontSize: 16, fontWeight: '700' },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 5 },

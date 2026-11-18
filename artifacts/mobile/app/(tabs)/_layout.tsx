@@ -2,6 +2,7 @@ import React from 'react';
 import { useWindowDimensions } from 'react-native';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { BadboyLogo } from '@/components/BadboyLogo';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
@@ -36,9 +37,7 @@ function TopNavigation() {
     >
       <View style={styles.headerInner}>
         <View style={styles.brand}>
-          <View style={[styles.logo, { backgroundColor: colors.primary }]}>
-            <Feather name="zap" size={17} color={colors.primaryForeground} />
-          </View>
+          <BadboyLogo size={32} />
           <Text style={[styles.brandText, { color: colors.foreground }]}>Badboy</Text>
         </View>
         <View style={[styles.nav, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -80,4 +79,4 @@ export default function TabLayout() {
   return <View style={{flex:1,backgroundColor:colors.background}}><TopNavigation/><View style={{flex:1,width:'100%',maxWidth:960,alignSelf:'center'}}><Tabs screenOptions={{headerShown:false,tabBarStyle:{display:'none'}}}><Tabs.Screen name="index"/><Tabs.Screen name="memory"/><Tabs.Screen name="workflows"/><Tabs.Screen name="skills"/><Tabs.Screen name="plugins"/><Tabs.Screen name="settings"/></Tabs></View></View>;
 }
 
-const styles=StyleSheet.create({header:{paddingHorizontal:14,paddingBottom:10,borderBottomWidth:1},headerInner:{gap:10},brand:{height:34,flexDirection:'row',alignItems:'center',gap:8},logo:{width:29,height:29,borderRadius:10,alignItems:'center',justifyContent:'center'},brandText:{fontSize:17,fontWeight:'800',letterSpacing:0.2},nav:{flexDirection:'row',borderWidth:1,borderRadius:15,padding:4,gap:4},navItem:{flex:1,minHeight:39,borderRadius:11,alignItems:'center',justifyContent:'center',flexDirection:'row',gap:6},navText:{fontSize:12,fontWeight:'700'}});
+const styles=StyleSheet.create({header:{paddingHorizontal:14,paddingBottom:10,borderBottomWidth:1},headerInner:{gap:10},brand:{height:40,flexDirection:'row',alignItems:'center',gap:9},logo:{width:29,height:29,borderRadius:10,alignItems:'center',justifyContent:'center'},brandText:{fontSize:17,fontWeight:'800',letterSpacing:0.2},nav:{flexDirection:'row',borderWidth:1,borderRadius:15,padding:4,gap:4},navItem:{flex:1,minHeight:39,borderRadius:11,alignItems:'center',justifyContent:'center',flexDirection:'row',gap:6},navText:{fontSize:12,fontWeight:'700'}});
