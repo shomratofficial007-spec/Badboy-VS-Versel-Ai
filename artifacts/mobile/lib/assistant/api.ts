@@ -94,6 +94,7 @@ async function streamConfiguredProviderReply(message: string, settings: Assistan
   // Keep Owner Login mandatory; the Owner Token is never sent to a third-party provider.
   await ownerAuthorizationHeader();
   const providerId = settings.aiProvider;
+  if (providerId === 'server') throw new Error('External Provider selection is required for this request.');
   const preset = AI_PROVIDER_PRESETS.find((item) => item.id === providerId);
   const baseUrl = normalizeProviderBaseUrl(settings.aiBaseUrl || preset?.baseUrl || '');
   const model = settings.aiModel.trim();
