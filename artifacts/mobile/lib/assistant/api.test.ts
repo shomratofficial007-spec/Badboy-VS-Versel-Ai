@@ -26,6 +26,13 @@ mock.module('./ownerAuth.ts', {
 mock.module('./ownerJsonRequest.ts', {
   namedExports: { apiUrl: (path: string) => `https://worker.example${path}` },
 });
+mock.module('./providerSettings.ts', {
+  namedExports: {
+    AI_PROVIDER_PRESETS: [{ id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1' }],
+    getProviderApiKey: async () => 'provider-key-test',
+    normalizeProviderBaseUrl: (value: string) => new URL(value).toString().replace(/\\/$/, ''),
+  },
+});
 
 const apiPromise = import('./api');
 
@@ -79,6 +86,29 @@ test('streamReply sends owner-authenticated request and parses split SSE frames'
   assert.deepEqual(chunks, ['বাংলা উত্তর', 'সম্পূর্ণ']);
 });
 
+test('streamReply routes to the selected provider without forwarding the Owner Token', async () => {
+  const { streamReply } = await apiPromise;
+  let url = '';
+  let sent: any;
+  let headers: Headers | undefined;
+  fetchHandler = async (input, init) => {
+    url = String(input);
+    sent = JSON.parse(String(init.body));
+    headers = new Headers(init.headers);
+    return streamResponse([
+      'data: {"choices":[{"delta":{"content":"Provider reply"}}]}\\n\\n',
+      'data: [DONE]\\n\\n',
+    ]);
+  };
+  const chunks: string[] = [];
+  await streamReply('hello', { aiProvider: 'openai', aiModel: 'gpt-4o-mini', aiBaseUrl: 'https://api.openai.com/v1', personality: 'helpful', voiceLanguage: 'en-US', developerMode: false } as any, (chunk) => chunks.push(chunk));
+  assert.equal(url, 'https://api.openai.com/v1/chat/completions');
+  assert.equal(headers?.get('Authorization'), 'Bearer provider-key-test');
+  assert.equal(headers?.get('Authorization')?.includes('owner-token-test'), false);
+  assert.equal(sent.model, 'gpt-4o-mini');
+  assert.equal(sent.messages.at(-1).content, 'hello');
+  assert.deepEqual(chunks, ['Provider reply']);
+});
 test('streamAgenticReply sends owner-authenticated bounded history and consumes agentic SSE', async () => {
   const { streamAgenticReply } = await apiPromise;
   let url = '';
