@@ -57,13 +57,12 @@ class BadboyScreenReaderService : AccessibilityService() {
     return output.toString().trim().takeIf { it.isNotEmpty() }
   }
 
-  private fun redactPrivatePatterns(value: String): String {
-    val email = Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE)
-    val phone = Regex("\\+?\\d[\\d\\s().-]{7,}\\d")
-    return value.replace(email, "[email]").replace(phone, "[phone]")
-  }
+  private fun redactPrivatePatterns(value: String): String =
+    value.replace(EMAIL_PATTERN, "[email]").replace(PHONE_PATTERN, "[phone]")
 
   companion object {
+    private val EMAIL_PATTERN = Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE)
+    private val PHONE_PATTERN = Regex("\\+?\\d[\\d\\s().-]{7,}\\d")
     @Volatile private var activeInstance: BadboyScreenReaderService? = null
     fun readCurrentScreen(ownPackage: String): String? = activeInstance?.readCurrentScreen(ownPackage)
     fun readOtherAppScreen(ownPackage: String): String? = activeInstance?.readOtherAppScreen(ownPackage)
