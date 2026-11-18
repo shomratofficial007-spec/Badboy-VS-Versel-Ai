@@ -98,10 +98,7 @@ test('streamReply routes to the selected provider without forwarding the Owner T
     url = String(input);
     sent = JSON.parse(String(init.body));
     headers = new Headers(init.headers);
-    return streamResponse([
-      'data: {"choices":[{"delta":{"content":"Provider reply"}}]}\\n\\n',
-      'data: [DONE]\\n\\n',
-    ]);
+    return streamResponse(['data: {"choices":[{"delta":{"content":"Provider reply"}}]}']);
   };
   const chunks: string[] = [];
   await streamReply('hello', { aiProvider: 'openai', aiModel: 'gpt-4o-mini', aiBaseUrl: 'https://api.openai.com/v1', personality: 'helpful', voiceLanguage: 'en-US', developerMode: false } as any, (chunk) => chunks.push(chunk));
