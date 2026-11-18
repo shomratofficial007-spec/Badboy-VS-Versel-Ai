@@ -24,11 +24,12 @@ port. The API server still requires its own `PORT` environment variable.
 
 ## Host allowlist
 
-The sandbox allows localhost and the Replit development domains by default.
-For a custom preview hostname, set `VITE_ALLOWED_HOSTS` in the sandbox
-environment to a comma-separated list of explicit hostnames. Dot-prefixed
-entries allow subdomains, for example `.preview.example.com`. Wildcards and
-`true` are intentionally rejected.
+Only localhost is allowed by default. Replit's exact deployment domains are
+added from `REPLIT_DOMAINS` and `REPLIT_DEV_DOMAIN` when those variables are
+present. For a custom preview hostname, set `VITE_ALLOWED_HOSTS` in the
+sandbox environment to a comma-separated list of explicit hostnames.
+Dot-prefixed entries allow subdomains, for example `.preview.example.com`.
+Wildcards and `true` are intentionally rejected.
 
 The Replit runtime-error overlay and cartographer plugins are loaded only for
 Replit development sessions. The mockup preview plugin remains enabled for

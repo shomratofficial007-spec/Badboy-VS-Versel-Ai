@@ -1,10 +1,4 @@
-const DEFAULT_ALLOWED_HOSTS = [
-  "localhost",
-  "127.0.0.1",
-  ".replit.dev",
-  ".replit.app",
-  ".repl.co",
-] as const;
+const DEFAULT_ALLOWED_HOSTS = ["localhost", "127.0.0.1"] as const;
 
 export function parsePort(value: string | undefined, fallback: number): number {
   if (value === undefined || value.trim() === "") return fallback;
@@ -28,8 +22,7 @@ export function parseAllowedHosts(value: string | undefined): string[] {
     );
   }
 
-  const hostnamePattern =
-    /^\.?[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/;
+  const hostnamePattern = /^\.?[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/;
   for (const host of hosts) {
     if (!hostnamePattern.test(host) || host.includes("..")) {
       throw new Error(`Invalid allowed host: "${host}". Use a hostname or a dot-prefixed domain suffix.`);

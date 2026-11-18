@@ -16,7 +16,14 @@ export default defineConfig(async ({ mode, command }) => {
   // Only load the public Vite variables and explicitly server-side API settings.
   const env = loadEnv(mode, configDir, ["VITE_", "API_"]);
   const port = parsePort(process.env.PORT, 4173);
-  const allowedHosts = parseAllowedHosts(env.VITE_ALLOWED_HOSTS);
+  const configuredHosts = [
+    env.VITE_ALLOWED_HOSTS,
+    process.env.REPLIT_DOMAINS,
+    process.env.REPLIT_DEV_DOMAIN,
+  ]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .join(",");
+  const allowedHosts = parseAllowedHosts(configuredHosts);
   const apiProxyTarget = resolveApiProxyTarget(
     env.API_PROXY_TARGET,
     env.API_PORT,

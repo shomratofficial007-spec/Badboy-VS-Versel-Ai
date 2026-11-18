@@ -6,23 +6,14 @@ import {
 } from "../../artifacts/mockup-sandbox/vite.config.helpers";
 
 describe("Vite config helpers", () => {
-  it("uses a restrictive default host allowlist", () => {
-    expect(parseAllowedHosts(undefined)).toEqual([
-      "localhost",
-      "127.0.0.1",
-      ".replit.dev",
-      ".replit.app",
-      ".repl.co",
-    ]);
+  it("uses localhost-only defaults instead of a wildcard host rule", () => {
+    expect(parseAllowedHosts(undefined)).toEqual(["localhost", "127.0.0.1"]);
   });
 
   it("adds explicit configured hosts without enabling wildcard access", () => {
     expect(parseAllowedHosts("preview.example.com, .example.org")).toEqual([
       "localhost",
       "127.0.0.1",
-      ".replit.dev",
-      ".replit.app",
-      ".repl.co",
       "preview.example.com",
       ".example.org",
     ]);
