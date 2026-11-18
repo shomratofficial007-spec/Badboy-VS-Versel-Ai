@@ -3,6 +3,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import type { AssistantSettings } from '@/lib/assistant/types';
 import { getTranscriptionLanguageCode } from './transcriptionLanguage';
 import { getOwnerToken } from './ownerAuth';
+import { AI_PROVIDER_PRESETS, getProviderApiKey, normalizeProviderBaseUrl } from './providerSettings';
 
 // This repository deploys its own Worker; do not send native APK traffic to the
 // unrelated legacy Voice-Memory-Assistant Worker.
@@ -59,11 +60,87 @@ async function streamSseResponse(
   }
 }
 
+async function streamOpenAICompatibleResponse(response: Response, onChunk: (chunk: string) => void): Promise<void> {
+  if (!response.ok) {
+    await response.text().catch(() => '');
+    throw new Error('নির্বাচিত AI Provider request গ্রহণ করেনি (HTTP ' + response.status + ')। API Key, Model ও Base URL যাচাই করুন।');
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('AI Provider response stream পাওয়া যায়নি।');
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let complete = false;
+  const emitLine = (line: string) => {
+    if (!line.startsWith('data:')) return;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === '[DONE]') return;
+    let event: { error?: unknown; choices?: Array<{ delta?: { content?: unknown } }> };
+    try { event = JSON.parse(payload) as typeof event; } catch { return; }
+    if (event.error) throw new Error('AI Provider stream error.');
+    const content = event.choices?.[0]?.delta?.content;
+    if (typeof content === 'string' && content) onChunk(content);
+  };
+  while (!complete) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      if (line.trim() === 'data: [DONE]') { complete = true; break; }
+      emitLine(line);
+    }
+  }
+  buffer += decoder.decode();
+  if (!complete && buffer.trim()) {
+    for (const line of buffer.split('\n')) emitLine(line.trim());
+  }
+}
+async function streamConfiguredProviderReply(message: string, settings: AssistantSettings, onChunk: (chunk: string) => void, history: ChatHistoryItem[] = [], memoryContext = '', skillContext = ''): Promise<void> {
+  // Keep Owner Login mandatory; the Owner Token is never sent to a third-party provider.
+  await ownerAuthorizationHeader();
+  const providerId = settings.aiProvider;
+  if (providerId === 'server') throw new Error('External Provider selection is required for this request.');
+  const preset = AI_PROVIDER_PRESETS.find((item) => item.id === providerId);
+  const baseUrl = normalizeProviderBaseUrl(settings.aiBaseUrl || preset?.baseUrl || '');
+  const model = settings.aiModel.trim();
+  if (!model) throw new Error('Settings থেকে একটি Model নির্বাচন করুন।');
+  const messages = [
+    { role: 'system', content: settings.personality + '\n\nLanguage preference: ' + settings.voiceLanguage + (settings.developerMode ? '\nDeveloper mode is enabled. Preserve existing behavior and explain code changes clearly.' : '') + (memoryContext ? '\n\nRelevant project memory:\n' + memoryContext.slice(0, 5000) : '') + (skillContext ? '\n\nLocal skill guidance:\n' + skillContext.slice(0, 4000) : '') },
+    ...history.slice(-8).map(({ role, content }) => ({ role, content: content.slice(0, 3000) })),
+    { role: 'user', content: message.trim() },
+  ];
+  const attempt = async (id: Exclude<typeof providerId, 'server'>, endpoint: string, selectedModel: string, onText: (chunk: string) => void) => {
+    const apiKey = await getProviderApiKey(id);
+    if (!apiKey) throw new Error('Provider ' + id + ' এর API Key Secure Storage-এ নেই।');
+    const response = await expoFetch(endpoint + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: 'Bearer ' + apiKey },
+      body: JSON.stringify({ model: selectedModel, stream: true, max_tokens: 4096, messages }),
+    });
+    await streamOpenAICompatibleResponse(response, onText);
+  };
+  let primaryEmitted = false;
+  try {
+    await attempt(providerId, baseUrl, model, (chunk) => { primaryEmitted = true; onChunk(chunk); });
+  } catch (primaryError) {
+    const fallbackId = settings.aiFallbackProvider ?? 'none';
+    const fallbackModel = settings.aiFallbackModel?.trim() ?? '';
+    const fallbackPreset = AI_PROVIDER_PRESETS.find((item) => item.id === fallbackId);
+    // Retry only if the primary failed before producing any text; never splice two model answers.
+    if (primaryEmitted || fallbackId === 'none' || fallbackId === providerId || !fallbackPreset || !fallbackModel) throw primaryError;
+    await attempt(fallbackId, normalizeProviderBaseUrl(fallbackPreset.baseUrl), fallbackModel, onChunk);
+  }
+}
 export async function streamReply(
   message: string,
   settings: AssistantSettings,
   onChunk: (chunk: string) => void,
 ) {
+  if (settings.aiProvider && settings.aiProvider !== 'server') {
+    await streamConfiguredProviderReply(message, settings, onChunk);
+    return;
+  }
   const response = await expoFetch(apiUrl('/assistant/chat'), {
     method: 'POST',
     headers: {
@@ -90,6 +167,10 @@ export async function streamAgenticReply(
   skillContext = '',
   enabledPluginIds: AgentPluginId[] = DEFAULT_AGENT_PLUGIN_IDS,
 ) {
+  if (settings.aiProvider && settings.aiProvider !== 'server') {
+    await streamConfiguredProviderReply(message, settings, onChunk, history, memoryContext, skillContext);
+    return;
+  }
   const safeMemoryContext = memoryContext.trim().slice(0, 5000);
   const safeSkillContext = skillContext.trim().slice(0, 4000);
   const response = await expoFetch(apiUrl('/assistant/agent'), {
