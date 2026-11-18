@@ -128,7 +128,7 @@ mock.module('../context/AssistantContext.tsx', {
   },
 });
 mock.module('../context/OwnerAuthContext.tsx', {
-  namedExports: { useOwnerAuth: () => ({ signOut: async () => { signOutCalls.push('signed-out'); } }) },
+  namedExports: { useOwnerAuth: () => ({ authenticated: true, signOut: async () => { signOutCalls.push('signed-out'); } }) },
 });
 mock.module('../hooks/useColors.ts', { namedExports: { useColors: () => colors } });
 mock.module('../lib/assistant/voice.ts', {
@@ -240,6 +240,17 @@ test('Settings screen renders existing voice, privacy, developer and account con
   assert.match(html, /ভয়েস|Voice/);
   assert.match(html, /Wake Word|ওয়েক|Hey Badboy/i);
   assert.match(html, /Owner Sign Out/);
+  assert.ok(pressables.some((item) => item.label === 'Open Owner Panel'), 'Owner Panel is interactive');
+  assert.ok(pressables.some((item) => item.label === 'Token Management'), 'Token Management is interactive');
+  assert.ok(pressables.some((item) => item.label === 'Login Security'), 'Login Security is interactive');
+  pressables.find((item) => item.label === 'Open Owner Panel')?.onPress();
+  assert.equal(alerts.at(-1)?.title, 'Owner Panel');
+  await alerts.at(-1)?.buttons.find((button) => button.text === 'Manage Owner Token')?.onPress();
+  assert.equal(alerts.at(-1)?.title, 'Owner Token Management');
+  pressables.find((item) => item.label === 'Login Security')?.onPress();
+  assert.equal(alerts.at(-1)?.title, 'Login Security');
+  pressables.find((item) => item.label === 'Token Management')?.onPress();
+  assert.equal(alerts.at(-1)?.title, 'Owner Token Management');
   assert.match(html, /চ্যাট ইতিহাস মুছুন/);
   switchHandlers.find((item) => item.label === 'Develop mode')?.onValueChange(true);
   assert.deepEqual(settingsUpdates, [{ developerMode: true }]);

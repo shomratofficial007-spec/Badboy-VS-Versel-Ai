@@ -89,7 +89,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { settings, updateSettings, clearChat, expertReviewDraft, clearExpertReviewDraft } = useAssistant();
-  const { signOut } = useOwnerAuth();
+  const { authenticated, signOut } = useOwnerAuth();
   const [personalityDraft, setPersonalityDraft] = useState(settings.personality);
   const [botTokenDraft, setBotTokenDraft] = useState('');
   const [telegramConnected, setTelegramConnected] = useState(false);
@@ -692,6 +692,27 @@ export default function SettingsScreen() {
     }
   };
 
+  const requestOwnerReauthentication = () => {
+    Alert.alert('Owner Token Management', 'বর্তমান Owner Token দেখানো হবে না। নতুন Token দিতে চাইলে বর্তমান session নিরাপদে শেষ করে Owner Login-এ ফিরে যাও।', [
+      { text: 'বাতিল', style: 'cancel' },
+      { text: 'Replace Token', style: 'destructive', onPress: () => {
+        void signOut().catch((cause) => Alert.alert('Sign Out ব্যর্থ', cause instanceof Error ? cause.message : 'Owner Token SecureStore থেকে সরানো যায়নি।'));
+      } },
+    ]);
+  };
+  const openOwnerPanel = () => {
+    Alert.alert('Owner Panel', 'Owner session: ' + (authenticated ? 'Authenticated' : 'Not authenticated') + '. Owner Token-এর value কখনো এই screen-এ দেখানো হয় না।', [
+      { text: 'Manage Owner Token', onPress: requestOwnerReauthentication },
+      { text: 'বন্ধ করুন', style: 'cancel' },
+    ]);
+  };
+  const openLoginSecurity = () => {
+    Alert.alert('Login Security', 'Owner Login বাধ্যতামূলক। Token Android SecureStore/Keystore-এ রাখা হয় এবং third-party AI Provider-এ পাঠানো হয় না। Security বন্ধ করার কোনো option নেই।', [
+      { text: 'Re-authenticate', style: 'destructive', onPress: requestOwnerReauthentication },
+      { text: 'বন্ধ করুন', style: 'cancel' },
+    ]);
+  };
+
   const sectionCard = { backgroundColor: colors.card, borderColor: colors.border };
 
   return (
@@ -743,27 +764,28 @@ export default function SettingsScreen() {
 
       <Text style={[styles.eyebrow, { color: colors.primary }]}>ACCOUNT &amp; ACCESS</Text>
       <View style={[styles.section, sectionCard]}>
-        <View style={styles.sectionTitleRow}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Open Owner Panel" onPress={openOwnerPanel} style={styles.sectionTitleRow}>
           <Feather name="user" size={17} color={colors.primary} />
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Owner Panel</Text>
-        </View>
+          <Text style={[styles.sectionTitle, { color: colors.foreground, flex: 1 }]}>Owner Panel</Text>
+          <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+        </Pressable>
         <Text style={[styles.body, { color: colors.mutedForeground }]}>Manage owner features & access</Text>
-        <View style={[styles.accountInfoRow, { borderColor: colors.border }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Token Management" onPress={requestOwnerReauthentication} style={[styles.accountInfoRow, { borderColor: colors.border }]}>
           <Feather name="key" size={19} color={colors.primary} />
           <View style={{ flex: 1 }}>
             <Text style={[styles.label, { color: colors.foreground }]}>Token Management</Text>
-            <Text style={[styles.body, { color: colors.mutedForeground }]}>Owner token is protected by Android SecureStore</Text>
+            <Text style={[styles.body, { color: colors.mutedForeground }]}>Replace the owner token through verified Owner Login</Text>
           </View>
           <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
-        </View>
-        <View style={[styles.accountInfoRow, { borderColor: colors.border }]}>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Login Security" onPress={openLoginSecurity} style={[styles.accountInfoRow, { borderColor: colors.border }]}>
           <Feather name="lock" size={19} color={colors.primary} />
           <View style={{ flex: 1 }}>
             <Text style={[styles.label, { color: colors.foreground }]}>Login Security</Text>
-            <Text style={[styles.body, { color: colors.mutedForeground }]}>Owner login is required to access the main app</Text>
+            <Text style={[styles.body, { color: colors.mutedForeground }]}>Owner login is mandatory and cannot be disabled</Text>
           </View>
           <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
-        </View>
+        </Pressable>
       </View>
       <Pressable
         onPress={() => Alert.alert('চ্যাট ইতিহাস মুছবেন?', 'এই ফোনে সংরক্ষিত সব chat history মুছে যাবে।', [
