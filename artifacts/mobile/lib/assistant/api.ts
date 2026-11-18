@@ -3,6 +3,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import type { AssistantSettings } from '@/lib/assistant/types';
 import { getTranscriptionLanguageCode } from './transcriptionLanguage';
 import { getOwnerToken } from './ownerAuth';
+import { AI_PROVIDER_PRESETS, getProviderApiKey, normalizeProviderBaseUrl } from './providerSettings';
 
 // This repository deploys its own Worker; do not send native APK traffic to the
 // unrelated legacy Voice-Memory-Assistant Worker.
@@ -59,11 +60,67 @@ async function streamSseResponse(
   }
 }
 
+async function streamOpenAICompatibleResponse(response: Response, onChunk: (chunk: string) => void): Promise<void> {
+  if (!response.ok) {
+    await response.text().catch(() => '');
+    throw new Error('নির্বাচিত AI Provider request গ্রহণ করেনি (HTTP ' + response.status + ')। API Key, Model ও Base URL যাচাই করুন।');
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('AI Provider response stream পাওয়া যায়নি।');
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let complete = false;
+  while (!complete) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.startsWith('data:')) continue;
+      const payload = line.slice(5).trim();
+      if (!payload) continue;
+      if (payload === '[DONE]') { complete = true; break; }
+      let event: { choices?: Array<{ delta?: { content?: unknown } }> };
+      try { event = JSON.parse(payload) as typeof event; } catch { continue; }
+      const content = event.choices?.[0]?.delta?.content;
+      if (typeof content === 'string' && content) onChunk(content);
+    }
+  }
+}
+
+async function streamConfiguredProviderReply(message: string, settings: AssistantSettings, onChunk: (chunk: string) => void): Promise<void> {
+  // Owner authentication remains mandatory; the owner token is never sent to the AI provider.
+  await ownerAuthorizationHeader();
+  const providerId = settings.aiProvider;
+  const preset = AI_PROVIDER_PRESETS.find((item) => item.id === providerId);
+  const baseUrl = normalizeProviderBaseUrl(settings.aiBaseUrl || preset?.baseUrl || '');
+  const model = settings.aiModel.trim();
+  if (!model) throw new Error('Settings থেকে একটি Model নির্বাচন করুন।');
+  const apiKey = await getProviderApiKey(providerId);
+  if (!apiKey) throw new Error('এই Provider-এর API Key সংরক্ষিত নেই। Settings থেকে API Key যোগ করুন।');
+  const response = await expoFetch(baseUrl + '/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: 'Bearer ' + apiKey },
+    body: JSON.stringify({
+      model, stream: true, max_tokens: 4096,
+      messages: [
+        { role: 'system', content: settings.personality + '\n\nLanguage preference: ' + settings.voiceLanguage + (settings.developerMode ? '\nDeveloper mode is enabled. Preserve existing behavior and explain code changes clearly.' : '') },
+        { role: 'user', content: message.trim() },
+      ],
+    }),
+  });
+  await streamOpenAICompatibleResponse(response, onChunk);
+}
 export async function streamReply(
   message: string,
   settings: AssistantSettings,
   onChunk: (chunk: string) => void,
 ) {
+  if (settings.aiProvider && settings.aiProvider !== 'server') {
+    await streamConfiguredProviderReply(message, settings, onChunk);
+    return;
+  }
   const response = await expoFetch(apiUrl('/assistant/chat'), {
     method: 'POST',
     headers: {
