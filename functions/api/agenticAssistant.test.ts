@@ -223,6 +223,34 @@ test("multi-agent endpoint plans, executes allowlisted tools, reviews, and strea
   }
 });
 
+test("agentic response cancellation aborts the active upstream model request", async () => {
+  let capturedSignal: AbortSignal | undefined;
+  globalThis.fetch = async (_input, init) => {
+    capturedSignal = init?.signal as AbortSignal | undefined;
+    return new Promise<Response>((_resolve, reject) => {
+      if (capturedSignal?.aborted) {
+        reject(new Error("aborted"));
+        return;
+      }
+      capturedSignal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+    });
+  };
+  try {
+    const response = await handleAgenticAssistantRequest(agentRequest({ message: "cancel this request", mode: "single" }), {
+      OPENROUTER_API_KEY: "server-key",
+    });
+    const reader = response.body!.getReader();
+    const pendingRead = reader.read();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.ok(capturedSignal instanceof AbortSignal);
+    await reader.cancel("user cancelled");
+    assert.equal(capturedSignal?.aborted, true);
+    await pendingRead.catch(() => undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("agent retries an empty model response and reports a recoverable tool failure", async () => {
   let calls = 0;
   globalThis.fetch = async (_input, init) => {
