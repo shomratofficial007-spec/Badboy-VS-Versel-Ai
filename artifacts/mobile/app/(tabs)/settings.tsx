@@ -1590,7 +1590,7 @@ export default function SettingsScreen() {
         <Pressable accessibilityRole="button" onPress={() => { void handleConfigureScreenAwareness(); }} style={[styles.secondaryButton, { backgroundColor: colors.secondary, marginTop: 8 }]}>
           <Feather name="eye" size={14} color={colors.secondaryForeground} /><Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>Configure Screen Awareness</Text>
         </Pressable>
-        <Text style={[styles.smallNote, { color: colors.mutedForeground }]}>Floating bubble: {settings.floatingAssistantEnabled ? 'On' : 'Off'}. Screen context draft-এ preview করা যাবে—Send চাপার আগে তুমি যাচাই করবে।</Text>
+        <Text style={[styles.smallNote, { color: colors.mutedForeground }]}>Floating bubble: {settings.floatingAssistantEnabled ? 'On' : 'Off'}. পরিচিত sensitive pattern best-effort redacted হয়, সবকিছু ধরা নিশ্চিত নয়—Send করার আগে draft নিজে যাচাই করবে।</Text>
       </View>
 
       <Text style={[styles.eyebrow, { color: colors.primary }]}>VOICE &amp; DEVICE</Text>
