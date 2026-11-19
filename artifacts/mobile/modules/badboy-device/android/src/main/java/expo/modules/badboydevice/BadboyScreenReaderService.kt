@@ -38,7 +38,11 @@ class BadboyScreenReaderService : AccessibilityService() {
     } ?: return null
 
     if (root.packageName?.toString() != ownPackage) {
-      root.recycle()
+      try {
+        root.recycle()
+      } catch (_: Exception) {
+        // Ignore an already-released root node.
+      }
       return null
     }
 
@@ -75,7 +79,11 @@ class BadboyScreenReaderService : AccessibilityService() {
         } catch (_: Exception) {
           // A window may disappear while the user is switching applications.
         } finally {
-          root?.recycle()
+          try {
+            root?.recycle()
+          } catch (_: Exception) {
+            // Ignore an already-released root node.
+          }
         }
       }
     } catch (_: Exception) {
@@ -137,7 +145,11 @@ class BadboyScreenReaderService : AccessibilityService() {
             }
           }
         } finally {
-          node.recycle()
+          try {
+            node.recycle()
+          } catch (_: Exception) {
+            // Continue draining any queued nodes.
+          }
         }
       }
     } finally {
