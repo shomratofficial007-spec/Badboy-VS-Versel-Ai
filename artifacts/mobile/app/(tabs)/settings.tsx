@@ -414,7 +414,7 @@ export default function SettingsScreen() {
           const query = encodeURIComponent(String(res.outputData.query || prompt));
           try {
             await Linking.openURL('https://www.youtube.com/results?search_query=' + query);
-          } catch (cause) {
+          } catch {
             failAction('YouTube search link could not be opened. No successful launch is being reported.');
             return;
           }
