@@ -204,3 +204,17 @@ test('redirects every unauthenticated route to Owner Login and returns authentic
   assert.equal(getOwnerRouteRedirect(true, true, ['owner-login']), '/(tabs)');
   assert.equal(getOwnerRouteRedirect(true, true, ['(tabs)', 'index']), null);
 });
+
+
+test('times out a stalled Worker verification so the app can leave the startup spinner', async () => {
+  let requestSignal: AbortSignal | null | undefined;
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    requestSignal = init?.signal;
+    return await new Promise<Response>((_resolve, reject) => {
+      requestSignal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+    });
+  }) as typeof fetch;
+
+  await assert.rejects(verifyOwnerToken(OWNER_TOKEN, 5), /Owner verification timed out/);
+  assert.equal(requestSignal?.aborted, true);
+});
