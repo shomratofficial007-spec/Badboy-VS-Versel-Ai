@@ -253,6 +253,15 @@ test('streamDeveloperAnalysis handles HTTP, stream, and event errors', async () 
   );
 });
 
+test('streamDeveloperAnalysis rejects a stream that ends without its completion marker', async () => {
+  const { streamDeveloperAnalysis } = await apiPromise;
+  fetchHandler = async () => streamResponse(['data: {"content":"partial analysis"}\n\n']);
+  await assert.rejects(
+    streamDeveloperAnalysis('prompt', 'project context', 'native', () => undefined),
+    /ended before its completion marker/,
+  );
+});
+
 test('searchAgentMemory uses owner auth and bounds the project search request', async () => {
   const { searchAgentMemory } = await apiPromise;
   let url = '';
