@@ -923,6 +923,7 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
   const decoder = new TextDecoder();
   let taskFinalized = false;
   let downstreamCancelled = false;
+  let accumulatedOutput = "";
 
   const finalizeTask = async (status: "completed" | "failed" | "cancelled", reason?: string) => {
     if (taskFinalized) return;
@@ -945,7 +946,6 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
     });
   };
 
-  let accumulatedOutput = "";
   const stream = new ReadableStream({
     async start(controller) {
       let streamClosed = false;
