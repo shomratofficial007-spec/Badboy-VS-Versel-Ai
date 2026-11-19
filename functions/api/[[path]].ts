@@ -1,4 +1,4 @@
-import { createUpstreamAbortSignal } from "./upstreamAbort";
+import { createUpstreamAbortSignal } from "./upstreamAbort.ts";
 import { buildDeveloperAnalysisMessages, resolveDeveloperAnalysisEngine, validateDeveloperAnalysisPayload } from "./developerAgent.ts";
 import { authenticatePersonalOwner } from "./personalAuth.ts";
 import { handleDeveloperDataRequest } from "./developerData.ts";
