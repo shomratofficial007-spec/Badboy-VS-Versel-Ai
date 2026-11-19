@@ -1054,10 +1054,15 @@ export default function SettingsScreen() {
         <SettingSwitch
           colors={colors}
           title="অনলাইন AI"
-          subtitle={settings.onlineAI ? 'শুধু এই মুহূর্তের বার্তাটি AI-কে পাঠানো হয়।' : 'অফলাইনে chat ও মেমোরি এই ফোনেই থাকে; AI উত্তর বন্ধ।'}
+          subtitle={settings.onlineAI ? 'বর্তমান বার্তার সঙ্গে শেষ ৮টি chat message, প্রাসঙ্গিক Cloudflare Project Memory এবং সক্রিয় skill context নির্বাচিত AI provider/Worker-এ পাঠানো হতে পারে। Private Device Memory নোট পাঠানো হয় না।' : 'Online AI request বন্ধ; chat message AI provider/Worker-এ পাঠানো হচ্ছে না।'}
           value={settings.onlineAI}
           onValueChange={(value) => updateSettings({ onlineAI: value })}
         />
+        <Text style={[styles.smallNote, { color: colors.mutedForeground, marginTop: 8 }]}>
+          {Platform.OS === 'web'
+            ? 'Chat history browser storage-এ থাকে; app এটি encrypt করে না। Password বা API key chat-এ লিখো না।'
+            : 'Chat history এই app-এর private AsyncStorage-এ থাকে, SecureStore encryption নয়। Password বা API key chat-এ লিখো না; প্রয়োজন হলে Clear Chat ব্যবহার করো।'}
+        </Text>
         <View style={[styles.rule, { backgroundColor: colors.border }]} />
         <Text style={[styles.label, { color: colors.foreground }]}>Assistant personality</Text>
         <TextInput
