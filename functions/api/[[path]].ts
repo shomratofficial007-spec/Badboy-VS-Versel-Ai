@@ -1317,6 +1317,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   const reader = upstream.body.getReader();
   const decoder = new TextDecoder();
   let downstreamCancelled = false;
+  let emittedContent = false;
   const stream = new ReadableStream({
     async start(controller) {
       let pending = "";
@@ -1347,10 +1348,18 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
             const event = pending.slice(0, boundary);
             pending = pending.slice(boundary + 2);
             const { texts, done: streamDone } = extractDeltas(event);
-            for (const content of texts) send(JSON.stringify({ content }));
+            for (const content of texts) {
+              emittedContent = true;
+              send(JSON.stringify({ content }));
+            }
             if (streamDone) {
               receivedDone = true;
               if (downstreamCancelled || request.signal.aborted) {
+                close();
+                return;
+              }
+              if (!emittedContent) {
+                send(JSON.stringify({ error: "OpenRouter returned an empty response." }));
                 close();
                 return;
               }
@@ -1375,6 +1384,8 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
           send(JSON.stringify({ error: "OpenRouter request timed out." }));
         } else if (!receivedDone) {
           send(JSON.stringify({ error: "OpenRouter stream ended before the completion marker." }));
+        } else if (!emittedContent) {
+          send(JSON.stringify({ error: "OpenRouter returned an empty response." }));
         } else {
           send("[DONE]");
         }
