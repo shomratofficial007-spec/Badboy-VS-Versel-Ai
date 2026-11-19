@@ -988,6 +988,7 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
 
       try {
         let pending = "";
+        let receivedDone = false;
         while (true) {
           const { done, value } = await reader.read();
           if (done) {
@@ -1016,6 +1017,7 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
               send(JSON.stringify({ content, taskId, engine, provider: selectedProvider }));
             }
             if (parsed.done) {
+              receivedDone = true;
               if (downstreamCancelled || (upstreamAbort.signal.aborted && !upstreamAbort.wasTimedOut())) {
                 await finalizeTask("cancelled", "client_disconnected");
                 close();
@@ -1041,6 +1043,7 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
             accumulatedOutput = (accumulatedOutput + content).slice(0, 4000);
             send(JSON.stringify({ content, taskId, engine, provider: selectedProvider }));
           }
+          receivedDone = parsed.done;
         }
         if (downstreamCancelled || (upstreamAbort.signal.aborted && !upstreamAbort.wasTimedOut())) {
           await finalizeTask("cancelled", "client_disconnected");
@@ -1053,6 +1056,7 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
           close();
           return;
         }
+        if (!receivedDone) throw new Error("Developer Agent stream ended before the completion marker.");
         await completeTask();
       } catch {
         const wasCancelled = downstreamCancelled || request.signal.aborted;
@@ -1347,6 +1351,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
       };
 
       try {
+        let receivedDone = false;
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -1359,6 +1364,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
             const { texts, done: streamDone } = extractDeltas(event);
             for (const content of texts) send(JSON.stringify({ content }));
             if (streamDone) {
+              receivedDone = true;
               if (downstreamCancelled || request.signal.aborted) {
                 close();
                 return;
@@ -1372,8 +1378,9 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
         }
         pending += decoder.decode();
         if (pending.trim()) {
-          const { texts } = extractDeltas(pending);
-          for (const content of texts) send(JSON.stringify({ content }));
+          const parsed = extractDeltas(pending);
+          for (const content of parsed.texts) send(JSON.stringify({ content }));
+          receivedDone = parsed.done;
         }
         if (downstreamCancelled || request.signal.aborted) {
           close();
@@ -1381,6 +1388,8 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
         }
         if (upstreamAbort.wasTimedOut()) {
           send(JSON.stringify({ error: "OpenRouter request timed out." }));
+        } else if (!receivedDone) {
+          send(JSON.stringify({ error: "OpenRouter stream ended before the completion marker." }));
         } else {
           send("[DONE]");
         }
