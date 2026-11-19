@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createUpstreamAbortSignal } from './[[path]]';
+import { createUpstreamAbortSignal } from './[[path]].ts';
 
 test('upstream timeout aborts the provider signal and records timeout cause', async () => {
   const request = new Request('https://example.test/api/assistant/chat');
