@@ -11,7 +11,12 @@ const JWT_PATTERN = /\\beyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_
 const SECRET_TOKEN_PATTERN = /\\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{20,})\\b/g;
 
 export function redactSensitiveScreenText(value: string): string {
-  return value
+  const preservedDates: string[] = [];
+  const protectedValue = value.replace(
+    /\\b\\d{4}-\\d{2}-\\d{2}(?:[ T]\\d{2}:\\d{2}(?::\\d{2})?)?\\b/g,
+    (date) => `__BADBOY_DATE_${preservedDates.push(date) - 1}__`,
+  );
+  const redacted = protectedValue
     .replace(EMAIL_PATTERN, '[email]')
     .replace(OTP_PATTERN, '$1: [code]')
     .replace(PASSWORD_PATTERN, '$1: [redacted]')
@@ -23,6 +28,7 @@ export function redactSensitiveScreenText(value: string): string {
     .replace(SECRET_TOKEN_PATTERN, '[secret token]')
     .replace(CARD_NUMBER_PATTERN, '[card number]')
     .replace(PHONE_OR_ACCOUNT_PATTERN, '[phone/account number]');
+  return redacted.replace(/__BADBOY_DATE_(\\d+)__/g, (_placeholder, index: string) => preservedDates[Number(index)] ?? '');
 }
 
 export function normalizeVisibleScreenText(value: string): string {
