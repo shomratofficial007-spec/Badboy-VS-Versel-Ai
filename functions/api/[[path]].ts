@@ -292,18 +292,18 @@ function extractDeltas(event: string): { texts: string[]; done: boolean } {
       continue;
     }
     if (!data) continue;
+    let parsed: {
+      error?: unknown;
+      choices?: Array<{ delta?: { content?: unknown } }>;
+    };
     try {
-      const parsed = JSON.parse(data) as {
-        error?: unknown;
-        choices?: Array<{ delta?: { content?: unknown } }>;
-      };
-      if (parsed.error) throw new Error("AI provider returned an upstream stream error.");
-      const delta = parsed.choices?.[0]?.delta?.content;
-      if (typeof delta === "string" && delta.length > 0) texts.push(delta);
-    } catch (cause) {
-      if (cause instanceof Error && cause.message === "AI provider returned an upstream stream error.") throw cause;
+      parsed = JSON.parse(data) as typeof parsed;
+    } catch {
       throw new Error("AI provider returned malformed stream data.");
     }
+    if (parsed.error) throw new Error("AI provider returned an upstream stream error.");
+    const delta = parsed.choices?.[0]?.delta?.content;
+    if (typeof delta === "string" && delta.length > 0) texts.push(delta);
   }
   return { texts, done };
 }
