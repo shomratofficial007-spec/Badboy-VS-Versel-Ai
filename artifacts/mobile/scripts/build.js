@@ -38,6 +38,15 @@ if (!isReplitEnvironment) {
       return;
     }
 
+    const headersSource = path.join(projectRoot, 'public', '_headers');
+    const headersTarget = path.join(projectRoot, 'dist', '_headers');
+    if (!fs.existsSync(headersSource)) {
+      console.error('Cloudflare static asset headers file is missing:', headersSource);
+      process.exitCode = 1;
+      return;
+    }
+    fs.copyFileSync(headersSource, headersTarget);
+    console.log('Copied Cloudflare static asset headers to dist/_headers');
     console.log('Cloudflare Worker static web export is ready.');
     process.exitCode = 0;
   });
