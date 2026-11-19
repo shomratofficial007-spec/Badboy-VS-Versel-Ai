@@ -716,7 +716,6 @@ export function getPluginRegistryStatus(): PluginItem[] {
     { id: 'android-device-control', name: 'Android Device Control', category: 'Device', status: 'active', requiresOAuth: false, description: 'Allowlisted app and Android Settings launches only; each action requires explicit confirmation.' },
   ];
 }
-}
 
 /**
  * Normalizes user prompt in Bengali or English to generate a structured development plan across modules.
