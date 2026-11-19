@@ -246,65 +246,67 @@ export interface DeveloperAnalysisStreamResult {
 /** Stream a read-only Developer Agent analysis through the Cloudflare orchestration API. */
 export async function streamDeveloperAnalysis(
   prompt: string,
-  projectContext: string,
-  requestedEngine: DeveloperEngineRequest,
+  engine: string,
   onChunk: (chunk: string) => void,
-): Promise<DeveloperAnalysisStreamResult> {
-  const response = await expoFetch(apiUrl('/developer/analyze'), {
+): Promise<{ taskId: string; engine: string }> {
+  const response = await fetch(apiUrl('/api/developer/analyze'), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-      Authorization: await ownerAuthorizationHeader(),
-    },
-    body: JSON.stringify({ prompt, projectContext, requestedEngine }),
+    headers: await buildHeaders(),
+    body: JSON.stringify({ prompt, engine }),
   });
-
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as {
-      error?: string;
-      code?: string;
-    };
-    throw new Error(
-      body.error ?? `Developer Agent request failed (HTTP ${response.status}).`,
-    );
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? 'Developer Agent request failed (HTTP ' + response.status + ').');
   }
 
   const reader = response.body?.getReader();
-  if (!reader) throw new Error('Developer Agent response stream is unavailable.');
+  if (!reader) throw new Error('Developer Agent stream unavailable.');
   const decoder = new TextDecoder();
   let buffer = '';
+  let taskId = '';
+  let actualEngine = engine;
   let complete = false;
-  let taskId: string | undefined;
-  let engine: string | undefined;
-
-  while (!complete) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const payload = line.slice(6);
-      if (payload === '[DONE]') {
-        complete = true;
-        break;
-      }
-      const event = JSON.parse(payload) as {
-        content?: string;
-        error?: string;
-        taskId?: string;
-        engine?: string;
-      };
-      if (event.taskId) taskId = event.taskId;
-      if (event.engine) engine = event.engine;
-      if (event.error) throw new Error(event.error);
-      if (event.content) onChunk(event.content);
+  const processLine = (line: string) => {
+    if (!line.startsWith('data: ')) return;
+    const payload = line.slice(6).trim();
+    if (payload === '[DONE]') {
+      complete = true;
+      return;
     }
-  }
+    const event = JSON.parse(payload) as { taskId?: string; engine?: string; content?: string; error?: string };
+    if (event.error) throw new Error(event.error);
+    if (event.taskId) taskId = event.taskId;
+    if (event.engine) actualEngine = event.engine;
+    if (event.content) onChunk(event.content);
+  };
 
-  return { taskId, engine };
+  try {
+    while (!complete) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        processLine(line);
+        if (complete) break;
+      }
+    }
+    buffer += decoder.decode();
+    if (!complete && buffer.trim()) {
+      for (const line of buffer.split('\n')) {
+        processLine(line);
+        if (complete) break;
+      }
+    }
+    if (!complete) throw new Error('Developer Agent stream ended before its completion marker.');
+    return { taskId, engine: actualEngine };
+  } catch (error) {
+    await reader.cancel(error).catch(() => undefined);
+    throw error;
+  } finally {
+    try { reader.releaseLock(); } catch { /* already released */ }
+  }
 }
 
 export interface AgentMemorySearchResult {
