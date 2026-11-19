@@ -462,7 +462,7 @@ async function requestCompletion(
     if (![400, 404, 408, 429, 500, 502, 503, 504].includes(response.status)) return response;
     await response.body?.cancel().catch(() => undefined);
   }
-  return jsonResponse({ code: "AGENT_MODELS_UNAVAILABLE", error: `No configured free model is available (last HTTP ${lastStatus}).` }, lastStatus === 429 ? 429 : 502);
+  return jsonResponse({ code: "AGENT_MODELS_UNAVAILABLE", error: `No configured free model is available (last HTTP ${lastStatus}).` }, lastStatus === 429 ? 429 : lastStatus === 504 ? 504 : 502);
 }
 
 async function completeText(apiKey: string, messages: ChatMessage[], tools = false, toolDefinitions?: readonly unknown[], responseFormat?: "json_object", signal?: AbortSignal): Promise<{ content: string; messages: ChatMessage[] }> {
