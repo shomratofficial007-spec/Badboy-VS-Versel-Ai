@@ -163,3 +163,12 @@ Baseline commit inspected: `0664e673f145249e0ff2ff9b6d76c8145cb7d2b2`.
 
 - lib/db was an empty placeholder PostgreSQL package: its schema barrel exported no tables, its runtime opened a pg Pool from DATABASE_URL, and its drizzle config targeted PostgreSQL. The only previously observed consumer was the removed Express API package; the root TypeScript project reference was the remaining workspace reference. The canonical Worker uses Cloudflare D1 through AGENT_DB and migrations/ instead.
 - Removing this unused PostgreSQL package and its root TypeScript reference eliminates the second database runtime rather than leaving a dead Postgres connection path beside D1.
+
+### CI and lockfile evidence — 2026-11-20
+
+- Lockfile refresh workflow run 44625061986 completed successfully: pnpm 10.8.1 regenerated pnpm-lock.yaml and its frozen-lockfile verification step passed.
+- After removing the unused lib/db PostgreSQL package, the regenerated lockfile has no artifacts/api-server or lib/db importer and no Express, @types/express, cookie-parser, pino-http, pg, drizzle-kit, drizzle-zod, or esbuild-plugin-pino package snapshots.
+- A CI run on an earlier PR head reported 151/154 Worker tests passing and a TypeScript failure caused by remaining rawOnRequestGet/rawOnRequestPost test references. The test adapter was corrected to call handleApiRequest directly for both raw unauthenticated cases and authenticated helper cases; the Pages adapter is no longer imported.
+- The same build-script change preserves the public/_headers copy into artifacts/mobile/dist while removing the Pages functions bundling command.
+- PR validation runs created for the bot-authored lockfile refresh commit concluded action_required with zero jobs. This is not a passing test result; a new PR-synchronizing commit is required to obtain fresh executable checks on the final source head.
+- All migration commits remain on this draft PR branch. No production deploy, Worker secret change, or production D1 migration has occurred.
