@@ -669,6 +669,7 @@ export function getProjectBrainSummary(): ProjectBrain {
       'Static Plugin Registry statuses describe code/setup requirements, not live provider health; check /api/healthz, /api/developer/health and /api/integrations/status.',
       'Telegram actions require a user-configured bot token and chat ID.',
       'Private Device Memory is stored locally and is not auto-added to AI prompts; AI context uses separate owner-scoped Cloudflare D1 Project Memory.',
+      'Chat history remains in app-private AsyncStorage and is not SecureStore-encrypted; the UI warns users not to place passwords or API keys in chat.',
       'Jarvis Screen Awareness requires explicit Android overlay and Accessibility permissions; text is read only after user action, best-effort redacted, and never auto-sent.',
       'The in-app Auto-QA panel reports NOT RUN unless actual CI/build evidence is supplied.',
     ],
