@@ -32,6 +32,9 @@ test('keeps the owner token in the active session and restores an existing sessi
   assert.equal(await getOwnerToken(), null);
   assert.equal(await restoreOwnerSession(), false);
 
+  globalThis.fetch = (async () => new Response(JSON.stringify({ authenticated: true }), {
+    status: 200, headers: { 'Content-Type': 'application/json' },
+  })) as typeof fetch;
   await saveOwnerToken(OWNER_TOKEN);
   assert.equal(await getOwnerToken(), OWNER_TOKEN);
   assert.equal(await restoreOwnerSession(), true);
@@ -51,6 +54,9 @@ test('uses SecureStore on native when EXPO_OS is omitted by a custom build', asy
       value: {},
     });
 
+    globalThis.fetch = (async () => new Response(JSON.stringify({ authenticated: true }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    })) as typeof fetch;
     await saveOwnerToken(OWNER_TOKEN);
     assert.equal(secureStoreToken, OWNER_TOKEN);
     assert.equal(await getOwnerToken(), OWNER_TOKEN);
@@ -75,6 +81,9 @@ test('uses SecureStore when Expo explicitly identifies Android', async () => {
   const originalExpoOs = process.env.EXPO_OS;
   try {
     process.env.EXPO_OS = 'android';
+    globalThis.fetch = (async () => new Response(JSON.stringify({ authenticated: true }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    })) as typeof fetch;
     await saveOwnerToken(OWNER_TOKEN);
     assert.equal(secureStoreToken, OWNER_TOKEN);
     assert.equal(await restoreOwnerSession(), true);
