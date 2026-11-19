@@ -68,6 +68,7 @@ function RootLayoutNav() {
   return (
     <Stack screenOptions={{ headerShown: false, headerBackTitle: 'Back' }}>
       <Stack.Screen name="owner-login" options={{ headerShown: false, title: 'Owner Login' }} />
+      <Stack.Screen name="jarvis" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false, title: 'Badboy AI' }} />
     </Stack>
   );
