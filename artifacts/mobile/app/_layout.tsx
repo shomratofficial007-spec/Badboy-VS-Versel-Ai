@@ -18,8 +18,10 @@ setAuthTokenGetter(getOwnerToken);
 const queryClient = new QueryClient();
 
 function RootLayoutNav() {
-  const { ready, authenticated } = useOwnerAuth();
+  const { ready } = useOwnerAuth();
 
+  // Do not let Expo Router render a deep-linked screen until the persisted
+  // owner session has been restored and verified.
   if (!ready) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#071426' }}>
@@ -28,13 +30,12 @@ function RootLayoutNav() {
     );
   }
 
+  // Keep both routes registered. The login screen and tabs layout enforce
+  // their own redirects after session restoration.
   return (
     <Stack screenOptions={{ headerShown: false, headerBackTitle: 'Back' }}>
-      {authenticated ? (
-        <Stack.Screen name="(tabs)" options={{ headerShown: false, title: 'Badboy AI' }} />
-      ) : (
-        <Stack.Screen name="owner-login" options={{ headerShown: false, title: 'Owner Login' }} />
-      )}
+      <Stack.Screen name="owner-login" options={{ headerShown: false, title: 'Owner Login' }} />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false, title: 'Badboy AI' }} />
     </Stack>
   );
 }
