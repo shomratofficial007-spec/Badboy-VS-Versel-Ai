@@ -17,15 +17,17 @@ import { getOwnerRouteRedirect } from '@/lib/assistant/ownerAuth';
 
 export default function OwnerLoginScreen() {
   const { ready, authenticated, signIn } = useOwnerAuth();
+  // Keep hooks unconditional: auth restoration can change ready/authenticated
+  // while this screen remains mounted.
+  const [token, setToken] = useState('');
+  const [tokenVisible, setTokenVisible] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const redirect = getOwnerRouteRedirect(ready, authenticated, ['owner-login']);
   if (!ready) {
     return <View style={styles.loading}><ActivityIndicator color="#d946ef" /></View>;
   }
   if (redirect) return <Redirect href={redirect} />;
-  const [token, setToken] = useState('');
-  const [tokenVisible, setTokenVisible] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const handleSignIn = async () => {
     if (busy) return;
