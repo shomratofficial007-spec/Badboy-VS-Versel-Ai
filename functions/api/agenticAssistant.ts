@@ -465,8 +465,8 @@ async function requestCompletion(
   return jsonResponse({ code: "AGENT_MODELS_UNAVAILABLE", error: `No configured free model is available (last HTTP ${lastStatus}).` }, lastStatus === 429 ? 429 : 502);
 }
 
-async function completeText(apiKey: string, messages: ChatMessage[], tools = false, toolDefinitions?: readonly unknown[], responseFormat?: "json_object"): Promise<{ content: string; messages: ChatMessage[] }> {
-  const response = await requestCompletion(apiKey, messages, { tools, toolDefinitions, responseFormat, maxTokens: 1800 });
+async function completeText(apiKey: string, messages: ChatMessage[], tools = false, toolDefinitions?: readonly unknown[], responseFormat?: "json_object", signal?: AbortSignal): Promise<{ content: string; messages: ChatMessage[] }> {
+  const response = await requestCompletion(apiKey, messages, { tools, toolDefinitions, responseFormat, maxTokens: 1800, signal, timeoutMs: 20_000 });
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as CompletionResponse;
     throw new Error(modelErrorMessage(body, response.status));
@@ -496,6 +496,7 @@ async function runToolAgent(
   emit: (event: Record<string, unknown>) => void,
   env: IntegrationEnv,
   enabledPlugins: AgentPluginId[],
+  signal?: AbortSignal,
 ): Promise<string> {
   const toolPluginMap: Record<string, AgentPluginId> = {
     web_research: "web-research",
@@ -511,7 +512,7 @@ async function runToolAgent(
   let current = [...messages];
   let totalCalls = 0;
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-    const result = await completeText(apiKey, current, true, enabledToolDefinitions);
+    const result = await completeText(apiKey, current, true, enabledToolDefinitions, undefined, signal);
     current = result.messages;
     const assistant = current[current.length - 1];
     const calls = assistant.tool_calls ?? [];
@@ -599,8 +600,9 @@ function parseOpenRouterDeltas(event: string): { content: string[]; done: boolea
 async function streamFinalAnswer(
   apiKey: string,
   messages: ChatMessage[],
+  signal?: AbortSignal,
 ): Promise<Response> {
-  const upstream = await requestCompletion(apiKey, messages, { stream: true, maxTokens: 2400 });
+  const upstream = await requestCompletion(apiKey, messages, { stream: true, maxTokens: 2400, signal, timeoutMs: 90_000 });
   if (!upstream.ok || !upstream.body) {
     const body = await upstream.json().catch(() => ({})) as CompletionResponse;
     return jsonResponse({ code: "AGENT_FINAL_RESPONSE_FAILED", error: modelErrorMessage(body, upstream.status) }, upstream.status === 429 ? 429 : 502);
@@ -608,9 +610,24 @@ async function streamFinalAnswer(
   const encoder = new TextEncoder();
   const reader = upstream.body.getReader();
   const decoder = new TextDecoder();
+  let cancelled = false;
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (value: unknown) => controller.enqueue(encoder.encode(`data: ${typeof value === "string" ? value : JSON.stringify(value)}\n\n`));
+      let closed = false;
+      const send = (value: unknown) => {
+        if (cancelled || closed) return;
+        const body = typeof value === "string" ? value : JSON.stringify(value);
+        try {
+          controller.enqueue(encoder.encode("data: " + body + "\n\n"));
+        } catch {
+          closed = true;
+        }
+      };
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        try { controller.close(); } catch { /* downstream may already be closed */ }
+      };
       let pending = "";
       try {
         while (true) {
@@ -624,7 +641,7 @@ async function streamFinalAnswer(
             const parsed = parseOpenRouterDeltas(event);
             for (const content of parsed.content) send({ content });
             if (parsed.done) {
-              controller.close();
+              close();
               return;
             }
             boundary = pending.indexOf("\n\n");
@@ -634,14 +651,19 @@ async function streamFinalAnswer(
           const parsed = parseOpenRouterDeltas(pending);
           for (const content of parsed.content) send({ content });
         }
-        controller.close();
+        close();
       } catch {
-        send({ error: "Agent response stream was interrupted." });
-        controller.close();
+        if (!signal?.aborted) send({ error: "Agent response stream was interrupted." });
+        close();
       } finally {
         try { reader.releaseLock(); } catch { /* already released */ }
       }
     },
+    async cancel(reason) {
+      cancelled = true;
+      await reader.cancel(reason).catch(() => undefined);
+    },
+  });
   });
   return new Response(stream, {
     headers: {
