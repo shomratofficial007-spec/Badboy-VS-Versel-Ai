@@ -29,14 +29,16 @@ test('redacts credentials, authorization headers, cookies, JWTs and URL secrets'
     'Cookie: session=private-value',
     'https://example.test/?access_token=private-token',
     'sk-123456789012345678901234',
+    'github_pat_123456789012345678901234567890',
+    '123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi12345',
   ].join('\n'));
   assert.match(result, /Password: \[redacted\]/);
   assert.match(result, /API Key: \[redacted\]/);
   assert.match(result, /Authorization: Bearer \[redacted\]/);
   assert.match(result, /Cookie: \[redacted\]/);
   assert.match(result, /access_token=\[redacted\]/);
-  assert.match(result, /\[secret token\]/);
-  assert.doesNotMatch(result, /private-value|private-token|hunter2|123456789012345678901234/);
+  assert.equal((result.match(/\[secret token\]/g) ?? []).length, 3);
+  assert.doesNotMatch(result, /private-value|private-token|hunter2|123456789012345678901234|github_pat_123456789012345678901234567890|ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi12345/);
 });
 
 test('preserves dates and ordinary text while redacting long numeric identifiers', () => {
