@@ -314,7 +314,7 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
-function createUpstreamAbortSignal(request: Request, timeoutMs = 30_000): {
+export function createUpstreamAbortSignal(request: Request, timeoutMs = 30_000): {
   signal: AbortSignal;
   abort: (reason?: unknown) => void;
   wasTimedOut: () => boolean;
