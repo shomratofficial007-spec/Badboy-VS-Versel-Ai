@@ -70,6 +70,26 @@ test('readLocalState restores notes and migrates legacy plaintext metadata into 
   });
 });
 
+test('migrates legacy AsyncStorage private notes into SecureStore before deleting plaintext copies', async () => {
+  const { readLocalState } = await storagePromise;
+  reset();
+  local.set('oi-assistant-memory-index-v1', JSON.stringify([
+    { id: 'legacy', title: 'পুরোনো নোট', createdAt: '2026-01-02' },
+  ]));
+  local.set('oi-assistant-memory-legacy', 'পুরোনো ব্যক্তিগত তথ্য');
+
+  const restored = await readLocalState();
+  assert.deepEqual(restored.memories, [{
+    id: 'legacy',
+    title: 'পুরোনো নোট',
+    createdAt: '2026-01-02',
+    content: 'পুরোনো ব্যক্তিগত তথ্য',
+  }]);
+  assert.equal(local.has('oi-assistant-memory-legacy'), false);
+  assert.deepEqual(JSON.parse(local.get('oi-assistant-memory-index-v1')!), [{ id: 'legacy' }]);
+  assert.deepEqual(JSON.parse(secure.get('oi-assistant-memory-legacy')!), restored.memories[0]);
+});
+
 test('persistMessages and persistSettings serialize local data', async () => {
   const { persistMessages, persistSettings } = await storagePromise;
   reset();
