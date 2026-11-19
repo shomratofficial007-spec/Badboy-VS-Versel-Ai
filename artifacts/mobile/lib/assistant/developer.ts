@@ -664,6 +664,9 @@ export function getProjectBrainSummary(): ProjectBrain {
       'Netlify Functions and the standalone Express API are removed; Cloudflare Worker is the only backend.',
       'Gmail sending is disabled until a structured recipient/subject/body composer and OAuth flow are implemented.',
       'GitHub writes require a SecureStore PAT, a read-only preview, and explicit owner approval; the agent does not auto-merge.',
+      'Developer analysis is analysis-only: it does not inspect private repository files, execute commands, or dispatch workflows. GitHub PR creation is a separate approved client-side flow.',
+      'Home Assistant, Slack, Discord, Google Calendar and Tavily require Worker secrets; /api/integrations/status is the runtime configuration source of truth.',
+      'Static Plugin Registry statuses describe code/setup requirements, not live provider health; check /api/healthz, /api/developer/health and /api/integrations/status.',
       'Telegram actions require a user-configured bot token and chat ID.',
       'Jarvis Screen Awareness requires explicit Android overlay and Accessibility permissions; text is read only after user action, best-effort redacted, and never auto-sent.',
       'The in-app Auto-QA panel reports NOT RUN unless actual CI/build evidence is supplied.',
@@ -696,16 +699,23 @@ export function runAutoQASuite(): QAResult {
  */
 export function getPluginRegistryStatus(): PluginItem[] {
   return [
-    { id: 'cloudflare-worker-api', name: 'Cloudflare Worker API', category: 'Backend', status: 'active', requiresOAuth: false, description: 'The single Worker hosts API, AI, owner-scoped D1 memory, voice, developer analysis, integrations and static web assets.' },
-    { id: 'memory-adapter', name: 'Cloudflare D1 Memory', category: 'Memory', status: 'active', requiresOAuth: false, description: 'Owner-scoped memory search and persistence through the Cloudflare Worker and D1 binding.' },
-    { id: 'github-adapter', name: 'GitHub REST API Adapter', category: 'DevOps', status: 'pending', requiresOAuth: false, description: 'Requires a Personal Access Token in SecureStore; writes require read-only preview and explicit approval.' },
+    { id: 'cloudflare-worker-api', name: 'Cloudflare Worker API', category: 'Backend', status: 'active', requiresOAuth: false, description: 'Single Worker hosts API, AI, owner-scoped D1 memory, voice, developer analysis, integrations and static web assets; verify live health separately.' },
+    { id: 'memory-adapter', name: 'Cloudflare D1 Memory', category: 'Memory', status: 'active', requiresOAuth: false, description: 'Owner-scoped memory search and persistence through the Worker and D1 binding; runtime availability is reported by Worker health.' },
+    { id: 'developer-analysis', name: 'Developer Analysis Agent', category: 'Developer', status: 'active', requiresOAuth: false, description: 'Worker AI analysis only; it does not inspect private repository files or execute commands. Check /api/developer/health for provider and D1 readiness.' },
+    { id: 'github-adapter', name: 'GitHub REST API Adapter', category: 'DevOps', status: 'pending', requiresOAuth: false, description: 'Requires a Personal Access Token in SecureStore; writes require read-only preview and explicit owner approval.' },
     { id: 'web-research-adapter', name: 'Live Web Research Adapter', category: 'Search', status: 'active', requiresOAuth: false, description: 'DuckDuckGo HTML result parsing with an explicit search-link fallback when snippets are unavailable.' },
+    { id: 'tavily-research-adapter', name: 'Cloudflare Tavily Research', category: 'Search', status: 'pending', requiresOAuth: false, description: 'Server-side research requires TAVILY_API_KEY; actual configuration is exposed by /api/integrations/status.' },
+    { id: 'home-assistant-adapter', name: 'Home Assistant', category: 'Smart Home', status: 'pending', requiresOAuth: false, description: 'Requires an HTTPS Home Assistant URL and server-side token; write actions require a single-use owner approval.' },
+    { id: 'slack-adapter', name: 'Slack History and Actions', category: 'Messaging', status: 'pending', requiresOAuth: false, description: 'Requires a server-side Slack bot token and channel allowlist; write actions require owner approval.' },
+    { id: 'discord-adapter', name: 'Discord History', category: 'Messaging', status: 'pending', requiresOAuth: false, description: 'Read-only message history requires a server-side Discord bot token.' },
+    { id: 'google-calendar-adapter', name: 'Google Calendar Events', category: 'Productivity', status: 'pending', requiresOAuth: true, description: 'Read-only event access requires a server-side Google Calendar access token.' },
     { id: 'gmail-adapter', name: 'Gmail OAuth Adapter', category: 'Email', status: 'not_connected', requiresOAuth: true, description: 'Email sending is disabled until a structured composer and complete OAuth consent flow are implemented.' },
     { id: 'youtube-adapter', name: 'YouTube Search Adapter', category: 'Media', status: 'active', requiresOAuth: false, description: 'Opens YouTube search/deep links; it does not provide embedded playback.' },
     { id: 'telegram-adapter', name: 'Telegram Bot Adapter', category: 'Messaging', status: 'pending', requiresOAuth: false, description: 'Requires the user to configure a bot token and target chat ID in secure storage.' },
-    { id: 'voice-adapter', name: 'Worker Voice and Android Audio', category: 'Audio', status: 'active', requiresOAuth: false, description: 'Worker voice/transcription routes plus Android native wake-word and speech capabilities.' },
+    { id: 'voice-adapter', name: 'Worker Voice and Android Audio', category: 'Audio', status: 'active', requiresOAuth: false, description: 'Worker voice/transcription routes plus Android native wake-word and speech capabilities; upstream secrets require live health verification.' },
     { id: 'android-device-control', name: 'Android Device Control', category: 'Device', status: 'active', requiresOAuth: false, description: 'Allowlisted app and Android Settings launches only; each action requires explicit confirmation.' },
   ];
+}
 }
 
 /**
