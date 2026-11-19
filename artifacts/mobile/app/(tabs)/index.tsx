@@ -129,9 +129,7 @@ export default function ChatScreen() {
     setDraft('এই স্ক্রিনের তথ্য বিশ্লেষণ করো। সংবেদনশীল তথ্য বাদ দিয়ে প্রয়োজনীয় বিষয় ব্যাখ্যা করো:\n\n' + safeContext);
     setError(null);
     Alert.alert('Screen context প্রস্তুত', 'দৃশ্যমান লেখা Chat draft-এ যোগ হয়েছে। পাঠানোর আগে দেখে নাও।');
-    void router.replace('/(tabs)' as never).catch(() => {
-      setError('Chat screen-এ ফিরে যেতে সমস্যা হয়েছে। আবার চেষ্টা করো।');
-    });
+    router.replace('/(tabs)' as never);
   }, [routeParams.screen_context, router]);
 
   useEffect(() => { setSelectedLang(settings.voiceLanguage); }, [settings.voiceLanguage]);
