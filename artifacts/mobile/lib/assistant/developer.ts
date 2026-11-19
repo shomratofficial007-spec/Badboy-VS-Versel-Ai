@@ -402,6 +402,21 @@ export async function executeAgentTask(
   const log = (msg: string) => logs.push(`[${new Date().toISOString().slice(11, 19)}] ${msg}`);
 
   log(`BADBOY AI Agent [${detectedLanguage.toUpperCase()}] নির্দেশিকা গ্রহণ করেছে: "${clean}"`);
+  if (!clean) {
+    log('খালি নির্দেশনা পাওয়া গেছে; কোনো action চালানো হয়নি।');
+    return {
+      taskId,
+      state: 'failed',
+      prompt: clean,
+      detectedLanguage,
+      requiresInternet: false,
+      requiresConfirmation: false,
+      summary: 'কোনো নির্দেশনা দেওয়া হয়নি। কোনো কাজ সম্পন্ন বা পরিবর্তন করা হয়নি।',
+      logs,
+      latencyMs: Date.now() - startTime,
+    };
+  }
+
 
   // Web Research Query Trigger
   if (lower.includes('search') || lower.includes('find') || lower.includes('research') || clean.includes('খোঁজো') || clean.includes('অনুসন্ধান') || clean.includes('ওয়েব')) {
@@ -534,25 +549,10 @@ export async function executeAgentTask(
     };
   }
 
-  // Gmail Commands - Verified OAuth requirement
+  // Gmail sending stays disabled until a structured message composer exists.
   if (lower.includes('gmail') || lower.includes('email') || clean.includes('জিেইল') || clean.includes('ইমেইল')) {
-    log('টুল সনাক্তকরণ: Gmail OAuth Adapter');
-    if (!isOnline) {
-      return {
-        taskId,
-        state: 'offline_queued',
-        prompt: clean,
-        detectedLanguage,
-        requiresInternet: true,
-        requiresConfirmation: true,
-        summary: 'ইমেইল প্রেরণের জন্য অনলাইন সংযোগ প্রয়োজন।',
-        logs,
-        latencyMs: Date.now() - startTime,
-      };
-    }
-
+    log('Gmail action যাচাই: structured recipient, subject ও body ছাড়া কোনো email API call করা হবে না।');
     if (!gmailAccessToken) {
-      log('অথেন্টিকেশন ত্রুটি: Google OAuth Access Token পাওয়া যায়নি।');
       return {
         taskId,
         state: 'not_connected',
@@ -560,80 +560,23 @@ export async function executeAgentTask(
         detectedLanguage,
         requiresInternet: true,
         requiresConfirmation: false,
-        summary: 'Gmail API সংযুক্ত নয়। Google OAuth2 ক্লায়েন্ট আইডি ও ইউজার অথরাইজেশন প্রয়োজন।',
+        summary: 'Gmail API সংযুক্ত নয়। Google OAuth consent এবং secure token প্রয়োজন।',
         logs,
         latencyMs: Date.now() - startTime,
       };
     }
 
-    if (!userConfirmed) {
-      log('নিরাপত্তা যাচাই: ইমেইল পাঠানোর পূর্বে ব্যবহারকারীর কনফার্মেশন প্রয়োজন।');
-      return {
-        taskId,
-        state: 'permission_pending',
-        prompt: clean,
-        detectedLanguage,
-        requiresInternet: true,
-        requiresConfirmation: true,
-        confirmationMessage: 'আপনি কি নিশ্চিত যে এই ইমেইল বার্তাটি পাঠাতে চান?',
-        summary: 'ইমেইল বার্তা পাঠানোর পূর্বে আপনার নিশ্চিতকরণ প্রয়োজন।',
-        logs,
-        latencyMs: Date.now() - startTime,
-      };
-    }
-
-    log('Gmail API সার্ভিস কল করা হচ্ছে...');
-    try {
-      const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${gmailAccessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ raw: '' }),
-      });
-
-      if (!res.ok) {
-        log(`Gmail API ত্রুটি HTTP ${res.status}`);
-        return {
-          taskId,
-          state: 'failed',
-          prompt: clean,
-          detectedLanguage,
-          requiresInternet: true,
-          requiresConfirmation: true,
-          summary: `Gmail API বার্তা প্রেরণে ব্যর্থ (HTTP ${res.status})।`,
-          logs,
-          latencyMs: Date.now() - startTime,
-        };
-      }
-
-      return {
-        taskId,
-        state: 'completed',
-        prompt: clean,
-        detectedLanguage,
-        requiresInternet: true,
-        requiresConfirmation: true,
-        summary: 'Gmail API ব্যবহার করে ইমেইল বার্তাটি সফলভাবে প্রেরণ করা হয়েছে।',
-        logs,
-        latencyMs: Date.now() - startTime,
-      };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      log(`Gmail সার্ভিস ত্রুটি: ${msg}`);
-      return {
-        taskId,
-        state: 'failed',
-        prompt: clean,
-        detectedLanguage,
-        requiresInternet: true,
-        requiresConfirmation: true,
-        summary: `Gmail নেটওয়ার্ক সংযোগ ব্যর্থ: ${msg}`,
-        logs,
-        latencyMs: Date.now() - startTime,
-      };
-    }
+    return {
+      taskId,
+      state: 'failed',
+      prompt: clean,
+      detectedLanguage,
+      requiresInternet: true,
+      requiresConfirmation: false,
+      summary: 'Gmail access token পাওয়া গেলেও এই অনুরোধে যাচাইকৃত recipient, subject ও message body নেই। নিরাপত্তার কারণে কোনো Gmail API call করা হয়নি এবং কোনো email পাঠানো হয়নি।',
+      logs,
+      latencyMs: Date.now() - startTime,
+    };
   }
 
   // Local Reminder / Note Commands - Verified Local Persistence
@@ -680,26 +623,16 @@ export async function executeAgentTask(
     }
   }
 
-  // Generic Fallback Task Processing with Smart Reasoning Format
-  log('স্মার্ট রিজনিং প্রসেসিং ও উত্তর কনস্ট্রাকশন সম্পন্ন।');
-  const reasoning = buildStructuredReasoning({
-    prompt: clean,
-    lang: detectedLanguage,
-    answerText: `BADBOY AI এজেন্ট সফলভাবে প্রশ্নটি বিশ্লেষণ করেছে।`,
-    explanationText: `আপনার প্রদত্ত [${detectedLanguage.toUpperCase()}] বার্তাটি প্রসেস করে প্রয়োজনীয় অ্যাকশন ও উত্তর প্রস্তুত করা হয়েছে।`,
-    sources: ['OpenRouter Free Language Model Bound'],
-    limitationsText: 'অফলাইন ও অনলাইন এপিআই সক্ষমতার ওপর ভিত্তি করে প্রস্তুতকৃত।',
-  });
-
+  // Unknown tasks are not simulated. General questions belong in Developer Analysis.
+  log('কোনো verified action adapter মেলেনি; কোনো action চালানো হয়নি।');
   return {
     taskId,
-    state: 'completed',
+    state: 'failed',
     prompt: clean,
     detectedLanguage,
-    requiresInternet: isOnline,
+    requiresInternet: false,
     requiresConfirmation: false,
-    summary: reasoning.rawFormattedText,
-    structuredAnswer: reasoning,
+    summary: 'এই নির্দেশনার জন্য কোনো যাচাইকৃত action adapter নেই। কোনো কাজ করা হয়নি। সাধারণ প্রশ্নের উত্তর পেতে Developer Analysis ব্যবহার করুন।',
     logs,
     latencyMs: Date.now() - startTime,
   };
@@ -710,16 +643,30 @@ export async function executeAgentTask(
  */
 export function getProjectBrainSummary(): ProjectBrain {
   return {
-    name: 'Voice-Memory-Assistant-net (Badboy AI)',
-    architecture: 'Monorepo Workspace with Expo React Native Web Export, Cloudflare Pages Functions, Netlify Functions, and Express API Server',
-    frameworks: ['React Native / Expo 52', 'TypeScript', 'Cloudflare Workers/Pages', 'Node.js 22', 'pnpm workspace'],
-    apiEndpoints: ['/api/assistant/chat', '/api/healthz'],
-    deploymentTarget: 'Cloudflare Pages (voice-memory-assistant-net)',
+    name: 'Badboy AI',
+    architecture: 'Expo/React Native Android client with one Cloudflare Worker backend. The Worker serves API, AI, owner-scoped D1 memory, voice, developer analysis, integrations, and static Expo web assets.',
+    frameworks: ['React Native / Expo', 'TypeScript', 'Cloudflare Workers', 'Cloudflare D1', 'Kotlin / Android native modules', 'pnpm workspace'],
+    apiEndpoints: [
+      '/api/healthz',
+      '/api/auth/verify',
+      '/api/assistant/chat',
+      '/api/assistant/agent',
+      '/api/assistant/transcribe',
+      '/api/assistant/speech',
+      '/api/agent/memory/search',
+      '/api/developer/health',
+      '/api/developer/analyze',
+      '/api/integrations/*',
+      '/api/research/search',
+    ],
+    deploymentTarget: 'Cloudflare Worker: badboy-vs-versel-ai; the same Worker serves the static Expo web export and API.',
     knownLimitations: [
-      'Native background wake-word listening requires native custom engine build.',
-      'OpenRouter free model streams text SSE responses; voice is dictated via Web Speech API.',
-      'GitHub Pull Requests require Personal Access Token with repo contents and pull_requests write scope.',
-      'Gmail OAuth requires backend client credentials & user consent flow.',
+      'Netlify Functions and the standalone Express API are removed; Cloudflare Worker is the only backend.',
+      'Gmail sending is disabled until a structured recipient/subject/body composer and OAuth flow are implemented.',
+      'GitHub writes require a SecureStore PAT, a read-only preview, and explicit owner approval; the agent does not auto-merge.',
+      'Telegram actions require a user-configured bot token and chat ID.',
+      'Jarvis Screen Awareness requires explicit Android overlay and Accessibility permissions; text is read only after user action, best-effort redacted, and never auto-sent.',
+      'The in-app Auto-QA panel reports NOT RUN unless actual CI/build evidence is supplied.',
     ],
   };
 }
@@ -749,13 +696,15 @@ export function runAutoQASuite(): QAResult {
  */
 export function getPluginRegistryStatus(): PluginItem[] {
   return [
-    { id: 'github-adapter', name: 'GitHub REST API Adapter', category: 'DevOps', status: 'active', requiresOAuth: false, description: 'Branch management & Pull Request creation' },
-    { id: 'cloudflare-adapter', name: 'Cloudflare Pages Adapter', category: 'Hosting', status: 'active', requiresOAuth: false, description: 'Pages Functions & static export bundle' },
-    { id: 'web-research-adapter', name: 'Live Web Research Adapter', category: 'Search', status: 'active', requiresOAuth: false, description: 'DuckDuckGo Live Search & Evidence citations' },
-    { id: 'gmail-adapter', name: 'Gmail OAuth Adapter', category: 'Email', status: 'not_connected', requiresOAuth: true, description: 'Inbox searching & email sending (Requires Google OAuth consent)' },
-    { id: 'youtube-adapter', name: 'YouTube Player Adapter', category: 'Media', status: 'active', requiresOAuth: false, description: 'Song search & deep linking player' },
-    { id: 'telegram-adapter', name: 'Telegram Bot Adapter', category: 'Messaging', status: 'configured', requiresOAuth: false, description: 'Bot DM messaging & inbox checking' },
-    { id: 'voice-adapter', name: 'Web Speech Voice Adapter', category: 'Audio', status: 'active', requiresOAuth: false, description: 'Voice dictation & read-aloud TTS' },
+    { id: 'cloudflare-worker-api', name: 'Cloudflare Worker API', category: 'Backend', status: 'active', requiresOAuth: false, description: 'The single Worker hosts API, AI, owner-scoped D1 memory, voice, developer analysis, integrations and static web assets.' },
+    { id: 'memory-adapter', name: 'Cloudflare D1 Memory', category: 'Memory', status: 'active', requiresOAuth: false, description: 'Owner-scoped memory search and persistence through the Cloudflare Worker and D1 binding.' },
+    { id: 'github-adapter', name: 'GitHub REST API Adapter', category: 'DevOps', status: 'pending', requiresOAuth: false, description: 'Requires a Personal Access Token in SecureStore; writes require read-only preview and explicit approval.' },
+    { id: 'web-research-adapter', name: 'Live Web Research Adapter', category: 'Search', status: 'active', requiresOAuth: false, description: 'DuckDuckGo HTML result parsing with an explicit search-link fallback when snippets are unavailable.' },
+    { id: 'gmail-adapter', name: 'Gmail OAuth Adapter', category: 'Email', status: 'not_connected', requiresOAuth: true, description: 'Email sending is disabled until a structured composer and complete OAuth consent flow are implemented.' },
+    { id: 'youtube-adapter', name: 'YouTube Search Adapter', category: 'Media', status: 'active', requiresOAuth: false, description: 'Opens YouTube search/deep links; it does not provide embedded playback.' },
+    { id: 'telegram-adapter', name: 'Telegram Bot Adapter', category: 'Messaging', status: 'pending', requiresOAuth: false, description: 'Requires the user to configure a bot token and target chat ID in secure storage.' },
+    { id: 'voice-adapter', name: 'Worker Voice and Android Audio', category: 'Audio', status: 'active', requiresOAuth: false, description: 'Worker voice/transcription routes plus Android native wake-word and speech capabilities.' },
+    { id: 'android-device-control', name: 'Android Device Control', category: 'Device', status: 'active', requiresOAuth: false, description: 'Allowlisted app and Android Settings launches only; each action requires explicit confirmation.' },
   ];
 }
 
@@ -937,19 +886,6 @@ function decodeBase64ToContent(base64Str: string): string {
     return maybeBuffer.from(base64Str, 'base64').toString('utf-8');
   }
   return base64Str;
-}
-
-/**
- * Helper to generate non-destructive code updates by merging additions safely into existing content.
- */
-export function buildUpdatedFileContent(existingContent: string, plan: DevPlan, filePath: string): string {
-  const marker = `/* Badboy Autonomous Feature Code: ${plan.title} */`;
-  if (existingContent.includes(marker)) {
-    return existingContent;
-  }
-
-  const commentSnippet = `\n\n${marker}\n// Feature Request: ${plan.prompt}\n// Created: ${new Date().toISOString()}\n`;
-  return `${existingContent.trimEnd()}\n${commentSnippet}`;
 }
 
 /** Read-only repository preview. No branch, file, commit or PR is created. */
