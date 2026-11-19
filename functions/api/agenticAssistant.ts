@@ -656,10 +656,10 @@ async function streamFinalAnswer(
         }
         if (!receivedDone) throw new Error("Agent response stream ended before the completion marker.");
         close();
-      } catch (cause) {
+      } catch {
         if (!cancelled) {
           try {
-            controller.error(cause instanceof Error ? cause : new Error("Agent response stream was interrupted."));
+            controller.error(new Error("Agent response stream was interrupted."));
           } catch {
             // Downstream may already be cancelled.
           }
