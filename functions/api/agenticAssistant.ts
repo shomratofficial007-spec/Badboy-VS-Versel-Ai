@@ -605,7 +605,7 @@ async function streamFinalAnswer(
   const upstream = await requestCompletion(apiKey, messages, { stream: true, maxTokens: 2400, signal, timeoutMs: 90_000 });
   if (!upstream.ok || !upstream.body) {
     const body = await upstream.json().catch(() => ({})) as CompletionResponse;
-    return jsonResponse({ code: "AGENT_FINAL_RESPONSE_FAILED", error: modelErrorMessage(body, upstream.status) }, upstream.status === 429 ? 429 : 502);
+    return jsonResponse({ code: "AGENT_FINAL_RESPONSE_FAILED", error: modelErrorMessage(body, upstream.status) }, upstream.status === 429 ? 429 : upstream.status === 504 ? 504 : 502);
   }
   const encoder = new TextEncoder();
   const reader = upstream.body.getReader();
@@ -629,6 +629,7 @@ async function streamFinalAnswer(
         try { controller.close(); } catch { /* downstream may already be closed */ }
       };
       let pending = "";
+      let receivedDone = false;
       try {
         while (true) {
           const { done, value } = await reader.read();
@@ -641,6 +642,7 @@ async function streamFinalAnswer(
             const parsed = parseOpenRouterDeltas(event);
             for (const content of parsed.content) send({ content });
             if (parsed.done) {
+              receivedDone = true;
               close();
               return;
             }
@@ -650,11 +652,18 @@ async function streamFinalAnswer(
         if (pending.trim()) {
           const parsed = parseOpenRouterDeltas(pending);
           for (const content of parsed.content) send({ content });
+          receivedDone = parsed.done;
         }
+        if (!receivedDone) throw new Error("Agent response stream ended before the completion marker.");
         close();
-      } catch {
-        if (!signal?.aborted) send({ error: "Agent response stream was interrupted." });
-        close();
+      } catch (cause) {
+        if (!cancelled) {
+          try {
+            controller.error(cause instanceof Error ? cause : new Error("Agent response stream was interrupted."));
+          } catch {
+            // Downstream may already be cancelled.
+          }
+        }
       } finally {
         try { reader.releaseLock(); } catch { /* already released */ }
       }
@@ -663,7 +672,6 @@ async function streamFinalAnswer(
       cancelled = true;
       await reader.cancel(reason).catch(() => undefined);
     },
-  });
   });
   return new Response(stream, {
     headers: {
