@@ -108,6 +108,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       const next = [note, ...memories];
       await storeMemoryNote(note, memories);
       setMemories(next);
+      setStorageError(null);
     },
     [memories],
   );
@@ -123,6 +124,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       };
       const next = await updateMemoryNote(updated, memories);
       setMemories(next);
+      setStorageError(null);
     },
     [memories],
   );
@@ -132,6 +134,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       const next = memories.filter((note) => note.id !== id);
       await removeMemoryNote(id, next);
       setMemories(next);
+      setStorageError(null);
     },
     [memories],
   );
