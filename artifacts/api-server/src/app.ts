@@ -3,6 +3,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { requirePersonalOwner } from "./middleware/ownerAuth";
 
 const app: Express = express();
 
@@ -26,6 +27,9 @@ app.use(
   }),
 );
 app.use(cors());
+
+// Protect every billable assistant endpoint. The health route remains public.
+app.use("/api/assistant", requirePersonalOwner);
 
 // The Express API currently accepts only small JSON chat/speech requests.
 // Keep its limits aligned with the Cloudflare Worker instead of allowing
