@@ -1,5 +1,15 @@
-Voice-Memory-Assistant — Portable Source Package
+Badboy AI — Cloudflare-Only Source Package
 
 Start here: PORTABLE-DEPLOYMENT.md
 
-Recommended: Node.js 22 + pnpm 10. This is a pnpm monorepo, not a single-file website. The static web frontend and Express API are separate deployables. You must configure private API keys in the backend host's environment settings; uploading the ZIP cannot automatically create API keys or provision a database.
+Backend and web hosting are provided by the root Cloudflare Worker configured in wrangler.json. The Expo web build is served from artifacts/mobile/dist. There is no Netlify Functions or standalone Express API deployment.
+
+Install and validate from the repository root with Node.js 22 and pnpm 10.8.1:
+
+  pnpm install --frozen-lockfile
+  pnpm run typecheck
+  pnpm --filter @workspace/functions test
+  pnpm --filter @workspace/mobile run test
+  pnpm build
+
+Keep provider credentials in Cloudflare Worker secrets. Do not place real keys in .env files, frontend variables, APK assets, or source control.
