@@ -1,7 +1,0 @@
-{
-  "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "voice-memory-assistant-net",
-  "pages_build_output_dir": "./dist",
-  "compatibility_date": "2025-02-16",
-  "compatibility_flags": ["nodejs_compat"]
-}

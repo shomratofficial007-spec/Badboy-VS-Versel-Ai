@@ -6,7 +6,7 @@ import { fetchGeminiChat, getGeminiModel } from "./geminiProvider.ts";
 import { handleAgenticAssistantRequest } from "./agenticAssistant.ts";
 import { handleAgentMemorySearchRequest } from "./agentMemory.ts";
 import { handleIntegrationRequest, type IntegrationEnv } from "./integrationHub.ts";
-// Cloudflare Pages Function: Native Developer Agent controls optional AI provider adapters.
+// Cloudflare Worker API: Native Developer Agent controls optional AI provider adapters.
 // Ordinary /api/assistant/chat remains on its existing OpenRouter route.
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
@@ -1290,22 +1290,6 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     },
   });
 }
-
-export const onRequestOptions: PagesFunction<Env> = async (context) => {
-  return handleApiRequest(context.request, context.env);
-};
-
-export const onRequestGet: PagesFunction<Env> = async (context) => {
-  return handleApiRequest(context.request, context.env);
-};
-
-export const onRequestPost: PagesFunction<Env> = async (context) => {
-  return handleApiRequest(context.request, context.env);
-};
-
-export const onRequestDelete: PagesFunction<Env> = async (context) => {
-  return handleApiRequest(context.request, context.env);
-};
 
 export default {
   async fetch(request: Request, env: Env, ctx: { waitUntil: (promise: Promise<unknown>) => void }): Promise<Response> {

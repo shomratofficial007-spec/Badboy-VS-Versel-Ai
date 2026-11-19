@@ -114,3 +114,30 @@ Baseline commit inspected: `0664e673f145249e0ff2ff9b6d76c8145cb7d2b2`.
 3. Update this file in the same PR as each meaningful implementation batch.
 4. Continue the checklist from the first unchecked item. Do not assume a checkbox is complete without fresh repository/test evidence.
 5. Keep the architecture Cloudflare-only unless the owner explicitly changes that decision.
+
+## 9. Follow-up audit and implementation — 2026-11-20
+
+### Fresh source evidence from the PR branch baseline
+
+- functions/api/[[path]].ts is a real Cloudflare Worker entry with a default fetch handler and an ASSETS binding. It already contains owner-token verification before private API routes and implements the mobile-facing chat, agentic chat, transcription, speech, developer analysis, memory, research, and integration routing.
+- The same Worker file also exported legacy PagesFunction adapters (onRequestOptions, onRequestGet, onRequestPost, onRequestDelete). These Pages-specific exports are not needed by the root Worker deployment.
+- netlify/functions/assistant-chat.mts has no owner-token authentication; it accepts a chat payload and calls OpenRouter directly. This is a confirmed security parity gap in the obsolete runtime, not a reason to keep or harden Netlify.
+- artifacts/api-server/src/app.ts mounts the Express router without an owner-authentication middleware. Its chat route is therefore a second unauthenticated API surface. The Worker already has a protected chat route and is the intended replacement.
+- The Express API exposes /api/healthz, /api/assistant/chat, /api/assistant/speech, and /api/assistant/voice (the latter returns 501). The Worker implements health, chat, and speech; mobile code calls the Worker /assistant/speech route. The 501 voice placeholder has no equivalent mobile call in the inspected API client.
+- netlify/functions/assistant-voice.mts is also a 501 placeholder. netlify/functions/healthz.mts duplicates the Worker health check.
+- Mobile API calls resolve to the current app origin on web and the root Worker domain on native builds (artifacts/mobile/lib/assistant/ownerJsonRequest.ts); no API client reference to the Express or Netlify runtime was found in the inspected files.
+- The old Pages config is artifacts/mobile/wrangler.json; the root Worker config is wrangler.json.
+
+### Implementation in this PR branch
+
+- Remove Netlify config/functions, standalone Express API source/package, its Dockerfile, and the nested Pages Wrangler config.
+- Remove the obsolete Pages adapter exports and Pages-only declaration file from the Worker entry.
+- Remove the mobile Pages deployment script so the only deploy command is the root Worker command.
+- Remove the Express workspace importer from pnpm-lock.yaml. Package snapshots may remain until pnpm's canonical lockfile regeneration is run in CI/local tooling; do not claim the dependency graph is fully pruned until that verification completes.
+- Rewrite PORTABLE-DEPLOYMENT.md to document only the root Cloudflare Worker architecture.
+
+### Verification status
+
+- Source changes are staged on this PR branch; CI, clean frozen install, lockfile regeneration, build, Worker runtime smoke tests, and Android APK validation are still required.
+- No production deployment, Cloudflare secret change, or production D1 migration is performed.
+- The implementation is not complete until all CI checks pass and the mobile APK is verified on a physical device.
