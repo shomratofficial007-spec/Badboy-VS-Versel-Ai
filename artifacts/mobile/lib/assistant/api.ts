@@ -246,13 +246,14 @@ export interface DeveloperAnalysisStreamResult {
 /** Stream a read-only Developer Agent analysis through the Cloudflare orchestration API. */
 export async function streamDeveloperAnalysis(
   prompt: string,
+  projectContext: string,
   engine: string,
   onChunk: (chunk: string) => void,
 ): Promise<{ taskId: string; engine: string }> {
-  const response = await fetch(apiUrl('/api/developer/analyze'), {
+  const response = await expoFetch(apiUrl('/api/developer/analyze'), {
     method: 'POST',
     headers: await buildHeaders(),
-    body: JSON.stringify({ prompt, engine }),
+    body: JSON.stringify({ prompt, projectContext, requestedEngine: engine }),
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: string };
