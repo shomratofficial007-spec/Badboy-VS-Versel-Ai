@@ -984,7 +984,7 @@ export default function SettingsScreen() {
         <TextInput
           value={agentPrompt}
           onChangeText={setAgentPrompt}
-          placeholder="যেমন: Search Cloudflare Pages docs / Play a song on YouTube"
+          placeholder="যেমন: Search Cloudflare Workers docs / Play a song on YouTube"
           placeholderTextColor={colors.mutedForeground}
           style={[styles.telegramInput, { color: colors.foreground, borderColor: colors.input, marginTop: 8 }]}
         />
@@ -1502,15 +1502,15 @@ export default function SettingsScreen() {
               </View>
             ) : null}
 
-            {/* Web Dev & Cloudflare Pages Guidelines Card */}
+            {/* Web Dev & Cloudflare Worker Guidelines Card */}
             {activeDevTab === 'web' ? (
               <View style={[styles.infoCard, { borderColor: colors.border, backgroundColor: colors.background }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Feather name="globe" size={16} color={colors.primary} />
-                  <Text style={[styles.label, { color: colors.foreground }]}>Cloudflare Pages হোস্ট অ্যান্ড ডিপ্লয়</Text>
+                  <Text style={[styles.label, { color: colors.foreground }]}>Cloudflare Worker Hosting & Deploy</Text>
                 </View>
                 <Text style={[styles.body, { color: colors.mutedForeground, marginTop: 6 }]}>
-                  Cloudflare Pages Functions এবং Static Web Export সমন্বিত রয়েছে। ডিপ্লয় করতে কমান্ড রান করুন:
+                  একটি Cloudflare Worker API, AI, Memory এবং Expo Static Web Export serve করে। Repository root থেকে build ও deploy করুন:
                 </Text>
                 <Text style={[styles.logText, { color: colors.primary, marginTop: 4 }]}>
                   pnpm run build && pnpm run deploy
