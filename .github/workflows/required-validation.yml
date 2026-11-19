@@ -421,8 +421,8 @@ jobs:
               source_files="$(
                 gh api --paginate "repos/$REPOSITORY/pulls/$PR_NUMBER/files" \
                   --jq '.[] | select(.status != "removed") | select((.additions // 0) > 0) | .filename' \
-                  | grep -E '^(functions|lib|artifacts/mobile)/.*\\.(ts|tsx)$' \
-                  | grep -vE '\\.(test|spec)\\.(ts|tsx)$' \
+                  | grep -E '^(functions|lib|artifacts/mobile)/.*\.(ts|tsx)$' \
+                  | grep -vE '\.(test|spec)\.(ts|tsx)$' \
                   | grep -vE '^artifacts/mobile/app/' \
                   || true
               )"
@@ -435,7 +435,7 @@ jobs:
               echo "SonarCloud New Code coverage: $coverage%; Quality Gate: passed"
               if ! awk "BEGIN { exit !($coverage >= 80) }"; then
                 echo "::error::New Code coverage $coverage% is below the required 80% for changed production TypeScript sources."
-                printf 'Eligible changed source files:\\n%s\\n' "$source_files"
+                printf 'Eligible changed source files:\n%s\n' "$source_files"
                 exit 1
               fi
               echo "Coverage Validation passed using the completed SonarCloud check-run summary."
