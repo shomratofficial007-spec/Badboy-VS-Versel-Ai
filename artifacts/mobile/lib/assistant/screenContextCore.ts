@@ -1,20 +1,21 @@
-const EMAIL_PATTERN = /\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b/gi;
-const CARD_NUMBER_PATTERN = /\\b(?:\\d[ -]?){13,19}\\b/g;
-const PHONE_OR_ACCOUNT_PATTERN = /\\+?\\d(?:[\\s().-]*\\d){9,}/g;
-const OTP_PATTERN = /\\b(OTP|one[- ]time code|verification code|security code|2FA code)\\s*[:= -]?\\s*\\d{4,8}\\b/gi;
-const PASSWORD_PATTERN = /\\b(password|passcode|pin|security answer|secret)\\s*[:=]\\s*\\S+/gi;
-const API_CREDENTIAL_PATTERN = /\\b(api[-_ ]?key|access token|refresh token|client secret|secret key)\\s*[:=]\\s*\\S+/gi;
-const AUTHORIZATION_PATTERN = /\\b(authorization\\s*[:=]\\s*(?:bearer|basic))\\s+\\S+/gi;
-const COOKIE_PATTERN = /\\b(cookie\\s*[:=]\\s*)[^\\r\\n]+/gi;
-const URL_SECRET_PATTERN = /([?&](?:access_token|api_key|token|key|secret|password|auth|code|session)=)[^&#\\s]+/gi;
-const JWT_PATTERN = /\\beyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\b/g;
-const SECRET_TOKEN_PATTERN = /\\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{20,})\\b/g;
+const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+const CARD_NUMBER_PATTERN = /\b(?:\d[ -]?){13,19}\b/g;
+const PHONE_OR_ACCOUNT_PATTERN = /\+?\d(?:[\s().-]*\d){9,}/g;
+const OTP_PATTERN = /\b(OTP|one[- ]time code|verification code|security code|2FA code)\s*[:= -]?\s*\d{4,8}\b/gi;
+const PASSWORD_PATTERN = /\b(password|passcode|pin|security answer|secret)\s*[:=]\s*\S+/gi;
+const API_CREDENTIAL_PATTERN = /\b(api[-_ ]?key|access token|refresh token|client secret|secret key)\s*[:=]\s*\S+/gi;
+const AUTHORIZATION_PATTERN = /\b(authorization\s*[:=]\s*(?:bearer|basic))\s+\S+/gi;
+const COOKIE_PATTERN = /\b(cookie\s*[:=]\s*)[^\r\n]+/gi;
+const URL_SECRET_PATTERN = /([?&](?:access_token|api_key|token|key|secret|password|auth|code|session)=)[^&#\s]+/gi;
+const JWT_PATTERN = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g;
+const SECRET_TOKEN_PATTERN = /\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{20,})\b/g;
+const ISO_DATE_PATTERN = /\b\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?\b/g;
 
 export function redactSensitiveScreenText(value: string): string {
   const preservedDates: string[] = [];
   const protectedValue = value.replace(
-    /\\b\\d{4}-\\d{2}-\\d{2}(?:[ T]\\d{2}:\\d{2}(?::\\d{2})?)?\\b/g,
-    (date) => `__BADBOY_DATE_${preservedDates.push(date) - 1}__`,
+    ISO_DATE_PATTERN,
+    (date) => '__BADBOY_DATE_' + (preservedDates.push(date) - 1) + '__',
   );
   const redacted = protectedValue
     .replace(EMAIL_PATTERN, '[email]')
@@ -28,7 +29,7 @@ export function redactSensitiveScreenText(value: string): string {
     .replace(SECRET_TOKEN_PATTERN, '[secret token]')
     .replace(CARD_NUMBER_PATTERN, '[card number]')
     .replace(PHONE_OR_ACCOUNT_PATTERN, '[phone/account number]');
-  return redacted.replace(/__BADBOY_DATE_(\\d+)__/g, (_placeholder, index: string) => preservedDates[Number(index)] ?? '');
+  return redacted.replace(/__BADBOY_DATE_(\d+)__/g, (_placeholder, index: string) => preservedDates[Number(index)] ?? '');
 }
 
 export function normalizeVisibleScreenText(value: string): string {
@@ -39,9 +40,9 @@ export function normalizeVisibleScreenText(value: string): string {
   }).join('');
   const redacted = redactSensitiveScreenText(safeValue);
   const lines = redacted
-    .split(/\\r?\\n/)
-    .map((line) => line.replace(/\\s+/g, ' ').trim())
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, ' ').trim())
     .filter(Boolean);
   const unique = [...new Set(lines)];
-  return unique.join('\\n').slice(0, 4_500).trim();
+  return unique.join('\n').slice(0, 4_500).trim();
 }
