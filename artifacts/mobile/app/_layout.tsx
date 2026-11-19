@@ -8,9 +8,9 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { AssistantProvider, useAssistant } from '@/context/AssistantContext';
 import { OwnerAuthProvider, useOwnerAuth } from '@/context/OwnerAuthContext';
 import { setAuthTokenGetter, setBaseUrl } from '@workspace/api-client-react';
-import { getOwnerToken } from '@/lib/assistant/ownerAuth';
+import { getOwnerRouteRedirect, getOwnerToken } from '@/lib/assistant/ownerAuth';
 import { canDrawFloatingAssistant, startFloatingAssistant, stopFloatingAssistant } from '@/lib/assistant/jarvis';
-import { Stack } from 'expo-router';
+import { Redirect, Stack, useSegments } from 'expo-router';
 
 const domain = process.env.EXPO_PUBLIC_DOMAIN;
 setBaseUrl(domain ? `https://${domain}` : null);
@@ -21,6 +21,7 @@ const queryClient = new QueryClient();
 function RootLayoutNav() {
   const { ready, authenticated } = useOwnerAuth();
   const { ready: assistantReady, settings } = useAssistant();
+  const segments = useSegments();
 
   useEffect(() => {
     if (Platform.OS !== 'android' || !assistantReady) return;
@@ -41,13 +42,13 @@ function RootLayoutNav() {
     );
   }
 
+  const redirect = getOwnerRouteRedirect(authenticated, segments);
+  if (redirect) return <Redirect href={redirect} />;
+
   return (
     <Stack screenOptions={{ headerShown: false, headerBackTitle: 'Back' }}>
-      {authenticated ? (
-        <Stack.Screen name="(tabs)" options={{ headerShown: false, title: 'Badboy AI' }} />
-      ) : (
-        <Stack.Screen name="owner-login" options={{ headerShown: false, title: 'Owner Login' }} />
-      )}
+      <Stack.Screen name="owner-login" options={{ headerShown: false, title: 'Owner Login' }} />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false, title: 'Badboy AI' }} />
     </Stack>
   );
 }
