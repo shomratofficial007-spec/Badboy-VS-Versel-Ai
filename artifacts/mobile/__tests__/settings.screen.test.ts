@@ -1087,6 +1087,7 @@ test('Settings Jarvis controls request overlay permission and expose stop and sc
   pressables.length = 0;
   alerts.length = 0;
   settingsUpdates.length = 0;
+  screenSettingsCalls = 0;
   settings.floatingAssistantEnabled = false;
 
   renderToStaticMarkup(React.createElement(SettingsScreen));
