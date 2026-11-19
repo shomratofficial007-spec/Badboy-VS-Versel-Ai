@@ -74,11 +74,11 @@ class BadboyScreenReaderService : AccessibilityService() {
       for (window in candidates) {
         var root: AccessibilityNodeInfo? = null
         try {
-          root = window.root ?: continue
-          val packageName = root.packageName?.toString()
+          val selectedRoot = window.root ?: continue
+          root = selectedRoot
+          val packageName = selectedRoot.packageName?.toString()
           if (packageName.isNullOrBlank() || packageName == ownPackage) continue
 
-          val selectedRoot = root
           root = null // Ownership transfers to collectVisibleText.
           val text = collectVisibleText(selectedRoot)
           if (!text.isNullOrBlank()) return text
