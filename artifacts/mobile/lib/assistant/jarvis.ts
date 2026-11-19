@@ -18,16 +18,24 @@ function nativeModule(): NativeJarvisModule {
 }
 
 export function canDrawFloatingAssistant(): boolean {
-  try { return Platform.OS === 'android' && nativeModule().canDrawOverlays(); } catch { return false; }
+  try {
+    return Platform.OS === 'android' && nativeModule().canDrawOverlays();
+  } catch {
+    return false;
+  }
 }
 
 export async function openFloatingAssistantPermissionSettings(): Promise<void> {
-  await nativeModule().openOverlayPermissionSettings();
+  const opened = await nativeModule().openOverlayPermissionSettings();
+  if (!opened) throw new Error('Android overlay permission settings could not be opened.');
 }
 
 export async function startFloatingAssistant(): Promise<void> {
-  if (!canDrawFloatingAssistant()) throw new Error('প্রথমে Android Settings থেকে Display over other apps permission দিন।');
-  await nativeModule().startFloatingAssistant();
+  if (!canDrawFloatingAssistant()) {
+    throw new Error('প্রথমে Android Settings থেকে Display over other apps permission দিন।');
+  }
+  const started = await nativeModule().startFloatingAssistant();
+  if (!started) throw new Error('Android could not start the Jarvis floating assistant service.');
 }
 
 export async function stopFloatingAssistant(): Promise<void> {
@@ -35,11 +43,16 @@ export async function stopFloatingAssistant(): Promise<void> {
 }
 
 export function isScreenAwarenessEnabled(): boolean {
-  try { return Platform.OS === 'android' && nativeModule().isAccessibilityEnabled(); } catch { return false; }
+  try {
+    return Platform.OS === 'android' && nativeModule().isAccessibilityEnabled();
+  } catch {
+    return false;
+  }
 }
 
 export async function openScreenAwarenessSettings(): Promise<void> {
-  await nativeModule().openAccessibilitySettings();
+  const opened = await nativeModule().openAccessibilitySettings();
+  if (!opened) throw new Error('Android Accessibility settings could not be opened.');
 }
 
 export async function readVisibleScreenText(): Promise<string> {
