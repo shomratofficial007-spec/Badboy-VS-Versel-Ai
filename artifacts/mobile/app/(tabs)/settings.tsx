@@ -771,7 +771,7 @@ export default function SettingsScreen() {
       return;
     }
     if (stopError) {
-      Alert.alert('Bubble বন্ধ হচ্ছে', 'Android service stop request পাঠানো হয়েছে; প্রয়োজন হলে app বন্ধ করে আবার খুলুন।');
+      Alert.alert('Bubble stop নিশ্চিত হয়নি', 'Setting Off করা হয়েছে, কিন্তু Android service বন্ধ হয়েছে কি না নিশ্চিত করা যায়নি। Bubble দেখা গেলে app restart করে আবার Stop Bubble চাপো।');
     }
   };
 
