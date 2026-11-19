@@ -69,7 +69,7 @@ export async function verifyOwnerToken(
   try {
     const response = await fetch(authApiUrl(), {
       method: 'POST',
-      headers: { Authorization: \`Bearer \${token}\`, Accept: 'application/json' },
+      headers: { Authorization: 'Bearer ' + token, Accept: 'application/json' },
       signal: controller.signal,
     });
     const payload = await response.json().catch(() => ({})) as {
@@ -78,7 +78,7 @@ export async function verifyOwnerToken(
     };
     if (!response.ok || payload.authenticated !== true) {
       const error = new Error(
-        payload.error ?? \`Owner authentication failed (HTTP \${response.status}).\`,
+        payload.error ?? 'Owner authentication failed (HTTP ' + response.status + ').',
       ) as Error & { status?: number };
       error.status = response.status;
       throw error;
