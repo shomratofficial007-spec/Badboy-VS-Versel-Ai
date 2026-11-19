@@ -116,6 +116,7 @@ mock.module('react-native', {
   },
 });
 mock.module('@expo/vector-icons', { namedExports: { Feather: () => null } });
+mock.module('../components/ProviderManagerSection.tsx', { namedExports: { ProviderManagerSection: () => null } });
 mock.module('react-native-safe-area-context', {
   namedExports: { useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) },
 });

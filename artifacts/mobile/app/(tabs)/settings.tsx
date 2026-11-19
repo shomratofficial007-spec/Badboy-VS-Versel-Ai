@@ -35,6 +35,7 @@ import {
 } from '@/lib/assistant/developerData';
 import { buildExpertReviewPrompt, inspectBadboyRepository, type RepositoryEvidence } from '@/lib/assistant/expertReview';
 import { useColors } from '@/hooks/useColors';
+import { ProviderManagerSection } from '@/components/ProviderManagerSection';
 import {
   canDrawFloatingAssistant,
   openFloatingAssistantPermissionSettings,

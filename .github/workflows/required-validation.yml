@@ -28,7 +28,7 @@ jobs:
         run: bash .github/scripts/wait-for-workflows.sh
         env:
           GH_TOKEN: ${{ github.token }}
-          WORKFLOW_NAMES: Build and Test;PR 102 Backend Validation;Mobile checks;SonarCloud Coverage Analysis;Semgrep Security Scan;Detekt Kotlin Analysis;OWASP ZAP Baseline;Mobile SBOM;AI SDK validation;CodeQL Advanced;Android APK (automatic + manual)
+          WORKFLOW_NAMES: Build and Test;PR 102 Backend Validation;Mobile checks;SonarCloud Coverage Analysis;Semgrep Security Scan;Detekt Kotlin Analysis;OWASP ZAP Baseline;Mobile SBOM;AI SDK validation;CodeQL Advanced;Build Android APK (Free GitHub Runner)
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
 
