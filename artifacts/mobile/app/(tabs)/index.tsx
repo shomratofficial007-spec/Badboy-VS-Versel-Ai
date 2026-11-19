@@ -1093,7 +1093,7 @@ export default function ChatScreen() {
                     { label: 'Android Control', icon: 'smartphone' as const },
                     { label: 'Read Current Screen', icon: 'eye' as const },
                     { label: 'More Tools', icon: 'grid' as const },
-                  ].map((tool) => (
+                  ].filter((tool) => tool.label !== 'Read Current Screen' || Platform.OS === 'android').map((tool) => (
                     <Pressable key={tool.label} accessibilityRole="button" onPress={() => { setDrawerModal(null); if (tool.label === 'Read Current Screen') { void captureCurrentScreen(); return; } setDraft(tool.label); }} style={[styles.toolTile, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
                       <Feather name={tool.icon} size={21} color={colors.primary} />
                       <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '700', textAlign: 'center' }}>{tool.label}</Text>
