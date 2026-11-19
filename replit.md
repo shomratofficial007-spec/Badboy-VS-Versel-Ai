@@ -1,45 +1,23 @@
-# [Project name]
+# Badboy AI development workspace
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+## Run and validate
 
-## Run & Operate
+- pnpm --filter @workspace/mobile dev — start the Expo development app
+- pnpm run typecheck — typecheck the maintained workspace
+- pnpm --filter @workspace/functions test — run Cloudflare Worker API tests
+- pnpm --filter @workspace/mobile run test — run mobile tests
+- pnpm build — build the Expo web assets and validate the workspace
+- pnpm deploy — deploy the single root Cloudflare Worker (production deployment; use only with release authorization)
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+## Architecture
 
-## Stack
+- Hosting and backend: root Cloudflare Worker (wrangler.json)
+- Worker entry: functions/api/[[path]].ts
+- Web assets: artifacts/mobile/dist
+- Database: Cloudflare D1 binding AGENT_DB
+- Secrets: Cloudflare Worker secrets; never expose them to the mobile bundle
+- Do not add Netlify Functions, a standalone Express API, Cloudflare Pages, or a second hosting target.
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+## Important
 
-## Where things live
-
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
-
-## Architecture decisions
-
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
-
-## Product
-
-_Describe the high-level user-facing capabilities of this app once they exist._
-
-## User preferences
-
-_Populate as you build — explicit user instructions worth remembering across sessions._
-
-## Gotchas
-
-_Populate as you build — sharp edges, "always run X before Y" rules._
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+Run local development and tests freely. Do not deploy to production, change Worker secrets, or apply production D1 migrations without explicit release authorization.
