@@ -67,7 +67,8 @@ export function adaptGeminiStreamToOpenAI(response: Response): Response {
         try {
           parsed = JSON.parse(data) as GeminiStreamChunk;
         } catch {
-          throw new Error("Gemini returned malformed stream data.");
+          // Ignore malformed provider frames; later valid SSE events may still be usable.
+          return;
         }
         if (parsed.error) throw new Error("Gemini returned an upstream stream error.");
 
