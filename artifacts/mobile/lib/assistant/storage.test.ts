@@ -45,7 +45,7 @@ function reset() {
 test('readLocalState restores notes and migrates legacy plaintext metadata into SecureStore', async () => {
   const { readLocalState } = await storagePromise;
   reset();
-  assert.deepEqual(await readLocalState(), { messages: [], settings: {}, memories: [] });
+  assert.deepEqual(await readLocalState(), { messages: [], settings: {}, memories: [], storageError: null });
   local.set('oi-assistant-chat-v1', JSON.stringify([{ id: 'm1', role: 'user', content: 'হ্যালো' }]));
   local.set('oi-assistant-settings-v1', JSON.stringify({ theme: 'ocean' }));
   local.set('oi-assistant-memory-index-v1', JSON.stringify([
@@ -137,7 +137,11 @@ test('native private memory fails closed when SecureStore is unavailable and pre
   local.set('oi-assistant-memory-index-v1', JSON.stringify([
     { id: 'legacy', title: 'Old note', createdAt: 'yesterday' },
   ]));
-  await assert.rejects(readLocalState(), /Encrypted device storage is unavailable/);
+  const restored = await readLocalState();
+  assert.match(restored.storageError ?? '', /Encrypted device storage is unavailable/);
+  assert.deepEqual(restored.messages, []);
+  assert.deepEqual(restored.settings, {});
+  assert.deepEqual(restored.memories, []);
   assert.equal(local.get('oi-assistant-memory-legacy'), 'old private text');
   assert.equal(secure.has('oi-assistant-memory-legacy'), false);
 });
