@@ -2,8 +2,8 @@ const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 const CARD_NUMBER_PATTERN = /\b(?:\d[ -]?){13,19}\b/g;
 const PHONE_OR_ACCOUNT_PATTERN = /\+?\d(?:[\s().-]*\d){9,}/g;
 const OTP_PATTERN = /\b(OTP|one[- ]time code|verification code|security code|2FA code)\s*[:= -]?\s*\d{4,8}\b/gi;
-const PASSWORD_PATTERN = /\b(password|passcode|pin|security answer|secret)\s*[:=]\s*\S+/gi;
-const API_CREDENTIAL_PATTERN = /\b(api[-_ ]?key|access token|refresh token|client secret|secret key)\s*[:=]\s*\S+/gi;
+const PASSWORD_PATTERN = /\b(password|passcode|pin|security answer|secret)\s*[:=]\s*[^\r\n]+/gi;
+const API_CREDENTIAL_PATTERN = /\b(api[-_ ]?key|access token|refresh token|client secret|secret key)\s*[:=]\s*[^\r\n]+/gi;
 const AUTHORIZATION_PATTERN = /\b(authorization\s*[:=]\s*(?:bearer|basic))\s+\S+/gi;
 const COOKIE_PATTERN = /\b(cookie\s*[:=]\s*)[^\r\n]+/gi;
 const URL_SECRET_PATTERN = /([?&](?:access_token|api_key|token|key|secret|password|auth|code|session)=)[^&#\s]+/gi;
@@ -12,6 +12,7 @@ const SECRET_TOKEN_PATTERN = /\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{2
 const ISO_DATE_PATTERN = /\b\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?\b/g;
 
 export function redactSensitiveScreenText(value: string): string {
+  if (typeof value !== 'string') return '';
   const preservedDates: string[] = [];
   const protectedValue = value.replace(
     ISO_DATE_PATTERN,
