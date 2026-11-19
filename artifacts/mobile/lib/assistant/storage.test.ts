@@ -5,6 +5,7 @@ const local = new Map<string, string>();
 const secure = new Map<string, string>();
 let secureAvailable = true;
 let secureThrows = false;
+const platform = { OS: 'android' as 'android' | 'web' };
 
 const asyncStorage = {
   getItem: async (key: string) => local.get(key) ?? null,
@@ -15,6 +16,9 @@ const asyncStorage = {
 mock.module('@react-native-async-storage/async-storage', {
   defaultExport: asyncStorage,
   namedExports: { default: asyncStorage },
+});
+mock.module('react-native', {
+  namedExports: { Platform: platform },
 });
 mock.module('expo-secure-store', {
   namedExports: {
@@ -35,9 +39,10 @@ function reset() {
   secure.clear();
   secureAvailable = true;
   secureThrows = false;
+  platform.OS = 'android';
 }
 
-test('readLocalState returns empty defaults and restores messages, settings and indexed memory', async () => {
+test('readLocalState restores notes and migrates legacy plaintext metadata into SecureStore', async () => {
   const { readLocalState } = await storagePromise;
   reset();
   assert.deepEqual(await readLocalState(), { messages: [], settings: {}, memories: [] });
@@ -48,6 +53,7 @@ test('readLocalState returns empty defaults and restores messages, settings and 
     { id: 'n2', title: 'ফাঁকা নোট', createdAt: '2026-01-02' },
   ]));
   secure.set('oi-assistant-memory-n1', 'গোপন বিষয়');
+
   const restored = await readLocalState();
   assert.equal(restored.messages[0].content, 'হ্যালো');
   assert.deepEqual(restored.settings, { theme: 'ocean' });
@@ -55,6 +61,13 @@ test('readLocalState returns empty defaults and restores messages, settings and 
     { id: 'n1', title: 'ব্যক্তিগত নোট', createdAt: '2026-01-01', content: 'গোপন বিষয়' },
     { id: 'n2', title: 'ফাঁকা নোট', createdAt: '2026-01-02', content: '' },
   ]);
+  assert.deepEqual(JSON.parse(local.get('oi-assistant-memory-index-v1')!), [{ id: 'n1' }, { id: 'n2' }]);
+  assert.deepEqual(JSON.parse(secure.get('oi-assistant-memory-n1')!), {
+    id: 'n1',
+    title: 'ব্যক্তিগত নোট',
+    createdAt: '2026-01-01',
+    content: 'গোপন বিষয়',
+  });
 });
 
 test('persistMessages and persistSettings serialize local data', async () => {
@@ -68,41 +81,63 @@ test('persistMessages and persistSettings serialize local data', async () => {
   assert.deepEqual(JSON.parse(local.get('oi-assistant-settings-v1')!), settings);
 });
 
-test('memory create/update/delete stores content securely and maintains only index metadata', async () => {
+test('memory create/update/delete encrypts the complete note and stores only opaque IDs in the index', async () => {
   const { readLocalState, storeMemoryNote, updateMemoryNote, removeMemoryNote } = await storagePromise;
   reset();
   const note = { id: 'n1', title: 'নোট', content: 'গোপন তথ্য', createdAt: 'today' };
   await storeMemoryNote(note, []);
-  assert.equal(secure.get('oi-assistant-memory-n1'), 'গোপন তথ্য');
-  assert.deepEqual(JSON.parse(local.get('oi-assistant-memory-index-v1')!), [
-    { id: 'n1', title: 'নোট', createdAt: 'today' },
-  ]);
+  assert.deepEqual(JSON.parse(secure.get('oi-assistant-memory-n1')!), note);
+  assert.deepEqual(JSON.parse(local.get('oi-assistant-memory-index-v1')!), [{ id: 'n1' }]);
+  assert.equal(local.get('oi-assistant-memory-index-v1')!.includes('নোট'), false);
   assert.equal(local.get('oi-assistant-memory-index-v1')!.includes('গোপন তথ্য'), false);
 
   const updated = { ...note, title: 'পরিবর্তিত', content: 'নতুন গোপন তথ্য' };
   const afterUpdate = await updateMemoryNote(updated, [note]);
   assert.deepEqual(afterUpdate, [updated]);
-  assert.equal(secure.get('oi-assistant-memory-n1'), 'নতুন গোপন তথ্য');
+  assert.deepEqual(JSON.parse(secure.get('oi-assistant-memory-n1')!), updated);
   const afterDelete = await removeMemoryNote('n1', afterUpdate);
   assert.deepEqual(afterDelete, []);
   assert.equal(secure.has('oi-assistant-memory-n1'), false);
   assert.deepEqual((await readLocalState()).memories, []);
 });
 
-test('memory data falls back to AsyncStorage when SecureStore is unavailable or throws', async () => {
-  const { readLocalState, storeMemoryNote, updateMemoryNote, removeMemoryNote } = await storagePromise;
+test('native private memory fails closed when SecureStore is unavailable and preserves legacy data', async () => {
+  const { readLocalState, storeMemoryNote } = await storagePromise;
   reset();
   secureAvailable = false;
-  const note = { id: 'fallback', title: 'Fallback', content: 'local fallback', createdAt: 'today' };
-  await storeMemoryNote(note, [note]);
-  assert.equal(local.get('oi-assistant-memory-fallback'), 'local fallback');
-  assert.equal((await readLocalState()).memories[0].content, 'local fallback');
+  const note = { id: 'blocked', title: 'Private', content: 'secret', createdAt: 'today' };
+  await assert.rejects(storeMemoryNote(note, []), /Encrypted device storage is unavailable/);
+  assert.equal(local.has('oi-assistant-memory-blocked'), false);
+  assert.equal(local.has('oi-assistant-memory-index-v1'), false);
+
   secureThrows = true;
-  const updated = { ...note, content: 'updated fallback' };
+  await assert.rejects(storeMemoryNote(note, []), /Encrypted device storage is unavailable/);
+
+  local.set('oi-assistant-memory-legacy', 'old private text');
+  local.set('oi-assistant-memory-index-v1', JSON.stringify([
+    { id: 'legacy', title: 'Old note', createdAt: 'yesterday' },
+  ]));
+  await assert.rejects(readLocalState(), /Encrypted device storage is unavailable/);
+  assert.equal(local.get('oi-assistant-memory-legacy'), 'old private text');
+  assert.equal(secure.has('oi-assistant-memory-legacy'), false);
+});
+
+test('web private memory uses browser-local storage and keeps only IDs in the index', async () => {
+  const { readLocalState, storeMemoryNote, updateMemoryNote, removeMemoryNote } = await storagePromise;
+  reset();
+  platform.OS = 'web';
+  secureAvailable = false;
+  const note = { id: 'web-note', title: 'Browser note', content: 'local only', createdAt: 'today' };
+  await storeMemoryNote(note, []);
+  assert.deepEqual(JSON.parse(local.get('oi-assistant-memory-web-note')!), note);
+  assert.deepEqual(JSON.parse(local.get('oi-assistant-memory-index-v1')!), [{ id: 'web-note' }]);
+  assert.deepEqual((await readLocalState()).memories, [note]);
+
+  const updated = { ...note, content: 'updated local only' };
   await updateMemoryNote(updated, [note]);
-  assert.equal(local.get('oi-assistant-memory-fallback'), 'updated fallback');
-  await removeMemoryNote('fallback', [updated]);
-  assert.equal(local.has('oi-assistant-memory-fallback'), false);
+  assert.deepEqual(JSON.parse(local.get('oi-assistant-memory-web-note')!), updated);
+  await removeMemoryNote('web-note', [updated]);
+  assert.equal(local.has('oi-assistant-memory-web-note'), false);
 });
 
 test('clearLocalAssistantData removes chat, settings, memory index and every stored note', async () => {
@@ -110,12 +145,9 @@ test('clearLocalAssistantData removes chat, settings, memory index and every sto
   reset();
   local.set('oi-assistant-chat-v1', '[]');
   local.set('oi-assistant-settings-v1', '{}');
-  local.set('oi-assistant-memory-index-v1', JSON.stringify([
-    { id: 'one', title: 'One', createdAt: 'today' },
-    { id: 'two', title: 'Two', createdAt: 'today' },
-  ]));
-  secure.set('oi-assistant-memory-one', 'one content');
-  secure.set('oi-assistant-memory-two', 'two content');
+  local.set('oi-assistant-memory-index-v1', JSON.stringify([{ id: 'one' }, { id: 'two' }]));
+  secure.set('oi-assistant-memory-one', JSON.stringify({ id: 'one', title: 'One', createdAt: 'today', content: 'one content' }));
+  secure.set('oi-assistant-memory-two', JSON.stringify({ id: 'two', title: 'Two', createdAt: 'today', content: 'two content' }));
   await clearLocalAssistantData();
   assert.deepEqual([...local.keys()], []);
   assert.deepEqual([...secure.keys()], []);
