@@ -26,8 +26,8 @@ test('buildStructuredReasoning - generates 5-point structured reasoning response
     prompt: 'How to deploy Expo app?',
     lang: 'bn',
     answerText: 'Expo web export pnpm run build দিয়ে প্রস্তুত করুন।',
-    explanationText: 'Cloudflare Pages wrangler pages deploy ডিরেক্টরি ব্যবহার করে।',
-    sources: ['[Cloudflare Pages Doc](https://pages.cloudflare.com)'],
+    explanationText: 'Cloudflare Workers static assets একই Worker থেকে API-এর সঙ্গে serve করা হয়।',
+    sources: ['[Cloudflare Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/)'],
   });
 
   assert.ok(res.rawFormattedText.includes('১. মূল উত্তর'));
@@ -165,14 +165,14 @@ test('executeAgentTask - executes live web search when research prompt is detect
   const originalFetch = globalThis.fetch;
   const mockHtml = `
     <html><body>
-      <a class="result__url" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fdevelopers.cloudflare.com%2Fpages%2F">Cloudflare Pages</a>
-      <a class="result__snippet">Deploy full-stack applications with Cloudflare Pages Functions.</a>
+      <a class="result__url" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fdevelopers.cloudflare.com%2Fworkers%2F">Cloudflare Workers</a>
+      <a class="result__snippet">Build serverless applications with Cloudflare Workers.</a>
     </body></html>
   `;
   globalThis.fetch = async () => new Response(mockHtml, { status: 200 });
 
   try {
-    const result = await executeAgentTask(' Search Cloudflare Pages docs', true);
+    const result = await executeAgentTask(' Search Cloudflare Workers docs', true);
     assert.strictEqual(result.state, 'completed');
     assert.ok(result.structuredAnswer);
     assert.ok(result.searchResults);
@@ -221,11 +221,11 @@ test('executeAgentTask - Gmail task returns not_connected when OAuth token is mi
   assert.ok(result.summary.includes('Gmail API সংযুক্ত নয়'));
 });
 
-test('executeAgentTask - Gmail task asks for permission when OAuth token is present', async () => {
+test('executeAgentTask - Gmail does not claim it can send without a structured message', async () => {
   const result = await executeAgentTask('Send an email via Gmail', true, false, 'mock-oauth-token');
-  assert.strictEqual(result.state, 'permission_pending');
-  assert.strictEqual(result.requiresConfirmation, true);
-  assert.ok(result.confirmationMessage?.includes('ইমেইল বার্তাটি পাঠাতে চান'));
+  assert.strictEqual(result.state, 'failed');
+  assert.strictEqual(result.requiresConfirmation, false);
+  assert.match(result.summary, /কোনো email পাঠানো হয়নি/);
 });
 
 test('executeAgentTask - never claims a reminder was saved when local persistence fails', async () => {
@@ -273,11 +273,14 @@ test('generateDevelopmentPlan - initializes an empty dependency list for default
   assert.deepStrictEqual(qaPlan.dependencies, []);
 });
 
-test('getProjectBrainSummary - returns non-secret project knowledge', () => {
+test('getProjectBrainSummary - records the Cloudflare-only architecture', () => {
   const brain = getProjectBrainSummary();
-  assert.strictEqual(brain.name, 'Voice-Memory-Assistant-net (Badboy AI)');
+  assert.strictEqual(brain.name, 'Badboy AI');
+  assert.ok(brain.architecture.includes('one Cloudflare Worker'));
   assert.ok(brain.frameworks.includes('TypeScript'));
   assert.ok(brain.apiEndpoints.includes('/api/assistant/chat'));
+  assert.match(brain.deploymentTarget, /badboy-vs-versel-ai/);
+  assert.doesNotMatch(brain.architecture + brain.deploymentTarget, /Netlify|Express|Cloudflare Pages/i);
 });
 
 test('runAutoQASuite - does not claim checks passed when it has not executed them', () => {
@@ -291,12 +294,14 @@ test('runAutoQASuite - does not claim checks passed when it has not executed the
   assert.ok(!qa.details.some((detail) => /passing|verified|tested/i.test(detail)));
 });
 
-test('getPluginRegistryStatus - lists active and not_connected tool adapters', () => {
+test('getPluginRegistryStatus - reports real setup state and Worker-only backend', () => {
   const plugins = getPluginRegistryStatus();
-  assert.ok(plugins.some((p) => p.id === 'github-adapter'));
-  assert.ok(plugins.some((p) => p.id === 'web-research-adapter'));
-  const gmailPlugin = plugins.find((p) => p.id === 'gmail-adapter');
-  assert.strictEqual(gmailPlugin?.status, 'not_connected');
+  assert.equal(plugins.find((p) => p.id === 'cloudflare-worker-api')?.status, 'active');
+  assert.equal(plugins.find((p) => p.id === 'memory-adapter')?.status, 'active');
+  assert.equal(plugins.find((p) => p.id === 'github-adapter')?.status, 'pending');
+  assert.equal(plugins.find((p) => p.id === 'telegram-adapter')?.status, 'pending');
+  assert.equal(plugins.find((p) => p.id === 'gmail-adapter')?.status, 'not_connected');
+  assert.doesNotMatch(plugins.map((p) => p.name + ' ' + p.description).join(' '), /Cloudflare Pages Adapter|Netlify|Express API/i);
 });
 
 test('DEFAULT_REPO_CONFIG has target repository details', () => {
@@ -428,63 +433,36 @@ test('createGitHubPullRequest - handles missing token gracefully', async () => {
 });
 
 
-test('executeAgentTask - Gmail sends only after confirmation and reports HTTP/network failures', async (t) => {
+test('executeAgentTask - never sends an empty Gmail payload even with an OAuth token', async () => {
   const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    return Response.json({ id: 'should-not-send' });
+  };
   try {
-    await t.test('confirmed request succeeds with bearer authorization', async () => {
-      let request: { url: string; init?: RequestInit } | undefined;
-      globalThis.fetch = async (input, init) => {
-        request = { url: String(input), init };
-        return Response.json({ id: 'sent-message' });
-      };
-      const result = await executeAgentTask('Send an email via Gmail', true, true, 'oauth-token');
-      assert.equal(result.state, 'completed');
-      assert.equal(result.requiresConfirmation, true);
-      assert.equal(request?.url, 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send');
-      assert.equal(request?.init?.method, 'POST');
-      assert.equal(new Headers(request?.init?.headers).get('Authorization'), 'Bearer oauth-token');
-      assert.deepEqual(JSON.parse(String(request?.init?.body)), { raw: '' });
-    });
-
-    await t.test('HTTP error does not claim the email was sent', async () => {
-      globalThis.fetch = async () => new Response('permission denied', { status: 403 });
-      const result = await executeAgentTask('Send an email via Gmail', true, true, 'oauth-token');
-      assert.equal(result.state, 'failed');
-      assert.match(result.summary, /HTTP 403/);
-      assert.equal(result.requiresConfirmation, true);
-    });
-
-    await t.test('network error is returned as a failed task', async () => {
-      globalThis.fetch = async () => { throw new Error('network unavailable'); };
-      const result = await executeAgentTask('Send an email via Gmail', true, true, 'oauth-token');
-      assert.equal(result.state, 'failed');
-      assert.match(result.summary, /network unavailable/);
-      assert.ok(result.logs.some((entry) => entry.includes('Gmail সার্ভিস ত্রুটি')));
-    });
-
-    await t.test('offline email request is queued and still requires confirmation', async () => {
-      globalThis.fetch = async () => { throw new Error('must not fetch while offline'); };
-      const result = await executeAgentTask('Send an email via Gmail', false, true, 'oauth-token');
-      assert.equal(result.state, 'offline_queued');
-      assert.equal(result.requiresInternet, true);
-      assert.equal(result.requiresConfirmation, true);
-    });
+    const result = await executeAgentTask('Send an email via Gmail', true, true, 'oauth-token');
+    assert.equal(result.state, 'failed');
+    assert.equal(result.requiresConfirmation, false);
+    assert.match(result.summary, /কোনো Gmail API call করা হয়নি/);
+    assert.equal(fetchCalls, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('executeAgentTask - generic request returns structured answer and empty input is safe', async () => {
+test('executeAgentTask - unsupported and empty commands never report fake completion', async () => {
   const empty = await executeAgentTask('   ');
-  assert.equal(empty.state, 'completed');
+  assert.equal(empty.state, 'failed');
   assert.equal(empty.prompt, '');
   assert.equal(empty.detectedLanguage, 'en');
+  assert.match(empty.summary, /কোনো কাজ সম্পন্ন/);
 
   const result = await executeAgentTask('আমার প্রজেক্টের অবস্থা ব্যাখ্যা করো', false);
-  assert.equal(result.state, 'completed');
+  assert.equal(result.state, 'failed');
   assert.equal(result.requiresInternet, false);
-  assert.equal(result.structuredAnswer?.directAnswer.includes('সফলভাবে'), true);
-  assert.ok(result.summary.includes('১. মূল উত্তর'));
+  assert.equal(result.structuredAnswer, undefined);
+  assert.match(result.summary, /কোনো কাজ করা হয়নি/);
 });
 
 test('createGitHubPullRequest - completes a mocked safe branch, file commit and PR flow', async () => {
