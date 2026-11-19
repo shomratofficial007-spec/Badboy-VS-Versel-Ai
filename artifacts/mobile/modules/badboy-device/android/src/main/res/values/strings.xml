@@ -1,4 +1,4 @@
 <resources>
     <string name="badboy_screen_reader_label">Badboy Screen Reader</string>
-    <string name="badboy_screen_reader_description">Read visible screen text only when you explicitly long-press the Badboy floating assistant bubble or request screen context in chat. It does not click, type, or save screen contents.</string>
+    <string name="badboy_screen_reader_description">Reads visible text only after you long-press the Badboy floating assistant bubble or explicitly request screen context in chat. It skips password and editable fields, applies best-effort redaction, does not click, type, take screenshots, record in the background, or store screen contents. Review the chat draft before sending.</string>
 </resources>
