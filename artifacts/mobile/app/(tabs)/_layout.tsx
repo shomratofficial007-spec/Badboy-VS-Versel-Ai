@@ -1,8 +1,7 @@
 import React from 'react';
 import { useWindowDimensions } from 'react-native';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { ActivityIndicator } from 'react-native';
 import { BadboyLogo } from '@/components/BadboyLogo';
 import { Redirect, Tabs, usePathname, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
