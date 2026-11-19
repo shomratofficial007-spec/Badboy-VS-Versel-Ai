@@ -141,3 +141,9 @@ Baseline commit inspected: `0664e673f145249e0ff2ff9b6d76c8145cb7d2b2`.
 - Source changes are staged on this PR branch; CI, clean frozen install, lockfile regeneration, build, Worker runtime smoke tests, and Android APK validation are still required.
 - No production deployment, Cloudflare secret change, or production D1 migration is performed.
 - The implementation is not complete until all CI checks pass and the mobile APK is verified on a physical device.
+
+### Additional Pages-build-path audit finding
+
+- artifacts/mobile/scripts/build.js still invoked `wrangler pages functions build` after Expo web export and wrote a Pages `_worker.js` bundle. This was a hidden Pages deployment dependency missed by the initial filename-only cleanup. It is being removed so the Expo build emits static assets for the root Worker only.
+- README-PORTABLE.txt, replit.md, and .env.example contained stale Express/Postgres/PORT deployment instructions; these are being aligned with Cloudflare Worker development and secrets.
+- The root TypeScript project references the Cloudflare functions workspace and shared libraries only; no api-server TypeScript project reference was present.
