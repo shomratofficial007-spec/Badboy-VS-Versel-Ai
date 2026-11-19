@@ -4,6 +4,17 @@ const DEFAULT_NATIVE_API_DOMAIN =
   "https://badboy-vs-versel-ai.shomratofficial007.workers.dev";
 
 export function apiUrl(path: string): string {
+  // An explicit API domain must win on web too. This lets Netlify (or another
+  // static host) use the complete Cloudflare Worker API instead of falling
+  // back to a partial host-local function set.
+  const configuredDomain = process.env.EXPO_PUBLIC_DOMAIN?.trim();
+  if (configuredDomain) {
+    const baseUrl = configuredDomain.startsWith("http")
+      ? configuredDomain
+      : `https://${configuredDomain}`;
+    return `${baseUrl.replace(/\/$/, "")}/api${path}`;
+  }
+
   if (
     typeof window !== "undefined" &&
     typeof window.location?.origin === "string" &&
@@ -12,9 +23,7 @@ export function apiUrl(path: string): string {
     return `${window.location.origin}/api${path}`;
   }
 
-  const domain = process.env.EXPO_PUBLIC_DOMAIN?.trim() || DEFAULT_NATIVE_API_DOMAIN;
-  const baseUrl = domain.startsWith("http") ? domain : `https://${domain}`;
-  return `${baseUrl.replace(/\/$/, "")}/api${path}`;
+  return `${DEFAULT_NATIVE_API_DOMAIN}/api${path}`;
 }
 
 type OwnerJsonFetch = (input: string, init?: RequestInit) => Promise<Response>;
