@@ -44,7 +44,7 @@ import {
   isScreenAwarenessEnabled,
   openScreenAwarenessSettings,
 } from '@/lib/assistant/jarvis';
-import { ProviderManagerSection } from '@/components/ProviderManagerSection';
+
 import {
   bindTelegramOwnerChat,
   checkTelegramMessages,
