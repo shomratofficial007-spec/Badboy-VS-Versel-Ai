@@ -158,3 +158,8 @@ Baseline commit inspected: `0664e673f145249e0ff2ff9b6d76c8145cb7d2b2`.
 ### Replit post-merge hook safety finding
 
 - .replit configured a post-merge hook that ran scripts/post-merge.sh. That script executed `pnpm --filter db push` after merges, which could mutate a database through DATABASE_URL and is incompatible with the Cloudflare D1-only target. Removed the automatic hook and its script; production D1 migrations remain controlled by the reviewed Cloudflare migration workflow.
+
+### Legacy PostgreSQL package audit
+
+- lib/db was an empty placeholder PostgreSQL package: its schema barrel exported no tables, its runtime opened a pg Pool from DATABASE_URL, and its drizzle config targeted PostgreSQL. The only previously observed consumer was the removed Express API package; the root TypeScript project reference was the remaining workspace reference. The canonical Worker uses Cloudflare D1 through AGENT_DB and migrations/ instead.
+- Removing this unused PostgreSQL package and its root TypeScript reference eliminates the second database runtime rather than leaving a dead Postgres connection path beside D1.
