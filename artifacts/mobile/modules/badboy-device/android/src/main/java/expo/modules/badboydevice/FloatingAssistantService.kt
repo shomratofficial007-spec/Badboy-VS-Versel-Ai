@@ -25,7 +25,6 @@ import kotlin.math.abs
 class FloatingAssistantService : Service() {
   private var windowManager: WindowManager? = null
   private var bubble: View? = null
-  private var layoutParams: WindowManager.LayoutParams? = null
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -156,10 +155,8 @@ class FloatingAssistantService : Service() {
     try {
       manager.addView(bubbleView, params)
       bubble = bubbleView
-      layoutParams = params
     } catch (_: Exception) {
       bubble = null
-      layoutParams = null
       stopSelf()
     }
   }
@@ -238,7 +235,6 @@ class FloatingAssistantService : Service() {
       // The overlay may already have been detached by the system.
     } finally {
       bubble = null
-      layoutParams = null
     }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
       stopForeground(STOP_FOREGROUND_REMOVE)
