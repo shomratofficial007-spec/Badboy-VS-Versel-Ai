@@ -52,7 +52,10 @@ class FloatingAssistantService : Service() {
   }
 
   private fun showBubble() {
-    val manager = windowManager ?: return
+    val manager = windowManager ?: run {
+      stopSelf()
+      return
+    }
     val bubbleView = TextView(this).apply {
       text = "B"
       textSize = 18f
