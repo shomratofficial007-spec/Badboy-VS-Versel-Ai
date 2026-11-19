@@ -30,7 +30,7 @@ async function streamSseResponse(
     };
     throw new Error(
       body.error ??
-        `The assistant could not reply right now (HTTP ${response.status}).`,
+        \`The assistant could not reply right now (HTTP \${response.status}).\`,
     );
   }
 
@@ -39,24 +39,43 @@ async function streamSseResponse(
   const decoder = new TextDecoder();
   let buffer = '';
   let complete = false;
-
-  while (!complete) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const payload = line.slice(6);
-      if (payload === '[DONE]') {
-        complete = true;
-        break;
-      }
-      const event = JSON.parse(payload) as { content?: string; error?: string };
-      if (event.error) throw new Error(event.error);
-      if (event.content) onChunk(event.content);
+  const processLine = (line: string) => {
+    if (!line.startsWith('data: ')) return;
+    const payload = line.slice(6).trim();
+    if (payload === '[DONE]') {
+      complete = true;
+      return;
     }
+    const event = JSON.parse(payload) as { content?: string; error?: string };
+    if (event.error) throw new Error(event.error);
+    if (event.content) onChunk(event.content);
+  };
+
+  try {
+    while (!complete) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        processLine(line);
+        if (complete) break;
+      }
+    }
+    buffer += decoder.decode();
+    if (!complete && buffer.trim()) {
+      for (const line of buffer.split('\n')) {
+        processLine(line);
+        if (complete) break;
+      }
+    }
+    if (!complete) throw new Error('The assistant stream ended before its completion marker.');
+  } catch (error) {
+    await reader.cancel(error).catch(() => undefined);
+    throw error;
+  } finally {
+    try { reader.releaseLock(); } catch { /* already released */ }
   }
 }
 
@@ -73,27 +92,47 @@ async function streamOpenAICompatibleResponse(response: Response, onChunk: (chun
   const emitLine = (line: string) => {
     if (!line.startsWith('data:')) return;
     const payload = line.slice(5).trim();
-    if (!payload || payload === '[DONE]') return;
+    if (!payload) return;
+    if (payload === '[DONE]') {
+      complete = true;
+      return;
+    }
     let event: { error?: unknown; choices?: Array<{ delta?: { content?: unknown } }> };
-    try { event = JSON.parse(payload) as typeof event; } catch { return; }
+    try {
+      event = JSON.parse(payload) as typeof event;
+    } catch {
+      throw new Error('AI Provider returned malformed stream data.');
+    }
     if (event.error) throw new Error('AI Provider stream error.');
     const content = event.choices?.[0]?.delta?.content;
     if (typeof content === 'string' && content) onChunk(content);
   };
-  while (!complete) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-    for (const line of lines) {
-      if (line.trim() === 'data: [DONE]') { complete = true; break; }
-      emitLine(line);
+
+  try {
+    while (!complete) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        emitLine(line);
+        if (complete) break;
+      }
     }
-  }
-  buffer += decoder.decode();
-  if (!complete && buffer.trim()) {
-    for (const line of buffer.split('\n')) emitLine(line.trim());
+    buffer += decoder.decode();
+    if (!complete && buffer.trim()) {
+      for (const line of buffer.split('\n')) {
+        emitLine(line.trim());
+        if (complete) break;
+      }
+    }
+    if (!complete) throw new Error('AI Provider stream ended before its completion marker.');
+  } catch (error) {
+    await reader.cancel(error).catch(() => undefined);
+    throw error;
+  } finally {
+    try { reader.releaseLock(); } catch { /* already released */ }
   }
 }
 async function streamConfiguredProviderReply(message: string, settings: AssistantSettings, onChunk: (chunk: string) => void, history: ChatHistoryItem[] = [], memoryContext = '', skillContext = ''): Promise<void> {
