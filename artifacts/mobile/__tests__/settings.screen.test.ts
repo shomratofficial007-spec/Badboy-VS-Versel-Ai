@@ -85,6 +85,7 @@ const roadmap = {
   automationHub: false, releaseRecovery: false, integrations: false, localMemoryControls: false,
 };
 const settings = {
+  aiProvider: 'server', aiModel: 'openrouter/free', aiBaseUrl: '', aiFallbackProvider: 'none', aiFallbackModel: '', floatingAssistantEnabled: false,
   personality: 'Helpful and concise', onlineAI: true, developerEngine: 'auto',
   theme: 'dark', autoImprove: false, developerMode: false,
   voiceProcessingConsent: false, voiceInputEnabled: true, voiceOutputEnabled: true,
@@ -93,6 +94,9 @@ const settings = {
 };
 mock.module('../assets/images/badboy-settings-avatar.jpg', { defaultExport: {} });
 mock.module('expo-router', { namedExports: { useRouter: () => ({ back: () => {} }) } });
+
+mock.module('../components/ProviderManagerSection.tsx', { namedExports: { ProviderManagerSection: () => null } });
+mock.module('../lib/assistant/jarvis.ts', { namedExports: { canDrawFloatingAssistant: () => false, openFloatingAssistantPermissionSettings: async () => {}, startFloatingAssistant: async () => {}, stopFloatingAssistant: async () => {}, isScreenAwarenessEnabled: () => false, openScreenAwarenessSettings: async () => {} } });
 
 mock.module('react-native', {
   namedExports: {
@@ -112,7 +116,7 @@ mock.module('react-native', {
   },
 });
 mock.module('@expo/vector-icons', { namedExports: { Feather: () => null } });
-mock.module('../components/ProviderManagerSection.tsx', { namedExports: { ProviderManagerSection: () => null } });
+
 mock.module('react-native-safe-area-context', {
   namedExports: { useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) },
 });
@@ -125,7 +129,7 @@ mock.module('../context/AssistantContext.tsx', {
   },
 });
 mock.module('../context/OwnerAuthContext.tsx', {
-  namedExports: { useOwnerAuth: () => ({ signOut: async () => { signOutCalls.push('signed-out'); } }) },
+  namedExports: { useOwnerAuth: () => ({ authenticated: true, signOut: async () => { signOutCalls.push('signed-out'); } }) },
 });
 mock.module('../hooks/useColors.ts', { namedExports: { useColors: () => colors } });
 mock.module('../lib/assistant/voice.ts', {
@@ -224,8 +228,9 @@ test('Settings screen renders existing voice, privacy, developer and account con
   assert.match(html, /Settings|সেটিংস|ব্যক্তিগত/);
   assert.match(html, /Customize your Badboy AI experience/);
   assert.match(html, /AI Provider/);
-  assert.match(html, /OpenRouter/);
-  assert.match(html, /Automatic free-model routing/);
+  assert.match(html, /Server AI/);
+  assert.match(html, /openrouter\/free/);
+  assert.match(html, /Multi-AI Fallback/);
   assert.match(html, /v1[.]0[.]0/);
   assert.match(html, /Online/);
   assert.match(html, /APPEARANCE/);
@@ -236,6 +241,17 @@ test('Settings screen renders existing voice, privacy, developer and account con
   assert.match(html, /ভয়েস|Voice/);
   assert.match(html, /Wake Word|ওয়েক|Hey Badboy/i);
   assert.match(html, /Owner Sign Out/);
+  assert.ok(pressables.some((item) => item.label === 'Open Owner Panel'), 'Owner Panel is interactive');
+  assert.ok(pressables.some((item) => item.label === 'Token Management'), 'Token Management is interactive');
+  assert.ok(pressables.some((item) => item.label === 'Login Security'), 'Login Security is interactive');
+  pressables.find((item) => item.label === 'Open Owner Panel')?.onPress();
+  assert.equal(alerts.at(-1)?.title, 'Owner Panel');
+  await alerts.at(-1)?.buttons.find((button) => button.text === 'Manage Owner Token')?.onPress();
+  assert.equal(alerts.at(-1)?.title, 'Owner Token Management');
+  pressables.find((item) => item.label === 'Login Security')?.onPress();
+  assert.equal(alerts.at(-1)?.title, 'Login Security');
+  pressables.find((item) => item.label === 'Token Management')?.onPress();
+  assert.equal(alerts.at(-1)?.title, 'Owner Token Management');
   assert.match(html, /চ্যাট ইতিহাস মুছুন/);
   switchHandlers.find((item) => item.label === 'Develop mode')?.onValueChange(true);
   assert.deepEqual(settingsUpdates, [{ developerMode: true }]);
@@ -1062,4 +1078,34 @@ test('Settings lists and previews an installed voice matching the selected langu
   pressables.find((item) => item.label.includes('নমুনা শুনুন: English TTS voice'))?.onPress();
   assert.deepEqual(settingsUpdates.at(-1), { voiceIdentifier: 'en-US-test' });
   settings.voiceLanguage = 'bn-BD';
+});
+
+test('Settings Jarvis controls request overlay permission and expose stop and screen-awareness actions', async () => {
+  resetTelegramState();
+  const { default: SettingsScreen } = await settingsScreenPromise;
+  pressables.length = 0;
+  alerts.length = 0;
+  settingsUpdates.length = 0;
+  settings.floatingAssistantEnabled = false;
+
+  renderToStaticMarkup(React.createElement(SettingsScreen));
+  const startBubble = pressables.find((item) => item.label.includes('Start Bubble'));
+  const stopBubble = pressables.find((item) => item.label.includes('Stop Bubble'));
+  const configureScreen = pressables.find((item) => item.label.includes('Configure Screen Awareness'));
+  assert.ok(startBubble, 'Start Bubble action is rendered');
+  assert.ok(stopBubble, 'Stop Bubble action is rendered');
+  assert.ok(configureScreen, 'Screen Awareness settings action is rendered');
+
+  startBubble.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(alerts.at(-1)?.title, 'Permission প্রয়োজন');
+  assert.match(alerts.at(-1)?.message ?? '', /Display over other apps/);
+
+  stopBubble.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(settingsUpdates.at(-1), { floatingAssistantEnabled: false });
+
+  configureScreen.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(alerts.some((item) => item.title === 'Settings খুলতে সমস্যা'), false);
 });

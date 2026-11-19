@@ -1,5 +1,5 @@
 import { Feather } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -53,6 +53,8 @@ import { getOfflineWakeWordStatus, startOfflineWakeWord, stopOfflineWakeWord, su
 import { getActiveCustomSkillContext } from '@/lib/assistant/skillStorage';
 import { loadEnabledPluginIds } from '@/lib/assistant/pluginStorage';
 import { getDeveloperModeSkillContext } from '@/lib/assistant/developerModeSkill';
+import { readVisibleScreenText } from '@/lib/assistant/jarvis';
+import { normalizeVisibleScreenText } from '@/lib/assistant/screenContextCore';
 
 const VOICE_RECORDING_OPTIONS = {
   ...RecordingPresets.HIGH_QUALITY,
@@ -91,6 +93,7 @@ export default function ChatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const routeParams = useLocalSearchParams<{ screen_context?: string | string[] }>();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerModal, setDrawerModal] = useState<'search' | 'history' | 'options' | 'newChat' | 'tools' | null>(null);
   const [chatSearch, setChatSearch] = useState('');
@@ -118,6 +121,16 @@ export default function ChatScreen() {
   const wakeResumePromiseRef = useRef<Promise<void> | null>(null);
   const wakeWordAllowedRef = useRef(false);
   wakeWordAllowedRef.current = Platform.OS === 'android' && settings.voiceProcessingConsent && settings.wakeWordEnabled && settings.voiceInputEnabled;
+
+  useEffect(() => {
+    const incoming = Array.isArray(routeParams.screen_context) ? routeParams.screen_context[0] : routeParams.screen_context;
+    const safeContext = normalizeVisibleScreenText(incoming ?? '');
+    if (!safeContext) return;
+    setDraft('এই স্ক্রিনের তথ্য বিশ্লেষণ করো। সংবেদনশীল তথ্য বাদ দিয়ে প্রয়োজনীয় বিষয় ব্যাখ্যা করো:\n\n' + safeContext);
+    setError(null);
+    Alert.alert('Screen context প্রস্তুত', 'দৃশ্যমান লেখা Chat draft-এ যোগ হয়েছে। পাঠানোর আগে দেখে নাও।');
+    router.replace('/(tabs)' as never);
+  }, [routeParams.screen_context, router]);
 
   useEffect(() => { setSelectedLang(settings.voiceLanguage); }, [settings.voiceLanguage]);
   useEffect(() => {
@@ -656,6 +669,18 @@ export default function ChatScreen() {
     };
   }, [settings.voiceProcessingConsent, settings.wakeWordEnabled, settings.voiceInputEnabled]);
 
+  const captureCurrentScreen = useCallback(async () => {
+    try {
+      const visibleText = normalizeVisibleScreenText(await readVisibleScreenText());
+      if (!visibleText) throw new Error('এই স্ক্রিনে পড়ার মতো লেখা পাওয়া যায়নি।');
+      setDraft('এই স্ক্রিনের তথ্য বিশ্লেষণ করো। সংবেদনশীল তথ্য বাদ দিয়ে প্রয়োজনীয় বিষয় ব্যাখ্যা করো:\n\n' + visibleText);
+      setError(null);
+      Alert.alert('Screen context প্রস্তুত', 'দৃশ্যমান লেখা Chat draft-এ যোগ হয়েছে। পাঠানোর আগে দেখে নাও।');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Screen context পড়া যায়নি। Android Accessibility permission পরীক্ষা করো।');
+    }
+  }, []);
+
   const startNewChat = () => {
     setDrawerModal('newChat');
   };
@@ -1064,9 +1089,10 @@ export default function ChatScreen() {
                     { label: 'General Chat', icon: 'message-circle' as const },
                     { label: 'Music Assistant', icon: 'music' as const },
                     { label: 'Android Control', icon: 'smartphone' as const },
+                    { label: 'Read Current Screen', icon: 'eye' as const },
                     { label: 'More Tools', icon: 'grid' as const },
                   ].map((tool) => (
-                    <Pressable key={tool.label} accessibilityRole="button" onPress={() => { setDrawerModal(null); setDraft(tool.label); }} style={[styles.toolTile, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
+                    <Pressable key={tool.label} accessibilityRole="button" onPress={() => { setDrawerModal(null); if (tool.label === 'Read Current Screen') { void captureCurrentScreen(); return; } setDraft(tool.label); }} style={[styles.toolTile, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
                       <Feather name={tool.icon} size={21} color={colors.primary} />
                       <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '700', textAlign: 'center' }}>{tool.label}</Text>
                     </Pressable>
@@ -1178,7 +1204,7 @@ export default function ChatScreen() {
           >
             <Feather name="grid" size={18} color={colors.primary} />
             <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: '700', flex: 1 }}>Tools &amp; Features</Text>
-            <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>8 tools + more</Text>
+            <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>9 tools + more</Text>
             <Feather name="chevron-right" size={17} color={colors.primary} />
           </Pressable>
         </View>

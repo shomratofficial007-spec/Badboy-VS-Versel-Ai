@@ -37,6 +37,15 @@ import { buildExpertReviewPrompt, inspectBadboyRepository, type RepositoryEviden
 import { useColors } from '@/hooks/useColors';
 import { ProviderManagerSection } from '@/components/ProviderManagerSection';
 import {
+  canDrawFloatingAssistant,
+  openFloatingAssistantPermissionSettings,
+  startFloatingAssistant,
+  stopFloatingAssistant,
+  isScreenAwarenessEnabled,
+  openScreenAwarenessSettings,
+} from '@/lib/assistant/jarvis';
+
+import {
   bindTelegramOwnerChat,
   checkTelegramMessages,
   connectTelegramBot,
@@ -81,7 +90,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { settings, updateSettings, clearChat, expertReviewDraft, clearExpertReviewDraft } = useAssistant();
-  const { signOut } = useOwnerAuth();
+  const { authenticated, signOut } = useOwnerAuth();
   const [personalityDraft, setPersonalityDraft] = useState(settings.personality);
   const [botTokenDraft, setBotTokenDraft] = useState('');
   const [telegramConnected, setTelegramConnected] = useState(false);
@@ -684,6 +693,74 @@ export default function SettingsScreen() {
     }
   };
 
+  const requestOwnerReauthentication = () => {
+    Alert.alert('Owner Token Management', 'বর্তমান Owner Token দেখানো হবে না। নতুন Token দিতে চাইলে বর্তমান session নিরাপদে শেষ করে Owner Login-এ ফিরে যাও।', [
+      { text: 'বাতিল', style: 'cancel' },
+      { text: 'Replace Token', style: 'destructive', onPress: () => {
+        void signOut().catch((cause) => Alert.alert('Sign Out ব্যর্থ', cause instanceof Error ? cause.message : 'Owner Token SecureStore থেকে সরানো যায়নি।'));
+      } },
+    ]);
+  };
+  const openOwnerPanel = () => {
+    Alert.alert('Owner Panel', 'Owner session: ' + (authenticated ? 'Authenticated' : 'Not authenticated') + '. Owner Token-এর value কখনো এই screen-এ দেখানো হয় না।', [
+      { text: 'Manage Owner Token', onPress: requestOwnerReauthentication },
+      { text: 'বন্ধ করুন', style: 'cancel' },
+    ]);
+  };
+  const openLoginSecurity = () => {
+    Alert.alert('Login Security', 'Owner Login বাধ্যতামূলক। Token Android SecureStore/Keystore-এ রাখা হয় এবং third-party AI Provider-এ পাঠানো হয় না। Security বন্ধ করার কোনো option নেই।', [
+      { text: 'Re-authenticate', style: 'destructive', onPress: requestOwnerReauthentication },
+      { text: 'বন্ধ করুন', style: 'cancel' },
+    ]);
+  };
+
+  const handleStartBubble = async () => {
+    try {
+      if (Platform.OS !== 'android') {
+        Alert.alert('Android only', 'Floating assistant শুধু Android-এ পাওয়া যায়।');
+        return;
+      }
+      const canDraw = canDrawFloatingAssistant();
+      if (!canDraw) {
+        Alert.alert(
+          'Permission প্রয়োজন',
+          'Bubble দেখানোর জন্য "Display over other apps" permission দরকার। Settings থেকে চালু করো।',
+          [
+            { text: 'Settings খুলুন', onPress: () => { void openFloatingAssistantPermissionSettings(); } },
+            { text: 'বাতিল', style: 'cancel' },
+          ],
+        );
+        return;
+      }
+      await startFloatingAssistant();
+      updateSettings({ floatingAssistantEnabled: true });
+    } catch (cause) {
+      Alert.alert('Bubble চালু ব্যর্থ', cause instanceof Error ? cause.message : 'Unknown error');
+    }
+  };
+
+  const handleStopBubble = async () => {
+    try {
+      await stopFloatingAssistant();
+    } catch {
+      // Keep the persisted setting disabled even if Android cannot stop the service.
+    }
+    updateSettings({ floatingAssistantEnabled: false });
+  };
+
+  const handleConfigureScreenAwareness = async () => {
+    try {
+      const enabled = isScreenAwarenessEnabled();
+      if (!enabled) {
+        await openScreenAwarenessSettings();
+        return;
+      }
+      await openScreenAwarenessSettings();
+    } catch (cause) {
+      console.warn('Screen awareness settings error:', cause);
+    }
+  };
+
   const sectionCard = { backgroundColor: colors.card, borderColor: colors.border };
 
   return (
@@ -735,27 +812,28 @@ export default function SettingsScreen() {
 
       <Text style={[styles.eyebrow, { color: colors.primary }]}>ACCOUNT &amp; ACCESS</Text>
       <View style={[styles.section, sectionCard]}>
-        <View style={styles.sectionTitleRow}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Open Owner Panel" onPress={openOwnerPanel} style={styles.sectionTitleRow}>
           <Feather name="user" size={17} color={colors.primary} />
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Owner Panel</Text>
-        </View>
+          <Text style={[styles.sectionTitle, { color: colors.foreground, flex: 1 }]}>Owner Panel</Text>
+          <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+        </Pressable>
         <Text style={[styles.body, { color: colors.mutedForeground }]}>Manage owner features & access</Text>
-        <View style={[styles.accountInfoRow, { borderColor: colors.border }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Token Management" onPress={requestOwnerReauthentication} style={[styles.accountInfoRow, { borderColor: colors.border }]}>
           <Feather name="key" size={19} color={colors.primary} />
           <View style={{ flex: 1 }}>
             <Text style={[styles.label, { color: colors.foreground }]}>Token Management</Text>
-            <Text style={[styles.body, { color: colors.mutedForeground }]}>Owner token is protected by Android SecureStore</Text>
+            <Text style={[styles.body, { color: colors.mutedForeground }]}>Replace the owner token through verified Owner Login</Text>
           </View>
           <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
-        </View>
-        <View style={[styles.accountInfoRow, { borderColor: colors.border }]}>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Login Security" onPress={openLoginSecurity} style={[styles.accountInfoRow, { borderColor: colors.border }]}>
           <Feather name="lock" size={19} color={colors.primary} />
           <View style={{ flex: 1 }}>
             <Text style={[styles.label, { color: colors.foreground }]}>Login Security</Text>
-            <Text style={[styles.body, { color: colors.mutedForeground }]}>Owner login is required to access the main app</Text>
+            <Text style={[styles.body, { color: colors.mutedForeground }]}>Owner login is mandatory and cannot be disabled</Text>
           </View>
           <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
-        </View>
+        </Pressable>
       </View>
       <Pressable
         onPress={() => Alert.alert('চ্যাট ইতিহাস মুছবেন?', 'এই ফোনে সংরক্ষিত সব chat history মুছে যাবে।', [
@@ -785,42 +863,30 @@ export default function SettingsScreen() {
           <Feather name="zap" size={17} color={colors.primary} />
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>AI Provider &amp; Model</Text>
         </View>
-        <Pressable
-          onPress={() => Alert.alert('AI Provider', 'এই অ্যাপের Agentic Assistant বর্তমানে OpenRouter API ব্যবহার করে।')}
-          style={styles.accountInfoRow}
-          accessibilityRole="button"
-        >
+        <View style={styles.accountInfoRow}>
           <Feather name="hexagon" size={19} color={colors.primary} />
           <View style={{ flex: 1 }}>
             <Text style={[styles.label, { color: colors.foreground }]}>AI Provider</Text>
-            <Text style={[styles.body, { color: colors.mutedForeground }]}>OpenRouter</Text>
+            <Text style={[styles.body, { color: colors.mutedForeground }]}>{settings.aiProvider === 'server' ? 'Server AI' : settings.aiProvider}</Text>
           </View>
-          <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
-        </Pressable>
-        <Pressable
-          onPress={() => Alert.alert('Model Selection', 'Badboy task অনুযায়ী OpenRouter-এর free model-গুলোর মধ্যে স্বয়ংক্রিয়ভাবে model নির্বাচন ও fallback করে।')}
-          style={styles.accountInfoRow}
-          accessibilityRole="button"
-        >
+          <Feather name="check-circle" size={16} color={colors.primary} />
+        </View>
+        <View style={styles.accountInfoRow}>
           <Feather name="cpu" size={19} color={colors.primary} />
           <View style={{ flex: 1 }}>
             <Text style={[styles.label, { color: colors.foreground }]}>Model Selection</Text>
-            <Text style={[styles.body, { color: colors.mutedForeground }]}>Automatic free-model routing</Text>
+            <Text style={[styles.body, { color: colors.mutedForeground }]}>{settings.aiModel || 'Model not selected'}</Text>
           </View>
-          <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
-        </Pressable>
-        <Pressable
-          onPress={() => Alert.alert('Multi-AI Settings', 'Free model routing task অনুযায়ী একাধিক OpenRouter model-এ fallback করতে পারে।')}
-          style={styles.accountInfoRow}
-          accessibilityRole="button"
-        >
+          <Feather name="check-circle" size={16} color={colors.primary} />
+        </View>
+        <View style={styles.accountInfoRow}>
           <Feather name="layers" size={19} color={colors.primary} />
           <View style={{ flex: 1 }}>
-            <Text style={[styles.label, { color: colors.foreground }]}>Multi-AI Settings</Text>
-            <Text style={[styles.body, { color: colors.mutedForeground }]}>Task-based free-model fallback</Text>
+            <Text style={[styles.label, { color: colors.foreground }]}>Multi-AI Fallback</Text>
+            <Text style={[styles.body, { color: colors.mutedForeground }]}>{settings.aiFallbackProvider && settings.aiFallbackProvider !== 'none' ? settings.aiFallbackProvider + ' · ' + settings.aiFallbackModel : 'Disabled'}</Text>
           </View>
-          <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
-        </Pressable>
+          <Feather name="check-circle" size={16} color={colors.primary} />
+        </View>
         <Pressable
           onPress={() => Alert.alert('Features Control', `Online AI is currently ${settings.onlineAI ? 'enabled' : 'disabled'}. Change it in Privacy & Personalization below.`)}
           style={styles.accountInfoRow}
@@ -1465,6 +1531,31 @@ export default function SettingsScreen() {
       </View>
 
       <ProviderManagerSection />
+
+      <View style={[styles.section, sectionCard]}>
+        <View style={styles.sectionTitleRow}>
+          <Feather name="aperture" size={17} color={colors.primary} />
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Jarvis Assistant & Quick Access</Text>
+        </View>
+        <Text style={[styles.body, { color: colors.mutedForeground }]}>
+          অন্য অ্যাপের উপর Badboy bubble দেখাবে। Bubble ট্যাপ করলে Chat খুলবে; long-press করলে অনুমোদিত Screen Awareness service থেকে দৃশ্যমান লেখা সংগ্রহ করে Chat draft-এ দেবে। কিছুই স্বয়ংক্রিয়ভাবে পাঠানো হবে না।
+        </Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+          <Pressable accessibilityRole="button" onPress={() => { void handleStartBubble(); }} style={[styles.secondaryButton, { backgroundColor: colors.secondary, flexGrow: 1 }]}>
+            <Feather name="circle" size={14} color={colors.secondaryForeground} /><Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>Start Bubble</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" onPress={() => { void handleStopBubble(); }} style={[styles.secondaryButton, { backgroundColor: colors.secondary, flexGrow: 1 }]}>
+            <Feather name="x-circle" size={14} color={colors.secondaryForeground} /><Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>Stop Bubble</Text>
+          </Pressable>
+        </View>
+        <View style={[styles.rule, { backgroundColor: colors.border }]} />
+        <Text style={[styles.label, { color: colors.foreground }]}>Screen Awareness · {isScreenAwarenessEnabled() ? 'Enabled' : 'Not enabled'}</Text>
+        <Text style={[styles.smallNote, { color: colors.mutedForeground }]}>এই permission শুধু দৃশ্যমান UI text পড়তে ব্যবহৃত হয়। Password ও editable field বাদ দেওয়া হয়; email/phone pattern mask হয়। কোনো click, typing বা background recording নেই। Android Accessibility settings-এ গিয়ে “Badboy Screen Reader” নিজে enable করতে হবে।</Text>
+        <Pressable accessibilityRole="button" onPress={() => { void handleConfigureScreenAwareness(); }} style={[styles.secondaryButton, { backgroundColor: colors.secondary, marginTop: 8 }]}>
+          <Feather name="eye" size={14} color={colors.secondaryForeground} /><Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>Configure Screen Awareness</Text>
+        </Pressable>
+        <Text style={[styles.smallNote, { color: colors.mutedForeground }]}>Floating bubble: {settings.floatingAssistantEnabled ? 'On' : 'Off'}. Screen context draft-এ preview করা যাবে—Send চাপার আগে তুমি যাচাই করবে।</Text>
+      </View>
 
       <Text style={[styles.eyebrow, { color: colors.primary }]}>VOICE &amp; DEVICE</Text>
       <View style={[styles.section, sectionCard]}>
