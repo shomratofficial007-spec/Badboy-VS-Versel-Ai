@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { ActivityIndicator, Platform, View } from 'react-native';
+import { Platform } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
@@ -10,7 +10,7 @@ import { OwnerAuthProvider, useOwnerAuth } from '@/context/OwnerAuthContext';
 import { setAuthTokenGetter, setBaseUrl } from '@workspace/api-client-react';
 import { getOwnerRouteRedirect, getOwnerToken } from '@/lib/assistant/ownerAuth';
 import { canDrawFloatingAssistant, startFloatingAssistant, stopFloatingAssistant } from '@/lib/assistant/jarvis';
-import { Redirect, Stack, useSegments } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 
 const domain = process.env.EXPO_PUBLIC_DOMAIN;
 setBaseUrl(domain ? `https://${domain}` : null);
@@ -22,6 +22,8 @@ function RootLayoutNav() {
   const { ready, authenticated } = useOwnerAuth();
   const { ready: assistantReady, settings } = useAssistant();
   const segments = useSegments();
+  const router = useRouter();
+  const redirect = getOwnerRouteRedirect(authenticated, segments);
 
   useEffect(() => {
     if (Platform.OS !== 'android' || !assistantReady) return;
@@ -34,19 +36,13 @@ function RootLayoutNav() {
     return () => { void stopFloatingAssistant().catch(() => undefined); };
   }, [assistantReady, settings.floatingAssistantEnabled]);
 
-  if (!ready) {
-    return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#071426' }}>
-        <ActivityIndicator color="#00D9FF" />
-      </View>
-    );
-  }
-
-  const redirect = getOwnerRouteRedirect(authenticated, segments);
-  if (redirect) return <Redirect href={redirect} />;
+  useEffect(() => {
+    if (!ready || !redirect) return;
+    router.replace(redirect as never);
+  }, [ready, redirect, router]);
 
   return (
-    <Stack screenOptions={{ headerShown: false, headerBackTitle: 'Back' }}>
+    <Stack initialRouteName="owner-login" screenOptions={{ headerShown: false, headerBackTitle: 'Back' }}>
       <Stack.Screen name="owner-login" options={{ headerShown: false, title: 'Owner Login' }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false, title: 'Badboy AI' }} />
     </Stack>
