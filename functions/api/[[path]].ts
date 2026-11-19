@@ -922,28 +922,37 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
   const reader = upstream.body.getReader();
   const decoder = new TextDecoder();
   let taskFinalized = false;
+  let finalizationPromise: Promise<void> | null = null;
   let downstreamCancelled = false;
   let accumulatedOutput = "";
 
   const finalizeTask = async (status: "completed" | "failed" | "cancelled", reason?: string) => {
     if (taskFinalized) return;
-    taskFinalized = true;
-    const updated = await storage.updateTaskStatus({
-      taskId,
-      ownerId,
-      status,
-      ...(status === "completed" ? { summary: accumulatedOutput.slice(0, 4000) } : {}),
-    });
-    if (!updated) throw new Error("Task record could not be finalized.");
-    await storage.appendTaskEvent({
-      eventId: crypto.randomUUID(),
-      taskId,
-      ownerId,
-      eventType: status === "completed" ? "task_completed" : status === "cancelled" ? "task_cancelled" : "task_failed",
-      payload: status === "completed"
-        ? { outputLength: accumulatedOutput.length }
-        : { reason: reason ?? status },
-    });
+    if (finalizationPromise) return finalizationPromise;
+    finalizationPromise = (async () => {
+      const updated = await storage.updateTaskStatus({
+        taskId,
+        ownerId,
+        status,
+        ...(status === "completed" ? { summary: accumulatedOutput.slice(0, 4000) } : {}),
+      });
+      if (!updated) throw new Error("Task record could not be finalized.");
+      await storage.appendTaskEvent({
+        eventId: crypto.randomUUID(),
+        taskId,
+        ownerId,
+        eventType: status === "completed" ? "task_completed" : status === "cancelled" ? "task_cancelled" : "task_failed",
+        payload: status === "completed"
+          ? { outputLength: accumulatedOutput.length }
+          : { reason: reason ?? status },
+      });
+      taskFinalized = true;
+    })();
+    try {
+      await finalizationPromise;
+    } finally {
+      finalizationPromise = null;
+    }
   };
 
   const stream = new ReadableStream({
@@ -951,7 +960,11 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
       let streamClosed = false;
       const send = (payload: string) => {
         if (downstreamCancelled || streamClosed) return;
-        controller.enqueue(encoder.encode("data: " + payload + "\n\n"));
+        try {
+          controller.enqueue(encoder.encode("data: " + payload + "\n\n"));
+        } catch {
+          streamClosed = true;
+        }
       };
       const close = () => {
         if (streamClosed) return;
