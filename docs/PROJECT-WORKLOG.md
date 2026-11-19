@@ -154,3 +154,7 @@ Baseline commit inspected: `0664e673f145249e0ff2ff9b6d76c8145cb7d2b2`.
 - Removed the stale generated functions/functions.test.js file, which still imported the deleted Pages handlers. The maintained source test remains functions/functions.test.ts.
 - The repository's pnpm 10.8.1 lockfile refresh workflow was enabled for this branch and completed successfully (workflow run 44625061986). It regenerated the lockfile and removed the artifacts/api-server importer. The package snapshot section still contains some packages formerly used by Express; these are not importer dependencies and will be reviewed separately before claiming all transitive snapshots are pruned.
 - The first CI runs were superseded/cancelled by subsequent commits; validation must be read from the latest PR head only.
+
+### Replit post-merge hook safety finding
+
+- .replit configured a post-merge hook that ran scripts/post-merge.sh. That script executed `pnpm --filter db push` after merges, which could mutate a database through DATABASE_URL and is incompatible with the Cloudflare D1-only target. Removed the automatic hook and its script; production D1 migrations remain controlled by the reviewed Cloudflare migration workflow.
