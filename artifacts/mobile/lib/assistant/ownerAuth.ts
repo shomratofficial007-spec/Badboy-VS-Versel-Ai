@@ -86,9 +86,11 @@ export function isOwnerLoginRequiredError(error: unknown): boolean {
 }
 
 export function getOwnerRouteRedirect(
+  ready: boolean,
   authenticated: boolean,
   segments: readonly string[],
 ): '/owner-login' | '/(tabs)' | null {
+  if (!ready) return null;
   const isOwnerLoginRoute = segments[0] === 'owner-login';
   if (!authenticated && !isOwnerLoginRoute) return '/owner-login';
   if (authenticated && isOwnerLoginRoute) return '/(tabs)';
