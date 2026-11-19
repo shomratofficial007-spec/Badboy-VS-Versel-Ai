@@ -103,6 +103,7 @@ mock.module('react-native', {
   namedExports: {
     ActivityIndicator: () => React.createElement('span', null, 'loading'),
     Alert: { alert: (title: string, message: string, buttons: any[] = []) => alerts.push({ title, message, buttons }) },
+    AppState: { addEventListener: () => ({ remove: () => {} }) },
     Linking: { openURL: async (url: string) => { openedUrls.push(url); } },
     Image: host('img'),
     Platform: { OS: 'android' },
