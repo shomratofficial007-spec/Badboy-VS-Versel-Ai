@@ -18,6 +18,7 @@ const developerAnalysisCalls: unknown[][] = [];
 const agentTaskCalls: unknown[][] = [];
 const githubCalls: Array<{ method: string; args: unknown[] }> = [];
 const openedUrls: string[] = [];
+let screenSettingsCalls = 0;
 let agentTaskHandler = async (_prompt: string, _online: boolean, _confirmed: boolean) => ({
   state: 'completed', prompt: 'Search YouTube', summary: 'Search complete',
   detectedLanguage: 'en', requiresInternet: true,
@@ -96,7 +97,7 @@ mock.module('../assets/images/badboy-settings-avatar.jpg', { defaultExport: {} }
 mock.module('expo-router', { namedExports: { useRouter: () => ({ back: () => {} }) } });
 
 mock.module('../components/ProviderManagerSection.tsx', { namedExports: { ProviderManagerSection: () => null } });
-mock.module('../lib/assistant/jarvis.ts', { namedExports: { canDrawFloatingAssistant: () => false, openFloatingAssistantPermissionSettings: async () => {}, startFloatingAssistant: async () => {}, stopFloatingAssistant: async () => {}, isScreenAwarenessEnabled: () => false, openScreenAwarenessSettings: async () => {} } });
+mock.module('../lib/assistant/jarvis.ts', { namedExports: { canDrawFloatingAssistant: () => false, openFloatingAssistantPermissionSettings: async () => {}, startFloatingAssistant: async () => {}, stopFloatingAssistant: async () => {}, isScreenAwarenessEnabled: () => false, openScreenAwarenessSettings: async () => { screenSettingsCalls += 1; } } });
 
 mock.module('react-native', {
   namedExports: {
@@ -1107,5 +1108,11 @@ test('Settings Jarvis controls request overlay permission and expose stop and sc
 
   configureScreen.onPress();
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(alerts.some((item) => item.title === 'Settings খুলতে সমস্যা'), false);
+  assert.equal(alerts.at(-1)?.title, 'Screen Awareness permission');
+  assert.match(alerts.at(-1)?.message ?? '', /long-press/);
+  assert.match(alerts.at(-1)?.message ?? '', /best-effort/);
+  alerts.at(-1)?.buttons[0]?.onPress?.();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(screenSettingsCalls, 1);
+  assert.equal(alerts.some((item) => item.title === 'Accessibility Settings খোলা যায়নি'), false);
 });
