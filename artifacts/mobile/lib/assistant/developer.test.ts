@@ -298,7 +298,13 @@ test('getPluginRegistryStatus - reports real setup state and Worker-only backend
   const plugins = getPluginRegistryStatus();
   assert.equal(plugins.find((p) => p.id === 'cloudflare-worker-api')?.status, 'active');
   assert.equal(plugins.find((p) => p.id === 'memory-adapter')?.status, 'active');
+  assert.equal(plugins.find((p) => p.id === 'developer-analysis')?.status, 'active');
   assert.equal(plugins.find((p) => p.id === 'github-adapter')?.status, 'pending');
+  assert.equal(plugins.find((p) => p.id === 'tavily-research-adapter')?.status, 'pending');
+  assert.equal(plugins.find((p) => p.id === 'home-assistant-adapter')?.status, 'pending');
+  assert.equal(plugins.find((p) => p.id === 'slack-adapter')?.status, 'pending');
+  assert.equal(plugins.find((p) => p.id === 'discord-adapter')?.status, 'pending');
+  assert.equal(plugins.find((p) => p.id === 'google-calendar-adapter')?.status, 'pending');
   assert.equal(plugins.find((p) => p.id === 'telegram-adapter')?.status, 'pending');
   assert.equal(plugins.find((p) => p.id === 'gmail-adapter')?.status, 'not_connected');
   assert.doesNotMatch(plugins.map((p) => p.name + ' ' + p.description).join(' '), /Cloudflare Pages Adapter|Netlify|Express API/i);
