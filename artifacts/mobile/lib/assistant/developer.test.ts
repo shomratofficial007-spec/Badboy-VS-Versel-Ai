@@ -280,6 +280,7 @@ test('getProjectBrainSummary - records the Cloudflare-only architecture', () => 
   assert.ok(brain.frameworks.includes('TypeScript'));
   assert.ok(brain.apiEndpoints.includes('/api/assistant/chat'));
   assert.match(brain.deploymentTarget, /badboy-vs-versel-ai/);
+  assert.ok(brain.knownLimitations.some((item) => item.includes('Private Device Memory') && item.includes('Cloudflare D1 Project Memory')));
   assert.doesNotMatch(brain.architecture + brain.deploymentTarget, /Netlify|Express|Cloudflare Pages/i);
 });
 
