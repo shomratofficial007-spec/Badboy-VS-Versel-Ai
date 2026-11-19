@@ -1,6 +1,7 @@
 package expo.modules.badboydevice
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
@@ -24,6 +25,11 @@ class BadboyScreenReaderService : AccessibilityService() {
   }
 
   override fun onInterrupt() = Unit
+
+  override fun onUnbind(intent: Intent?): Boolean {
+    if (activeInstance === this) activeInstance = null
+    return super.onUnbind(intent)
+  }
 
   override fun onDestroy() {
     if (activeInstance === this) activeInstance = null
