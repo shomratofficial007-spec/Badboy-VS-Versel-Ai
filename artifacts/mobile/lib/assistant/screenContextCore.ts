@@ -8,7 +8,7 @@ const AUTHORIZATION_PATTERN = /\b(authorization\s*[:=]\s*(?:bearer|basic))\s+\S+
 const COOKIE_PATTERN = /\b(cookie\s*[:=]\s*)[^\r\n]+/gi;
 const URL_SECRET_PATTERN = /([?&](?:access_token|api_key|token|key|secret|password|auth|code|session)=)[^&#\s]+/gi;
 const JWT_PATTERN = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g;
-const SECRET_TOKEN_PATTERN = /\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{20,})\b/g;
+const SECRET_TOKEN_PATTERN = /\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{20,}|AKIA[0-9A-Z]{16}|cf_[A-Za-z0-9_-]{20,}|sbp_[A-Za-z0-9_-]{20,}|\d{8,10}:[A-Za-z0-9_-]{30,})\b/g;
 const ISO_DATE_PATTERN = /\b\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?\b/g;
 
 export function redactSensitiveScreenText(value: string): string {
