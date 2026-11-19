@@ -10,6 +10,7 @@ interface GeminiStreamPart {
 }
 
 interface GeminiStreamChunk {
+  error?: { message?: string } | string;
   candidates?: Array<{
     content?: {
       parts?: GeminiStreamPart[];
@@ -66,8 +67,9 @@ export function adaptGeminiStreamToOpenAI(response: Response): Response {
         try {
           parsed = JSON.parse(data) as GeminiStreamChunk;
         } catch {
-          return;
+          throw new Error("Gemini returned malformed stream data.");
         }
+        if (parsed.error) throw new Error("Gemini returned an upstream stream error.");
 
         const textParts = (parsed.candidates ?? [])
           .flatMap((candidate) => candidate.content?.parts ?? [])
