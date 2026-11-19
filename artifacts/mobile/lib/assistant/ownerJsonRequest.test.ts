@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createOwnerJsonRequester } from "./ownerJsonRequest";
+import { apiUrl, createOwnerJsonRequester } from "./ownerJsonRequest";
 
 test("adds the verified owner token and JSON body to a POST request", async () => {
   let sentUrl = "";
@@ -74,4 +74,56 @@ test("returns a successful JSON payload without changing its fields", async () =
     tasks: [{ task_id: "task-1" }],
     count: 1,
   });
+});
+
+test("uses EXPO_PUBLIC_DOMAIN before the static host origin on web", () => {
+  const previousDomain = process.env.EXPO_PUBLIC_DOMAIN;
+  const hadWindow = "window" in globalThis;
+  const previousWindow = (globalThis as typeof globalThis & { window?: unknown }).window;
+  process.env.EXPO_PUBLIC_DOMAIN = "https://badboy-vs-versel-ai.shomratofficial007.workers.dev";
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { location: { origin: "https://badboy-netlify.example" } },
+  });
+
+  try {
+    assert.equal(
+      apiUrl("/assistant/agent"),
+      "https://badboy-vs-versel-ai.shomratofficial007.workers.dev/api/assistant/agent",
+    );
+  } finally {
+    if (previousDomain === undefined) delete process.env.EXPO_PUBLIC_DOMAIN;
+    else process.env.EXPO_PUBLIC_DOMAIN = previousDomain;
+    if (hadWindow) {
+      Object.defineProperty(globalThis, "window", { configurable: true, value: previousWindow });
+    } else {
+      Reflect.deleteProperty(globalThis, "window");
+    }
+  }
+});
+
+test("keeps same-origin API routing when no explicit web API domain is configured", () => {
+  const previousDomain = process.env.EXPO_PUBLIC_DOMAIN;
+  const hadWindow = "window" in globalThis;
+  const previousWindow = (globalThis as typeof globalThis & { window?: unknown }).window;
+  delete process.env.EXPO_PUBLIC_DOMAIN;
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { location: { origin: "https://badboy-netlify.example" } },
+  });
+
+  try {
+    assert.equal(
+      apiUrl("/assistant/agent"),
+      "https://badboy-netlify.example/api/assistant/agent",
+    );
+  } finally {
+    if (previousDomain === undefined) delete process.env.EXPO_PUBLIC_DOMAIN;
+    else process.env.EXPO_PUBLIC_DOMAIN = previousDomain;
+    if (hadWindow) {
+      Object.defineProperty(globalThis, "window", { configurable: true, value: previousWindow });
+    } else {
+      Reflect.deleteProperty(globalThis, "window");
+    }
+  }
 });
