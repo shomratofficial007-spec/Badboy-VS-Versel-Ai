@@ -1334,7 +1334,11 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
       let streamClosed = false;
       const send = (payload: string) => {
         if (downstreamCancelled || streamClosed) return;
-        controller.enqueue(encoder.encode("data: " + payload + "\n\n"));
+        try {
+          controller.enqueue(encoder.encode("data: " + payload + "\n\n"));
+        } catch {
+          streamClosed = true;
+        }
       };
       const close = () => {
         if (streamClosed) return;
