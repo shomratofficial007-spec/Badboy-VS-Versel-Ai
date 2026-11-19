@@ -850,6 +850,7 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
     requestedEngine: validation.value.requestedEngine,
   }));
 
+  const upstreamAbort = createUpstreamAbortSignal(request, 90_000);
   let upstream: Response;
   let selectedProvider: DeveloperProvider = "openrouter";
   let selectedModel = OPENROUTER_MODEL_ID;
@@ -857,34 +858,37 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
     const routed = await fetchDeveloperAnalysisWithProviders(
       env,
       buildDeveloperAnalysisMessages(validation.value),
+      upstreamAbort.signal,
     );
     upstream = routed.response;
     selectedProvider = routed.provider;
     selectedModel = routed.model;
   } catch {
-    await storage.updateTaskStatus({ taskId, ownerId, status: "failed" }).catch(() => false);
+    const wasCancelled = request.signal.aborted;
+    upstreamAbort.cleanup();
+    await storage.updateTaskStatus({
+      taskId, ownerId, status: wasCancelled ? "cancelled" : "failed",
+    }).catch(() => false);
     await storage.appendTaskEvent({
       eventId: crypto.randomUUID(), taskId, ownerId,
-      eventType: "task_failed", payload: { reason: "upstream_network_error" },
+      eventType: wasCancelled ? "task_cancelled" : "task_failed",
+      payload: { reason: wasCancelled ? "client_disconnected" : upstreamAbort.wasTimedOut() ? "upstream_timeout" : "upstream_network_error" },
     }).catch(() => false);
-    console.info(JSON.stringify({
-      component: "badboy-developer-agent",
-      event: "task_failed",
-      taskId,
-      engine,
-      reason: "upstream_network_error",
-    }));
+    if (wasCancelled) return new Response(null, { status: 499, headers: CORS_HEADERS });
     return jsonResponse(
       {
-        code: "DEVELOPER_AGENT_UPSTREAM_FAILED",
-        error: "Developer Agent could not reach an available AI provider.",
+        code: upstreamAbort.wasTimedOut() ? "DEVELOPER_AGENT_UPSTREAM_TIMEOUT" : "DEVELOPER_AGENT_UPSTREAM_FAILED",
+        error: upstreamAbort.wasTimedOut()
+          ? "Developer Agent provider timed out. Please retry."
+          : "Developer Agent could not reach an available AI provider.",
         taskId,
       },
-      502,
+      upstreamAbort.wasTimedOut() ? 504 : 502,
     );
   }
 
   if (!upstream.ok || !upstream.body) {
+    upstreamAbort.cleanup();
     const status = upstream.status === 429 ? 429 : 502;
     await storage.updateTaskStatus({ taskId, ownerId, status: "failed" }).catch(() => false);
     await storage.appendTaskEvent({
@@ -917,27 +921,76 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
   const encoder = new TextEncoder();
   const reader = upstream.body.getReader();
   const decoder = new TextDecoder();
+  let taskFinalized = false;
+  let downstreamCancelled = false;
+
+  const finalizeTask = async (status: "completed" | "failed" | "cancelled", reason?: string) => {
+    if (taskFinalized) return;
+    taskFinalized = true;
+    const updated = await storage.updateTaskStatus({
+      taskId,
+      ownerId,
+      status,
+      ...(status === "completed" ? { summary: accumulatedOutput.slice(0, 4000) } : {}),
+    });
+    if (!updated) throw new Error("Task record could not be finalized.");
+    await storage.appendTaskEvent({
+      eventId: crypto.randomUUID(),
+      taskId,
+      ownerId,
+      eventType: status === "completed" ? "task_completed" : status === "cancelled" ? "task_cancelled" : "task_failed",
+      payload: status === "completed"
+        ? { outputLength: accumulatedOutput.length }
+        : { reason: reason ?? status },
+    });
+  };
+
+  let accumulatedOutput = "";
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (payload: string) =>
-        controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
-      send(JSON.stringify({ taskId, engine, provider: selectedProvider, model: selectedModel, status: "started" }));
-      let accumulatedOutput = "";
-      const completeTask = async () => {
-        const updated = await storage.updateTaskStatus({
-          taskId, ownerId, status: "completed", summary: accumulatedOutput.slice(0, 4000),
-        });
-        if (!updated) throw new Error("Task record could not be finalized.");
-        await storage.appendTaskEvent({
-          eventId: crypto.randomUUID(), taskId, ownerId,
-          eventType: "task_completed", payload: { outputLength: accumulatedOutput.length },
-        });
+      let streamClosed = false;
+      const send = (payload: string) => {
+        if (downstreamCancelled || streamClosed) return;
+        controller.enqueue(encoder.encode("data: " + payload + "\n\n"));
       };
+      const close = () => {
+        if (streamClosed) return;
+        streamClosed = true;
+        try { controller.close(); } catch { /* downstream may already be closed */ }
+      };
+
+      send(JSON.stringify({ taskId, engine, provider: selectedProvider, model: selectedModel, status: "started" }));
+      const completeTask = async () => {
+        await finalizeTask("completed");
+        send(JSON.stringify({ taskId, engine, status: "completed" }));
+        send("[DONE]");
+        console.info(JSON.stringify({
+          component: "badboy-developer-agent",
+          event: "task_completed",
+          taskId,
+          engine,
+        }));
+        close();
+      };
+
       try {
         let pending = "";
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done) {
+            if (downstreamCancelled || (upstreamAbort.signal.aborted && !upstreamAbort.wasTimedOut())) {
+              await finalizeTask("cancelled", "client_disconnected");
+              close();
+              return;
+            }
+            if (upstreamAbort.wasTimedOut()) {
+              await finalizeTask("failed", "upstream_timeout");
+              send(JSON.stringify({ error: "Developer Agent provider timed out.", taskId, engine }));
+              close();
+              return;
+            }
+            break;
+          }
           pending += decoder.decode(value, { stream: true });
           pending = pending.replace(/\r\n/g, "\n");
           let boundary = pending.indexOf("\n\n");
@@ -950,15 +1003,24 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
               send(JSON.stringify({ content, taskId, engine, provider: selectedProvider }));
             }
             if (parsed.done) {
+              if (downstreamCancelled || (upstreamAbort.signal.aborted && !upstreamAbort.wasTimedOut())) {
+                await finalizeTask("cancelled", "client_disconnected");
+                close();
+                return;
+              }
+              if (upstreamAbort.wasTimedOut()) {
+                await finalizeTask("failed", "upstream_timeout");
+                send(JSON.stringify({ error: "Developer Agent provider timed out.", taskId, engine }));
+                close();
+                return;
+              }
               await completeTask();
-              send(JSON.stringify({ taskId, engine, status: "completed" }));
-              send("[DONE]");
-              controller.close();
               return;
             }
             boundary = pending.indexOf("\n\n");
           }
         }
+
         pending += decoder.decode();
         if (pending.trim()) {
           const parsed = extractDeltas(pending);
@@ -967,42 +1029,48 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
             send(JSON.stringify({ content, taskId, engine, provider: selectedProvider }));
           }
         }
-        await completeTask();
-        send(JSON.stringify({ taskId, engine, status: "completed" }));
-        send("[DONE]");
-        console.info(JSON.stringify({
-          component: "badboy-developer-agent",
-          event: "task_completed",
-          taskId,
-          engine,
-        }));
-        controller.close();
-      } catch {
-        await storage.updateTaskStatus({ taskId, ownerId, status: "failed" }).catch(() => false);
-        await storage.appendTaskEvent({
-          eventId: crypto.randomUUID(), taskId, ownerId,
-          eventType: "task_failed", payload: { reason: "stream_interrupted" },
-        }).catch(() => false);
-        console.info(JSON.stringify({
-          component: "badboy-developer-agent",
-          event: "task_failed",
-          taskId,
-          engine,
-          reason: "stream_interrupted",
-        }));
-        send(JSON.stringify({
-          error: "Developer Agent stream was interrupted.",
-          taskId,
-          engine,
-        }));
-        controller.close();
-      } finally {
-        try {
-          reader.releaseLock();
-        } catch {
-          // The stream reader may already be released.
+        if (downstreamCancelled || (upstreamAbort.signal.aborted && !upstreamAbort.wasTimedOut())) {
+          await finalizeTask("cancelled", "client_disconnected");
+          close();
+          return;
         }
+        if (upstreamAbort.wasTimedOut()) {
+          await finalizeTask("failed", "upstream_timeout");
+          send(JSON.stringify({ error: "Developer Agent provider timed out.", taskId, engine }));
+          close();
+          return;
+        }
+        await completeTask();
+      } catch {
+        const wasCancelled = downstreamCancelled || request.signal.aborted;
+        const timedOut = upstreamAbort.wasTimedOut();
+        await finalizeTask(wasCancelled ? "cancelled" : "failed", wasCancelled ? "client_disconnected" : timedOut ? "upstream_timeout" : "stream_interrupted").catch(() => undefined);
+        if (!wasCancelled) {
+          send(JSON.stringify({
+            error: timedOut ? "Developer Agent provider timed out." : "Developer Agent stream was interrupted.",
+            taskId,
+            engine,
+          }));
+        }
+        console.info(JSON.stringify({
+          component: "badboy-developer-agent",
+          event: wasCancelled ? "task_cancelled" : "task_failed",
+          taskId,
+          engine,
+          reason: wasCancelled ? "client_disconnected" : timedOut ? "upstream_timeout" : "stream_interrupted",
+        }));
+        close();
+      } finally {
+        upstreamAbort.cleanup();
+        try { reader.releaseLock(); } catch { /* reader may already be released */ }
       }
+    },
+    async cancel(reason) {
+      downstreamCancelled = true;
+      upstreamAbort.abort(reason);
+      await reader.cancel(reason).catch(() => undefined);
+      await finalizeTask("cancelled", "downstream_cancelled").catch(() => undefined);
+      upstreamAbort.cleanup();
     },
   });
 
