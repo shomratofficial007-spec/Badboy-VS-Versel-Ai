@@ -23,10 +23,10 @@ export default function OwnerLoginScreen() {
   const [tokenVisible, setTokenVisible] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const redirect = getOwnerRouteRedirect(ready, authenticated, ['owner-login']);
   if (!ready) {
     return <View style={styles.loading}><ActivityIndicator color="#d946ef" /></View>;
   }
+  const redirect = getOwnerRouteRedirect(ready, authenticated, ['owner-login']);
   if (redirect) return <Redirect href={redirect} />;
 
   const handleSignIn = async () => {
