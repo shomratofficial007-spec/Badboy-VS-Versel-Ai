@@ -89,6 +89,15 @@ test('streamReply sends owner-authenticated request and parses split SSE frames'
   assert.deepEqual(chunks, ['বাংলা উত্তর', 'সম্পূর্ণ']);
 });
 
+test('streamReply rejects a Worker stream that ends without its completion marker', async () => {
+  const { streamReply } = await apiPromise;
+  fetchHandler = async () => streamResponse(['data: {"content":"partial answer"}\n\n']);
+  await assert.rejects(
+    streamReply('hello', { personality: 'helpful', voiceLanguage: 'en-US', developerMode: false } as any, () => undefined),
+    /ended before its completion marker/,
+  );
+});
+
 test('streamReply routes to the selected provider without forwarding the Owner Token', async () => {
   const { streamReply } = await apiPromise;
   let url = '';
@@ -98,7 +107,7 @@ test('streamReply routes to the selected provider without forwarding the Owner T
     url = String(input);
     sent = JSON.parse(String(init.body));
     headers = new Headers(init.headers);
-    return streamResponse(['data: {"choices":[{"delta":{"content":"Provider reply"}}]}']);
+    return streamResponse(['data: {"choices":[{"delta":{"content":"Provider reply"}}]}\n\n', 'data: [DONE]\n\n']);
   };
   const chunks: string[] = [];
   await streamReply('hello', { aiProvider: 'openai', aiModel: 'gpt-4o-mini', aiBaseUrl: 'https://api.openai.com/v1', personality: 'helpful', voiceLanguage: 'en-US', developerMode: false } as any, (chunk) => chunks.push(chunk));
@@ -108,6 +117,15 @@ test('streamReply routes to the selected provider without forwarding the Owner T
   assert.equal(sent.model, 'gpt-4o-mini');
   assert.equal(sent.messages.at(-1).content, 'hello');
   assert.deepEqual(chunks, ['Provider reply']);
+});
+
+test('streamReply rejects a selected-provider stream that ends without its completion marker', async () => {
+  const { streamReply } = await apiPromise;
+  fetchHandler = async () => streamResponse(['data: {"choices":[{"delta":{"content":"partial answer"}}]}\n\n']);
+  await assert.rejects(
+    streamReply('hello', { aiProvider: 'openai', aiModel: 'gpt-4o-mini', aiBaseUrl: 'https://api.openai.com/v1', personality: 'helpful', voiceLanguage: 'en-US', developerMode: false } as any, () => undefined),
+    /ended before its completion marker/,
+  );
 });
 
 test('streamAgenticReply falls back to a second provider only before any primary text is emitted', async () => {
