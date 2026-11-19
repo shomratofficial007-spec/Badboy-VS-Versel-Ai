@@ -1,5 +1,7 @@
 import React, { useEffect } from 'react';
 import { Platform } from 'react-native';
+import React from 'react';
+import { ActivityIndicator, View } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
@@ -7,9 +9,10 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { AssistantProvider, useAssistant } from '@/context/AssistantContext';
 import { OwnerAuthProvider } from '@/context/OwnerAuthContext';
+import { AssistantProvider } from '@/context/AssistantContext';
+import { OwnerAuthProvider, useOwnerAuth } from '@/context/OwnerAuthContext';
 import { setAuthTokenGetter, setBaseUrl } from '@workspace/api-client-react';
 import { getOwnerToken } from '@/lib/assistant/ownerAuth';
-import { canDrawFloatingAssistant, startFloatingAssistant, stopFloatingAssistant } from '@/lib/assistant/jarvis';
 import { Stack } from 'expo-router';
 
 const domain = process.env.EXPO_PUBLIC_DOMAIN;
@@ -31,6 +34,7 @@ function RootLayoutNav() {
     void startFloatingAssistant().catch(() => undefined);
     return () => { void stopFloatingAssistant().catch(() => undefined); };
   }, [assistantReady, settings.floatingAssistantEnabled]);
+  const { ready, authenticated } = useOwnerAuth();
 
 
   return (

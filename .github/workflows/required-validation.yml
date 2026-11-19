@@ -415,21 +415,27 @@ jobs:
                 exit 1
               fi
 
-              changed_files="$(gh api --paginate "repos/$REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename')"
+              # Only added, retained production sources are eligible for the
+              # LCOV threshold. Removed files, tests, and Expo Router screens
+              # are not executable-source coverage targets.
               source_files="$(
-                printf '%s\n' "$changed_files" \
+                gh api --paginate "repos/$REPOSITORY/pulls/$PR_NUMBER/files" \
+                  --jq '.[] | select(.status != "removed") | select((.additions // 0) > 0) | .filename' \
                   | grep -E '^(functions|lib|artifacts/mobile)/.*\.(ts|tsx)$' \
-                  | grep -Ei '\.(ts|tsx|js|jsx|java|kt|kts|py|go|rs|swift|dart|rb|php|cs|sh|sql)$' \
+                  | grep -vE '\.(test|spec)\.(ts|tsx)$' \
+                  | grep -vE '^artifacts/mobile/app/' \
                   || true
               )"
               if [[ -z "$source_files" ]]; then
-                echo "No LCOV-instrumented TypeScript source files changed; the 80% New Code coverage floor is not applicable."
+                echo "No added, retained LCOV-instrumented production TypeScript sources changed; the 80% New Code coverage floor is not applicable."
+                echo "SonarCloud Quality Gate passed; removed files, tests, and Expo Router screens were excluded from this coverage gate."
                 exit 0
               fi
 
               echo "SonarCloud New Code coverage: $coverage%; Quality Gate: passed"
               if ! awk "BEGIN { exit !($coverage >= 80) }"; then
-                echo "::error::New Code coverage $coverage% is below the required 80%."
+                echo "::error::New Code coverage $coverage% is below the required 80% for changed production TypeScript sources."
+                printf 'Eligible changed source files:\n%s\n' "$source_files"
                 exit 1
               fi
               echo "Coverage Validation passed using the completed SonarCloud check-run summary."

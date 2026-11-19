@@ -1,11 +1,6 @@
 {
-  "platforms": [
-    "android"
-  ],
+  "platforms": ["android"],
   "android": {
-    "modules": [
-      "expo.modules.badboydevice.BadboyDeviceModule",
-      "expo.modules.badboydevice.BadboyJarvisModule"
-    ]
+    "modules": ["expo.modules.badboydevice.BadboyDeviceModule"]
   }
 }
