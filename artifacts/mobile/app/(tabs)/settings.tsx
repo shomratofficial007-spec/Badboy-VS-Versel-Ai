@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Linking,
   Image,
   Platform,
@@ -108,6 +109,17 @@ export default function SettingsScreen() {
   const [reminderAt, setReminderAt] = useState('');
   const [deviceActionBusy, setDeviceActionBusy] = useState(false);
   const [deviceActionError, setDeviceActionError] = useState<string | null>(null);
+  const [screenAwarenessEnabled, setScreenAwarenessEnabled] = useState(isScreenAwarenessEnabled);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const refreshScreenAwareness = () => setScreenAwarenessEnabled(isScreenAwarenessEnabled());
+    refreshScreenAwareness();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshScreenAwareness();
+    });
+    return () => subscription.remove();
+  }, []);
 
   // Agent Execution System States
   const [agentPrompt, setAgentPrompt] = useState('');
@@ -720,45 +732,69 @@ export default function SettingsScreen() {
         Alert.alert('Android only', 'Floating assistant শুধু Android-এ পাওয়া যায়।');
         return;
       }
-      const canDraw = canDrawFloatingAssistant();
-      if (!canDraw) {
+      if (!canDrawFloatingAssistant()) {
         Alert.alert(
           'Permission প্রয়োজন',
-          'Bubble দেখানোর জন্য "Display over other apps" permission দরকার। Settings থেকে চালু করো।',
+          'Bubble দেখানোর জন্য "Display over other apps" permission দরকার। Settings থেকে চালু করে ফিরে এসে আবার Start Bubble চাপো।',
           [
-            { text: 'Settings খুলুন', onPress: () => { void openFloatingAssistantPermissionSettings(); } },
+            {
+              text: 'Settings খুলুন',
+              onPress: () => {
+                void openFloatingAssistantPermissionSettings().catch((cause) => {
+                  Alert.alert('Settings খোলা যায়নি', cause instanceof Error ? cause.message : 'Unknown error');
+                });
+              },
+            },
             { text: 'বাতিল', style: 'cancel' },
           ],
         );
         return;
       }
       await startFloatingAssistant();
-      updateSettings({ floatingAssistantEnabled: true });
+      await updateSettings({ floatingAssistantEnabled: true });
     } catch (cause) {
       Alert.alert('Bubble চালু ব্যর্থ', cause instanceof Error ? cause.message : 'Unknown error');
     }
   };
 
   const handleStopBubble = async () => {
+    let stopError: unknown;
     try {
       await stopFloatingAssistant();
-    } catch {
-      // Keep the persisted setting disabled even if Android cannot stop the service.
+    } catch (cause) {
+      stopError = cause;
     }
-    updateSettings({ floatingAssistantEnabled: false });
+    try {
+      await updateSettings({ floatingAssistantEnabled: false });
+    } catch (cause) {
+      Alert.alert('Bubble setting update failed', cause instanceof Error ? cause.message : 'Unknown error');
+      return;
+    }
+    if (stopError) {
+      Alert.alert('Bubble বন্ধ হচ্ছে', 'Android service stop request পাঠানো হয়েছে; প্রয়োজন হলে app বন্ধ করে আবার খুলুন।');
+    }
   };
 
-  const handleConfigureScreenAwareness = async () => {
-    try {
-      const enabled = isScreenAwarenessEnabled();
-      if (!enabled) {
-        await openScreenAwarenessSettings();
-        return;
-      }
-      await openScreenAwarenessSettings();
-    } catch (cause) {
-      console.warn('Screen awareness settings error:', cause);
+  const handleConfigureScreenAwareness = () => {
+    if (Platform.OS !== 'android') {
+      Alert.alert('Android only', 'Screen Awareness permission শুধু Android-এ পাওয়া যায়।');
+      return;
     }
+    Alert.alert(
+      'Screen Awareness permission',
+      'এই Accessibility permission চালু করলে Badboy কেবল তোমার long-press করা মুহূর্তে অন্য অ্যাপের দৃশ্যমান লেখা পড়তে পারবে। এটি screenshot নেয় না, click/type করে না, background-এ screen record বা text store করে না। Password/editable field বাদ দেওয়া হয় এবং পরিচিত secret/PII best-effort redacted হয়—তবুও পাঠানোর আগে Chat draft নিজে যাচাই করবে।',
+      [
+        {
+          text: 'Android Settings খুলুন',
+          onPress: () => {
+            void openScreenAwarenessSettings().catch((cause) => {
+              Alert.alert('Accessibility Settings খোলা যায়নি', cause instanceof Error ? cause.message : 'Unknown error');
+            });
+          },
+        },
+        { text: 'বাতিল', style: 'cancel' },
+      ],
+    );
   };
 
   const sectionCard = { backgroundColor: colors.card, borderColor: colors.border };
@@ -1549,7 +1585,7 @@ export default function SettingsScreen() {
           </Pressable>
         </View>
         <View style={[styles.rule, { backgroundColor: colors.border }]} />
-        <Text style={[styles.label, { color: colors.foreground }]}>Screen Awareness · {isScreenAwarenessEnabled() ? 'Enabled' : 'Not enabled'}</Text>
+        <Text style={[styles.label, { color: colors.foreground }]}>Screen Awareness · {screenAwarenessEnabled ? 'Enabled' : 'Not enabled'}</Text>
         <Text style={[styles.smallNote, { color: colors.mutedForeground }]}>এই permission শুধু দৃশ্যমান UI text পড়তে ব্যবহৃত হয়। Password ও editable field বাদ দেওয়া হয়; email/phone pattern mask হয়। কোনো click, typing বা background recording নেই। Android Accessibility settings-এ গিয়ে “Badboy Screen Reader” নিজে enable করতে হবে।</Text>
         <Pressable accessibilityRole="button" onPress={() => { void handleConfigureScreenAwareness(); }} style={[styles.secondaryButton, { backgroundColor: colors.secondary, marginTop: 8 }]}>
           <Feather name="eye" size={14} color={colors.secondaryForeground} /><Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>Configure Screen Awareness</Text>
