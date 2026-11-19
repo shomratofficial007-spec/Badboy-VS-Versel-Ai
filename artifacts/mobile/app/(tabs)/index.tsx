@@ -129,9 +129,11 @@ export default function ChatScreen() {
     setDraft('এই স্ক্রিনের তথ্য বিশ্লেষণ করো। সংবেদনশীল তথ্য বাদ দিয়ে প্রয়োজনীয় বিষয় ব্যাখ্যা করো:\n\n' + safeContext);
     setError(null);
     Alert.alert('Screen context প্রস্তুত', 'দৃশ্যমান লেখা Chat draft-এ যোগ হয়েছে। পাঠানোর আগে দেখে নাও।');
-    void router.replace('/(tabs)' as never).catch((cause) => {
-      console.warn('Could not clear the Jarvis deep-link route:', cause);
-    });
+    void Promise.resolve()
+      .then(() => router.replace('/(tabs)' as never))
+      .catch((cause) => {
+        console.warn('Could not clear the Jarvis deep-link route:', cause);
+      });
   }, [routeParams.screen_context, router]);
 
   useEffect(() => { setSelectedLang(settings.voiceLanguage); }, [settings.voiceLanguage]);
