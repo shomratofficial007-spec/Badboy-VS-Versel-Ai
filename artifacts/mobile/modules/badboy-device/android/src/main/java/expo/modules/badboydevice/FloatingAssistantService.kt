@@ -9,136 +9,252 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Color
 import android.graphics.PixelFormat
-import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
+import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
 import android.widget.Toast
+import kotlin.math.abs
 
 class FloatingAssistantService : Service() {
   private var windowManager: WindowManager? = null
-  private var bubble: TextView? = null
-  private var downX = 0f
-  private var downY = 0f
-  private var startX = 0
-  private var startY = 0
-  private var moved = false
-  private var downAt = 0L
+  private var bubble: View? = null
+  private var layoutParams: WindowManager.LayoutParams? = null
 
-  override fun onCreate() { super.onCreate(); createNotificationChannel() }
+  override fun onBind(intent: Intent?): IBinder? = null
+
+  override fun onCreate() {
+    super.onCreate()
+    windowManager = getSystemService(WINDOW_SERVICE) as? WindowManager
+  }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    if (!android.provider.Settings.canDrawOverlays(this)) { stopSelf(); return START_NOT_STICKY }
-    startForegroundCompat()
-    if (bubble == null) {
-      try { showBubble() } catch (_: Exception) { stopSelf(); return START_NOT_STICKY }
+    return try {
+      if (!Settings.canDrawOverlays(this)) {
+        stopSelf()
+        START_NOT_STICKY
+      } else {
+        startForegroundCompat()
+        if (bubble == null) showBubble()
+        START_STICKY
+      }
+    } catch (_: Exception) {
+      // Android may reject a foreground-service start if permission or OS
+      // policy changed between the caller's check and this service callback.
+      stopSelf()
+      START_NOT_STICKY
     }
-    return START_STICKY
-  }
-
-  private fun createNotificationChannel() {
-    if (Build.VERSION.SDK_INT >= 26) {
-      getSystemService(NotificationManager::class.java).createNotificationChannel(
-        NotificationChannel(CHANNEL_ID, "Badboy Floating Assistant", NotificationManager.IMPORTANCE_LOW)
-      )
-    }
-  }
-
-  private fun startForegroundCompat() {
-    val openIntent = packageManager.getLaunchIntentForPackage(packageName)
-    val pending = openIntent?.let {
-      it.data = Uri.parse("badboyai://jarvis")
-      it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-      PendingIntent.getActivity(this, 7411, it, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-    }
-    val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CHANNEL_ID) else Notification.Builder(this)
-    builder.setSmallIcon(android.R.drawable.ic_btn_speak_now)
-      .setContentTitle("Badboy Jarvis is ready")
-      .setContentText("Tap the bubble to open. Long-press to capture visible screen text.")
-      .setOngoing(true)
-    if (pending != null) builder.setContentIntent(pending)
-    val notification = builder.build()
-    if (Build.VERSION.SDK_INT >= 34) startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-    else startForeground(NOTIFICATION_ID, notification)
   }
 
   private fun showBubble() {
-    val manager = getSystemService(WINDOW_SERVICE) as WindowManager
-    val view = TextView(this).apply {
-      text = "B"; textSize = 23f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
-      typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
-      background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.rgb(91, 39, 190)); setStroke(dp(3), Color.rgb(238, 47, 91)) }
-      elevation = dp(10).toFloat()
-      contentDescription = "Badboy Jarvis. Tap to open; long-press to capture the current screen."
+    val manager = windowManager ?: return
+    val bubbleView = TextView(this).apply {
+      text = "B"
+      textSize = 18f
+      setTextColor(Color.WHITE)
+      gravity = Gravity.CENTER
+      contentDescription = "Badboy AI floating assistant. Tap to open chat. Long-press to read visible text."
+      background = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        colors = intArrayOf(Color.rgb(0, 217, 255), Color.rgb(32, 93, 220))
+        setStroke(dp(2), Color.WHITE)
+      }
+      elevation = dp(8).toFloat()
     }
-    val params = WindowManager.LayoutParams(
-      dp(58), dp(58),
-      if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE,
-      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-      PixelFormat.TRANSLUCENT,
-    ).apply { gravity = Gravity.TOP or Gravity.START; x = dp(16); y = dp(230) }
 
-    view.setOnTouchListener { target, event ->
-      when (event.action) {
+    val overlayType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+    } else {
+      @Suppress("DEPRECATION")
+      WindowManager.LayoutParams.TYPE_PHONE
+    }
+
+    val params = WindowManager.LayoutParams(
+      dp(58),
+      dp(58),
+      overlayType,
+      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+      PixelFormat.TRANSLUCENT,
+    ).apply {
+      gravity = Gravity.END or Gravity.TOP
+      x = dp(16)
+      y = dp(180)
+    }
+
+    var downX = 0f
+    var downY = 0f
+    var startX = 0
+    var startY = 0
+    var downAt = 0L
+    var moved = false
+
+    bubbleView.setOnTouchListener { view, event ->
+      when (event.actionMasked) {
         MotionEvent.ACTION_DOWN -> {
-          downX = event.rawX; downY = event.rawY; startX = params.x; startY = params.y
-          moved = false; downAt = System.currentTimeMillis(); true
+          downX = event.rawX
+          downY = event.rawY
+          startX = params.x
+          startY = params.y
+          downAt = System.currentTimeMillis()
+          moved = false
+          true
         }
         MotionEvent.ACTION_MOVE -> {
-          val dx = (event.rawX - downX).toInt(); val dy = (event.rawY - downY).toInt()
-          if (kotlin.math.abs(dx) > dp(5) || kotlin.math.abs(dy) > dp(5)) moved = true
-          if (moved) {
-            params.x = (startX + dx).coerceAtLeast(0); params.y = (startY + dy).coerceAtLeast(0)
-            try { manager.updateViewLayout(target, params) } catch (_: Exception) { /* Overlay is closing */ }
+          val dx = event.rawX - downX
+          val dy = event.rawY - downY
+          if (abs(dx) > dp(8) || abs(dy) > dp(8)) moved = true
+
+          // END gravity measures x from the right edge, so horizontal drag
+          // must be inverted to follow the user's finger.
+          val maxX = (resources.displayMetrics.widthPixels - dp(58)).coerceAtLeast(0)
+          val maxY = (resources.displayMetrics.heightPixels - dp(58)).coerceAtLeast(0)
+          params.x = (startX - dx.toInt()).coerceIn(0, maxX)
+          params.y = (startY + dy.toInt()).coerceIn(0, maxY)
+          try {
+            manager.updateViewLayout(view, params)
+          } catch (_: Exception) {
+            moved = true
           }
           true
         }
         MotionEvent.ACTION_UP -> {
+          val heldFor = System.currentTimeMillis() - downAt
           if (!moved) {
-            if (System.currentTimeMillis() - downAt >= LONG_PRESS_MS) {
-              val context = BadboyScreenReaderService.readOtherAppScreen(packageName)
-              if (context.isNullOrBlank()) {
-                Toast.makeText(this, "Screen Awareness চালু করতে Android Accessibility settings-এ Badboy Screen Reader enable করুন।", Toast.LENGTH_LONG).show()
-                openAssistant(null)
-              } else openAssistant(context)
-            } else openAssistant(null)
+            if (heldFor >= LONG_PRESS_MS) {
+              val screenContext = BadboyScreenReaderService.readOtherAppScreen(packageName)
+              if (screenContext.isNullOrBlank()) {
+                Toast.makeText(
+                  this,
+                  "No readable text. Enable Screen Awareness in Android Accessibility settings.",
+                  Toast.LENGTH_LONG,
+                ).show()
+              }
+              openAssistant(screenContext)
+            } else {
+              openAssistant(null)
+            }
           }
+          downAt = 0L
+          moved = false
           true
         }
-        else -> true
+        MotionEvent.ACTION_CANCEL -> {
+          downAt = 0L
+          moved = false
+          true
+        }
+        else -> false
       }
     }
-    manager.addView(view, params)
-    windowManager = manager
-    bubble = view
+
+    try {
+      manager.addView(bubbleView, params)
+      bubble = bubbleView
+      layoutParams = params
+    } catch (_: Exception) {
+      bubble = null
+      layoutParams = null
+      stopSelf()
+    }
   }
 
   private fun openAssistant(screenContext: String?) {
     val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return
-    val uri = Uri.Builder().scheme("badboyai").authority("jarvis").apply {
-      if (!screenContext.isNullOrBlank()) appendQueryParameter("screen_context", screenContext.take(4_500))
-    }.build()
-    intent.data = uri
-    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-    try { startActivity(intent) } catch (_: Exception) { Toast.makeText(this, "Badboy AI খুলতে সমস্যা হয়েছে।", Toast.LENGTH_SHORT).show() }
+    val uriBuilder = Uri.Builder()
+      .scheme("badboyai")
+      .authority("jarvis")
+    if (!screenContext.isNullOrBlank()) {
+      uriBuilder.appendQueryParameter("screen_context", screenContext.take(MAX_SCREEN_CONTEXT_CHARS))
+    }
+    intent.data = uriBuilder.build()
+    intent.addFlags(
+      Intent.FLAG_ACTIVITY_NEW_TASK or
+        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+        Intent.FLAG_ACTIVITY_SINGLE_TOP,
+    )
+    try {
+      startActivity(intent)
+    } catch (_: Exception) {
+      Toast.makeText(this, "Could not open Badboy AI.", Toast.LENGTH_SHORT).show()
+    }
+  }
+
+  private fun startForegroundCompat() {
+    val channelId = "badboy_jarvis_floating"
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      val channel = NotificationChannel(
+        channelId,
+        "Badboy AI floating assistant",
+        NotificationManager.IMPORTANCE_LOW,
+      )
+      getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+    }
+
+    val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+    val contentIntent = launchIntent?.let {
+      it.data = Uri.parse("badboyai://jarvis")
+      it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+      PendingIntent.getActivity(
+        this,
+        NOTIFICATION_REQUEST_CODE,
+        it,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+      )
+    }
+
+    val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      Notification.Builder(this, channelId)
+    } else {
+      @Suppress("DEPRECATION")
+      Notification.Builder(this)
+    }.setContentTitle("Badboy AI")
+      .setContentText("Jarvis is ready. Tap to open chat; long-press the bubble to read visible text.")
+      .setSmallIcon(android.R.drawable.ic_dialog_info)
+      .setContentIntent(contentIntent)
+      .setOngoing(true)
+      .build()
+
+    if (Build.VERSION.SDK_INT >= 34) {
+      startForeground(
+        NOTIFICATION_ID,
+        notification,
+        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+      )
+    } else {
+      startForeground(NOTIFICATION_ID, notification)
+    }
+  }
+
+  override fun onDestroy() {
+    try {
+      bubble?.let { windowManager?.removeView(it) }
+    } catch (_: Exception) {
+      // The overlay may already have been detached by the system.
+    } finally {
+      bubble = null
+      layoutParams = null
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+      stopForeground(STOP_FOREGROUND_REMOVE)
+    } else {
+      @Suppress("DEPRECATION")
+      stopForeground(true)
+    }
+    super.onDestroy()
   }
 
   private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
-  override fun onDestroy() {
-    try { bubble?.let { windowManager?.removeView(it) } } catch (_: Exception) { /* Already detached */ }
-    bubble = null; windowManager = null; stopForeground(true); super.onDestroy()
-  }
-  override fun onBind(intent: Intent?): IBinder? = null
-
   companion object {
-    private const val CHANNEL_ID = "badboy_floating_assistant"
-    private const val NOTIFICATION_ID = 7410
+    private const val NOTIFICATION_ID = 7101
+    private const val NOTIFICATION_REQUEST_CODE = 7102
     private const val LONG_PRESS_MS = 650L
+    private const val MAX_SCREEN_CONTEXT_CHARS = 4_500
   }
 }
