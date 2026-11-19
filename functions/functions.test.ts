@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import test from "node:test";
 // Node ESM imports require .js extension when pointing to typescript files
-import { onRequestGet as rawOnRequestGet, onRequestPost as rawOnRequestPost } from "./api/[[path]].ts";
+import { handleApiRequest } from "./api/[[path]].ts";
 import { handleDeveloperDataRequest } from "./api/developerData.ts";
 import {
   buildDeveloperAnalysisMessages,
@@ -25,11 +25,16 @@ function withTestOwner(context: any) {
 
 // Existing endpoint tests exercise authenticated application behavior by default.
 // The dedicated /api/auth/verify tests below call the raw handlers to test credentials.
-const onRequestGet = (context: any) => rawOnRequestGet(withTestOwner(context));
-const onRequestPost = (context: any) =>
-  new URL(context.request.url).pathname.replace(/\/+$/, "") === "/api/auth/verify"
-    ? rawOnRequestPost(context)
-    : rawOnRequestPost(withTestOwner(context));
+const onRequestGet = (context: any) => {
+  const authenticated = withTestOwner(context);
+  return handleApiRequest(authenticated.request, authenticated.env);
+};
+const onRequestPost = (context: any) => {
+  const isCredentialVerification =
+    new URL(context.request.url).pathname.replace(/\\/+$/, "") === "/api/auth/verify";
+  const authenticated = isCredentialVerification ? context : withTestOwner(context);
+  return handleApiRequest(authenticated.request, authenticated.env);
+};
 
 function testAgentDb(options: {
   changes?: number;
