@@ -2,6 +2,7 @@ const OWNER_TOKEN_KEY = 'badboy-owner-token-v1';
 const DEFAULT_NATIVE_API_DOMAIN = 'https://badboy-vs-versel-ai.shomratofficial007.workers.dev';
 
 let activeToken: string | null = null;
+const OWNER_AUTH_TIMEOUT_MS = 12_000;
 
 function isWebPlatform(): boolean {
   const expoOs = process.env.EXPO_OS;
@@ -59,21 +60,36 @@ export async function clearOwnerToken(): Promise<void> {
   }
 }
 
-export async function verifyOwnerToken(token: string): Promise<void> {
-  const response = await fetch(authApiUrl(), {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-  });
-  const payload = await response.json().catch(() => ({})) as {
-    authenticated?: boolean;
-    error?: string;
-  };
-  if (!response.ok || payload.authenticated !== true) {
-    const error = new Error(
-      payload.error ?? `Owner authentication failed (HTTP ${response.status}).`,
-    ) as Error & { status?: number };
-    error.status = response.status;
-    throw error;
+export async function verifyOwnerToken(
+  token: string,
+  timeoutMs = OWNER_AUTH_TIMEOUT_MS,
+): Promise<void> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(authApiUrl(), {
+      method: 'POST',
+      headers: { Authorization: \`Bearer \${token}\`, Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => ({})) as {
+      authenticated?: boolean;
+      error?: string;
+    };
+    if (!response.ok || payload.authenticated !== true) {
+      const error = new Error(
+        payload.error ?? \`Owner authentication failed (HTTP \${response.status}).\`,
+      ) as Error & { status?: number };
+      error.status = response.status;
+      throw error;
+    }
+  } catch (cause) {
+    if (controller.signal.aborted) {
+      throw new Error('Owner verification timed out. Check your connection and try again.');
+    }
+    throw cause;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
