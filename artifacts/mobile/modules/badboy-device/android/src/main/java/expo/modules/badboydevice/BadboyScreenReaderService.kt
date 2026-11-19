@@ -36,22 +36,26 @@ class BadboyScreenReaderService : AccessibilityService() {
     while (queue.isNotEmpty() && visited < 140 && output.length < 4_500) {
       val node = queue.removeFirst()
       visited += 1
-      if (!node.isPassword && !node.isEditable) {
-        val candidates = listOfNotNull(
-          node.text?.toString()?.trim()?.takeIf { it.isNotEmpty() },
-          node.contentDescription?.toString()?.trim()?.takeIf { it.isNotEmpty() },
-        )
-        for (candidate in candidates) {
-          val safe = redactPrivatePatterns(candidate).take(260)
-          if (safe.isNotBlank() && seen.add(safe)) {
-            if (output.isNotEmpty()) output.append('\n')
-            output.append(safe)
-            if (output.length >= 4_500) break
+      try {
+        if (!node.isPassword && !node.isEditable) {
+          val candidates = listOfNotNull(
+            node.text?.toString()?.trim()?.takeIf { it.isNotEmpty() },
+            node.contentDescription?.toString()?.trim()?.takeIf { it.isNotEmpty() },
+          )
+          for (candidate in candidates) {
+            val safe = redactPrivatePatterns(candidate).take(260)
+            if (safe.isNotBlank() && seen.add(safe)) {
+              if (output.isNotEmpty()) output.append('\n')
+              output.append(safe)
+              if (output.length >= 4_500) break
+            }
           }
         }
-      }
-      for (index in 0 until node.childCount) {
-        try { node.getChild(index)?.let(queue::addLast) } catch (_: Exception) { /* Window changed */ }
+        for (index in 0 until node.childCount) {
+          try { node.getChild(index)?.let(queue::addLast) } catch (_: Exception) { /* Window changed */ }
+        }
+      } finally {
+        node.recycle()
       }
     }
     return output.toString().trim().takeIf { it.isNotEmpty() }
