@@ -196,10 +196,11 @@ test('keeps a persisted owner token when session restore cannot reach the Worker
 
 test('redirects every unauthenticated route to Owner Login and returns authenticated owners to Chat', async () => {
   const { getOwnerRouteRedirect } = await import('./ownerAuth');
-  assert.equal(getOwnerRouteRedirect(false, []), '/owner-login');
-  assert.equal(getOwnerRouteRedirect(false, ['(tabs)', 'index']), '/owner-login');
-  assert.equal(getOwnerRouteRedirect(false, ['jarvis']), '/owner-login');
-  assert.equal(getOwnerRouteRedirect(false, ['owner-login']), null);
-  assert.equal(getOwnerRouteRedirect(true, ['owner-login']), '/(tabs)');
-  assert.equal(getOwnerRouteRedirect(true, ['(tabs)', 'index']), null);
+  assert.equal(getOwnerRouteRedirect(false, false, ['(tabs)', 'index']), null);
+  assert.equal(getOwnerRouteRedirect(true, false, []), '/owner-login');
+  assert.equal(getOwnerRouteRedirect(true, false, ['(tabs)', 'index']), '/owner-login');
+  assert.equal(getOwnerRouteRedirect(true, false, ['jarvis']), '/owner-login');
+  assert.equal(getOwnerRouteRedirect(true, false, ['owner-login']), null);
+  assert.equal(getOwnerRouteRedirect(true, true, ['owner-login']), '/(tabs)');
+  assert.equal(getOwnerRouteRedirect(true, true, ['(tabs)', 'index']), null);
 });
