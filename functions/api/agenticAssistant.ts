@@ -423,28 +423,40 @@ export function selectAgentModels(messages: ChatMessage[]): string[] {
 async function requestCompletion(
   apiKey: string,
   messages: ChatMessage[],
-  options: { tools?: boolean; toolDefinitions?: readonly unknown[]; stream?: boolean; maxTokens?: number; responseFormat?: "json_object" } = {},
+  options: { tools?: boolean; toolDefinitions?: readonly unknown[]; stream?: boolean; maxTokens?: number; responseFormat?: "json_object"; signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<Response> {
   let lastStatus = 503;
   for (const model of selectAgentModels(messages)) {
     // Only the dynamic free router and explicitly free model IDs are allowed.
     if (model !== "openrouter/free" && !model.endsWith(":free")) continue;
-    const response = await fetch(OPENROUTER_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "X-Title": "Badboy Agentic Assistant",
-      },
-      body: JSON.stringify({
+    const timeoutSignal = AbortSignal.timeout(options.timeoutMs ?? 20_000);
+    const signal = options.signal
+      ? AbortSignal.any([options.signal, timeoutSignal])
+      : timeoutSignal;
+    let response: Response;
+    try {
+      response = await fetch(OPENROUTER_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "X-Title": "Badboy Agentic Assistant",
+        },
+        signal,
+        body: JSON.stringify({
         model,
         messages,
         max_tokens: options.maxTokens ?? 1800,
         ...(options.tools ? { tools: options.toolDefinitions ?? TOOL_DEFINITIONS, tool_choice: "auto", parallel_tool_calls: false } : {}),
         ...(options.responseFormat ? { response_format: { type: options.responseFormat } } : {}),
         stream: options.stream === true,
-      }),
-    });
+        }),
+      });
+    } catch (cause) {
+      if (options.signal?.aborted) throw cause;
+      lastStatus = 504;
+      continue;
+    }
     if (response.ok && response.body) return response;
     lastStatus = response.status;
     if (![400, 404, 408, 429, 500, 502, 503, 504].includes(response.status)) return response;
