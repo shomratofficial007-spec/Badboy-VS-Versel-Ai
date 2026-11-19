@@ -713,7 +713,7 @@ export function getPluginRegistryStatus(): PluginItem[] {
     { id: 'gmail-adapter', name: 'Gmail OAuth Adapter', category: 'Email', status: 'not_connected', requiresOAuth: true, description: 'Email sending is disabled until a structured composer and complete OAuth consent flow are implemented.' },
     { id: 'youtube-adapter', name: 'YouTube Search Adapter', category: 'Media', status: 'active', requiresOAuth: false, description: 'Opens YouTube search/deep links; it does not provide embedded playback.' },
     { id: 'telegram-adapter', name: 'Telegram Bot Adapter', category: 'Messaging', status: 'pending', requiresOAuth: false, description: 'Requires the user to configure a bot token and target chat ID in secure storage.' },
-    { id: 'voice-adapter', name: 'Worker Voice and Android Audio', category: 'Audio', status: 'active', requiresOAuth: false, description: 'Worker voice/transcription routes plus Android native wake-word and speech capabilities; upstream secrets require live health verification.' },
+    { id: 'voice-adapter', name: 'Worker Voice and Android Audio', category: 'Audio', status: 'active', requiresOAuth: false, description: 'Android/iOS device speech recognition for dictation, optional Worker-backed cloud TTS with local native/browser TTS fallback; actual availability depends on device permissions and Worker provider configuration.' },
     { id: 'android-device-control', name: 'Android Device Control', category: 'Device', status: 'active', requiresOAuth: false, description: 'Allowlisted app and Android Settings launches only; each action requires explicit confirmation.' },
   ];
 }
