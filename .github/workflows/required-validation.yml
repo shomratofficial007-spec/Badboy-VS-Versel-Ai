@@ -1,5 +1,5 @@
 # Required check aliases wait for workflows available on the base branch; security jobs run their own validation.
-# Require the Android APK workflow that was actually scheduled for this PR head; do not wait for an upstream workflow that has no run.
+# Accept either APK workflow variant; the repository has both legacy and free-runner pipelines, and GitHub may schedule one based on the PR event/path context.
 name: Required Validation
 
 on:
@@ -28,7 +28,8 @@ jobs:
         run: bash .github/scripts/wait-for-workflows.sh
         env:
           GH_TOKEN: ${{ github.token }}
-          WORKFLOW_NAMES: Build and Test;PR 102 Backend Validation;Mobile checks;SonarCloud Coverage Analysis;Semgrep Security Scan;Detekt Kotlin Analysis;OWASP ZAP Baseline;Mobile SBOM;AI SDK validation;CodeQL Advanced;Android APK (automatic + manual)
+          WORKFLOW_NAMES: Build and Test;PR 102 Backend Validation;Mobile checks;SonarCloud Coverage Analysis;Semgrep Security Scan;Detekt Kotlin Analysis;OWASP ZAP Baseline;Mobile SBOM;AI SDK validation;CodeQL Advanced
+          APK_WORKFLOW_NAMES: Android APK (automatic + manual)|Build Android APK (Free GitHub Runner)
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
 
