@@ -2,10 +2,12 @@ import React from 'react';
 import { useWindowDimensions } from 'react-native';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { ActivityIndicator } from 'react-native';
 import { BadboyLogo } from '@/components/BadboyLogo';
-import { Tabs, usePathname, useRouter } from 'expo-router';
+import { Redirect, Tabs, usePathname, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import { useOwnerAuth } from '@/context/OwnerAuthContext';
 
 const items = [
   { name: 'index', label: 'চ্যাট', icon: 'message-circle' as const, route: '/(tabs)' },
@@ -76,6 +78,11 @@ function TopNavigation() {
 
 export default function TabLayout() {
   const colors = useColors();
+  const { ready, authenticated } = useOwnerAuth();
+  if (!ready) {
+    return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}><ActivityIndicator color={colors.primary} /></View>;
+  }
+  if (!authenticated) return <Redirect href="/owner-login" />;
   return <View style={{flex:1,backgroundColor:colors.background}}><TopNavigation/><View style={{flex:1,width:'100%',maxWidth:960,alignSelf:'center'}}><Tabs screenOptions={{headerShown:false,tabBarStyle:{display:'none'}}}><Tabs.Screen name="index"/><Tabs.Screen name="memory"/><Tabs.Screen name="workflows"/><Tabs.Screen name="skills"/><Tabs.Screen name="plugins"/><Tabs.Screen name="settings"/></Tabs></View></View>;
 }
 
