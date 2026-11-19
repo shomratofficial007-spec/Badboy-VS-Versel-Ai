@@ -340,7 +340,7 @@ test("provider failures are returned as bounded SSE errors without leaking secre
   }
 });
 
-test("final stream ignores malformed provider events and reports interrupted streams", async () => {
+test("final stream rejects malformed provider events and reports interrupted streams", async () => {
   globalThis.fetch = async (_input, init) => {
     const payload = JSON.parse(String(init?.body)) as { stream: boolean };
     if (!payload.stream) return completion("execution");
