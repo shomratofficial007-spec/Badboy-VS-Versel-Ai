@@ -613,6 +613,7 @@ async function streamFinalAnswer(
   const reader = upstream.body.getReader();
   const decoder = new TextDecoder();
   let cancelled = false;
+  let emittedContent = false;
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let closed = false;
@@ -642,9 +643,13 @@ async function streamFinalAnswer(
             const event = pending.slice(0, boundary);
             pending = pending.slice(boundary + 2);
             const parsed = parseOpenRouterDeltas(event);
-            for (const content of parsed.content) send({ content });
+            for (const content of parsed.content) {
+              emittedContent = true;
+              send({ content });
+            }
             if (parsed.done) {
               receivedDone = true;
+              if (!emittedContent) throw new Error("Agent provider returned an empty final answer.");
               close();
               return;
             }
@@ -653,10 +658,14 @@ async function streamFinalAnswer(
         }
         if (pending.trim()) {
           const parsed = parseOpenRouterDeltas(pending);
-          for (const content of parsed.content) send({ content });
+          for (const content of parsed.content) {
+            emittedContent = true;
+            send({ content });
+          }
           receivedDone = parsed.done;
         }
         if (!receivedDone) throw new Error("Agent response stream ended before the completion marker.");
+        if (!emittedContent) throw new Error("Agent provider returned an empty final answer.");
         close();
       } catch {
         if (!cancelled) {
