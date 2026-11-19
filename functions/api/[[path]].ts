@@ -953,6 +953,12 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
 
       send(JSON.stringify({ taskId, engine, provider: selectedProvider, model: selectedModel, status: "started" }));
       const completeTask = async () => {
+        if (!accumulatedOutput.trim()) {
+          await finalizeTask("failed", "empty_output");
+          send(JSON.stringify({ error: "Developer Agent returned an empty response.", taskId, engine }));
+          close();
+          return;
+        }
         await finalizeTask("completed");
         send(JSON.stringify({ taskId, engine, status: "completed" }));
         send("[DONE]");
