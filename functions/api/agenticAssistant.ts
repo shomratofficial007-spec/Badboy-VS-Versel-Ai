@@ -586,13 +586,15 @@ function parseOpenRouterDeltas(event: string): { content: string[]; done: boolea
     const data = line.slice(5).trim();
     if (data === "[DONE]") { done = true; continue; }
     if (!data) continue;
+    let parsed: { error?: unknown; choices?: Array<{ delta?: { content?: unknown } }> };
     try {
-      const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: unknown } }> };
-      const chunk = parsed.choices?.[0]?.delta?.content;
-      if (typeof chunk === "string" && chunk) content.push(chunk);
+      parsed = JSON.parse(data) as typeof parsed;
     } catch {
-      // Ignore provider keep-alives and malformed non-content events.
+      throw new Error("Agent provider returned malformed stream data.");
     }
+    if (parsed.error) throw new Error("Agent provider returned an upstream stream error.");
+    const chunk = parsed.choices?.[0]?.delta?.content;
+    if (typeof chunk === "string" && chunk) content.push(chunk);
   }
   return { content, done };
 }
