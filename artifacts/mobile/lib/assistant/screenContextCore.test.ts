@@ -24,6 +24,9 @@ test('redacts emails, phone/account numbers, card numbers and contextual OTP cod
 test('redacts credentials, authorization headers, cookies, JWTs and URL secrets', () => {
   const result = redactSensitiveScreenText([
     'Password: hunter2',
+    'CVV: 123',
+    'Account Number: 123456789012',
+    'IBAN: GB29NWBK60161331926819',
     'API Key: abcdef123456',
     'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature',
     'Cookie: session=private-value',
@@ -38,7 +41,7 @@ test('redacts credentials, authorization headers, cookies, JWTs and URL secrets'
   assert.match(result, /Cookie: \[redacted\]/);
   assert.match(result, /access_token=\[redacted\]/);
   assert.equal((result.match(/\[secret token\]/g) ?? []).length, 3);
-  assert.doesNotMatch(result, /private-value|private-token|hunter2|123456789012345678901234|github_pat_123456789012345678901234567890|ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi12345/);
+  assert.doesNotMatch(result, /private-value|private-token|hunter2|123456789012345678901234|123456789012|GB29NWBK60161331926819|github_pat_123456789012345678901234567890|ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi12345/);
 });
 
 test('preserves dates and ordinary text while redacting long numeric identifiers', () => {
