@@ -16,3 +16,8 @@ test('removes control characters and bounds screen context', () => {
 test('returns an empty string for empty screen content', () => {
   assert.equal(normalizeVisibleScreenText(' \n \t '), '');
 });
+
+test('rejects non-string values at the runtime boundary and removes DEL controls', () => {
+  assert.equal(normalizeVisibleScreenText(42 as unknown as string), '');
+  assert.equal(normalizeVisibleScreenText('Before\\u007fAfter'), 'BeforeAfter');
+});
