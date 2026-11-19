@@ -256,7 +256,11 @@ export async function streamDeveloperAnalysis(
 ): Promise<{ taskId: string; engine: string }> {
   const response = await expoFetch(apiUrl('/api/developer/analyze'), {
     method: 'POST',
-    headers: await buildHeaders(),
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      Authorization: await ownerAuthorizationHeader(),
+    },
     body: JSON.stringify({ prompt, projectContext, requestedEngine: engine }),
   });
   if (!response.ok) {
