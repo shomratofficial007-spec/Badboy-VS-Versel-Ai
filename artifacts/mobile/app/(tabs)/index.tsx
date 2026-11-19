@@ -10,6 +10,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Linking,
+  Image,
   Modal,
   Platform,
   ScrollView,
@@ -51,6 +52,7 @@ import { useColors } from '@/hooks/useColors';
 import { getOfflineWakeWordStatus, startOfflineWakeWord, stopOfflineWakeWord, subscribeToWakeWord, subscribeToWakeWordStatus } from '@/lib/assistant/wakeWord';
 import { getActiveCustomSkillContext } from '@/lib/assistant/skillStorage';
 import { loadEnabledPluginIds } from '@/lib/assistant/pluginStorage';
+import { getDeveloperModeSkillContext } from '@/lib/assistant/developerModeSkill';
 
 const VOICE_RECORDING_OPTIONS = {
   ...RecordingPresets.HIGH_QUALITY,
@@ -90,7 +92,7 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerModal, setDrawerModal] = useState<'search' | 'history' | 'options' | 'newChat' | null>(null);
+  const [drawerModal, setDrawerModal] = useState<'search' | 'history' | 'options' | 'newChat' | 'tools' | null>(null);
   const [chatSearch, setChatSearch] = useState('');
   const { messages, setMessages, settings, updateSettings, setExpertReviewDraft } = useAssistant();
   const { signOut } = useOwnerAuth();
@@ -343,7 +345,9 @@ export default function ChatScreen() {
       }
       let skillContext = '';
       try {
-        skillContext = await getActiveCustomSkillContext() ?? '';
+        const activeCustomSkill = await getActiveCustomSkillContext() ?? '';
+        const automaticDeveloperSkill = settings.developerMode ? getDeveloperModeSkillContext() : '';
+        skillContext = [automaticDeveloperSkill, activeCustomSkill].filter(Boolean).join('\n\n').slice(0, 4000);
       } catch {
         // An unavailable local skill store must not block ordinary assistant chat.
       }
@@ -725,11 +729,19 @@ export default function ChatScreen() {
     setBusy(true);
     setError(null);
     try {
-      await streamReply(previousUser.content, settings, (chunk) => {
+      await streamAgenticReply(
+        previousUser.content,
+        settings,
+        messages.slice(0, index).slice(-8).map(({ role, content }) => ({ role, content })),
+        (chunk) => {
         const updated = { ...replacement, content: replacement.content + chunk };
         working = working.map((item) => item.id === replacement.id ? updated : item);
         setMessages(working);
-      });
+        },
+        '',
+        settings.developerMode ? getDeveloperModeSkillContext() : '',
+        await loadEnabledPluginIds().catch(() => []),
+      );
     } catch (cause) {
       setMessages(messages);
       setError(cause instanceof Error ? cause.message : 'নতুন উত্তর পাওয়া যায়নি।');
@@ -909,11 +921,23 @@ export default function ChatScreen() {
               </View>
             </View>
             <Text style={[styles.brandSub, { color: colors.mutedForeground }]}>
-              {settings.onlineAI ? 'তোমার AI সহকারী' : 'অফলাইন মোড'}
+              {settings.developerMode ? 'Developer Mode · Auto Skills Active' : settings.onlineAI ? 'তোমার AI সহকারী' : 'অফলাইন মোড'}
             </Text>
           </View>
         </View>
 
+        <Pressable
+          onPress={() => router.push('/(tabs)/settings' as never)}
+          accessibilityRole="button"
+          accessibilityLabel="Settings"
+          style={[styles.iconButton, { backgroundColor: colors.secondary, marginLeft: 6 }]}
+        >
+          <Feather name="settings" size={19} color={colors.primary} />
+        </Pressable>
+
+        <Pressable onPress={() => setDrawerModal('tools')} accessibilityRole="button" accessibilityLabel="সব AI Tools খুলুন" style={[styles.iconButton, { backgroundColor: colors.secondary, marginLeft: 6 }]}>
+          <Feather name="grid" size={19} color={colors.primary} />
+        </Pressable>
         {/* ChatGPT-style chat options */}
         <Pressable onPress={showChatOptions} accessibilityRole="button" accessibilityLabel="চ্যাট অপশন খুলুন" style={[styles.iconButton, { backgroundColor: colors.secondary, marginLeft: 6 }]}>
           <Feather name="more-horizontal" size={19} color={colors.foreground} />
@@ -941,6 +965,34 @@ export default function ChatScreen() {
         </Pressable>
       </View>
 
+
+      <View style={[styles.providerStrip, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Pressable onPress={() => router.push('/(tabs)/settings' as never)} accessibilityRole="button" accessibilityLabel="AI Provider: OpenRouter" style={styles.providerCell}>
+          <Feather name="hexagon" size={18} color={colors.primary} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[styles.providerLabel, { color: colors.mutedForeground }]}>PROVIDER</Text>
+            <Text numberOfLines={1} style={[styles.providerValue, { color: colors.foreground }]}>OpenRouter</Text>
+          </View>
+          <Feather name="chevron-down" size={13} color={colors.primary} />
+        </Pressable>
+        <View style={[styles.providerDivider, { backgroundColor: colors.border }]} />
+        <Pressable onPress={() => router.push('/(tabs)/settings' as never)} accessibilityRole="button" accessibilityLabel="Model: automatic free model routing" style={styles.providerCell}>
+          <Feather name="cpu" size={18} color={colors.primary} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[styles.providerLabel, { color: colors.mutedForeground }]}>MODEL</Text>
+            <Text numberOfLines={1} style={[styles.providerValue, { color: colors.foreground }]}>Auto Free Model</Text>
+          </View>
+          <Feather name="chevron-down" size={13} color={colors.primary} />
+        </Pressable>
+        <View style={[styles.providerDivider, { backgroundColor: colors.border }]} />
+        <View style={styles.providerStatus}>
+          <View style={[styles.onlineDot, { backgroundColor: settings.onlineAI ? '#00e676' : '#f97316' }]} />
+          <View>
+            <Text style={[styles.providerValue, { color: colors.foreground }]}>{settings.onlineAI ? 'Online' : 'Offline'}</Text>
+            <Text style={[styles.providerLabel, { color: colors.mutedForeground }]}>STATUS</Text>
+          </View>
+        </View>
+      </View>
 
       {drawerOpen ? (
         <View style={[styles.drawerScrim, { backgroundColor: 'rgba(0,0,0,0.58)' }]}>
@@ -995,13 +1047,45 @@ export default function ChatScreen() {
           <View style={[styles.chatModal, { backgroundColor: colors.card, borderColor: colors.border, paddingBottom: Math.max(insets.bottom, 16) }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.brandTitle, { color: colors.foreground }]}>
-                {drawerModal === 'search' ? 'চ্যাট খুঁজুন' : 'চ্যাট হিস্টোরি'}
+                {drawerModal === 'search' ? 'চ্যাট খুঁজুন' : drawerModal === 'tools' ? 'Badboy AI Tools' : drawerModal === 'options' ? 'আরও অপশন' : 'চ্যাট হিস্টোরি'}
               </Text>
               <Pressable onPress={() => setDrawerModal(null)} accessibilityRole="button" accessibilityLabel="বন্ধ করুন" style={styles.iconButton}>
                 <Feather name="x" size={20} color={colors.foreground} />
               </Pressable>
             </View>
-            {drawerModal === 'options' ? (
+            {drawerModal === 'tools' ? (
+              <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 20, gap: 14 }}>
+                <View style={styles.toolsGrid}>
+                  {[
+                    { label: 'Image Generator', icon: 'image' as const },
+                    { label: 'Code Helper', icon: 'code' as const },
+                    { label: 'Creative Ideas', icon: 'sun' as const },
+                    { label: 'Study Helper', icon: 'book-open' as const },
+                    { label: 'General Chat', icon: 'message-circle' as const },
+                    { label: 'Music Assistant', icon: 'music' as const },
+                    { label: 'Android Control', icon: 'smartphone' as const },
+                    { label: 'More Tools', icon: 'grid' as const },
+                  ].map((tool) => (
+                    <Pressable key={tool.label} accessibilityRole="button" onPress={() => { setDrawerModal(null); setDraft(tool.label); }} style={[styles.toolTile, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
+                      <Feather name={tool.icon} size={21} color={colors.primary} />
+                      <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '700', textAlign: 'center' }}>{tool.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={{ color: colors.mutedForeground, fontSize: 12, fontWeight: '700' }}>MORE CHAT OPTIONS</Text>
+                {[
+                  { label: 'AI ব্যক্তিত্ব / উত্তর-স্টাইল', action: () => { setDrawerModal(null); chooseAiStyle(); } },
+                  { label: 'গল্প, কবিতা, স্ক্রিপ্ট', action: () => { setDrawerModal(null); showCreativeOptions(); } },
+                  { label: 'নতুন চ্যাট', action: () => setDrawerModal('newChat') },
+                  { label: 'চ্যাট শেয়ার', action: () => { setDrawerModal(null); void shareConversation(); } },
+                  { label: 'চ্যাট মুছুন', action: () => { setDrawerModal(null); clearChat(); } },
+                ].map((option) => (
+                  <Pressable key={option.label} accessibilityRole="button" onPress={option.action} style={[styles.drawerItem, { minHeight: 46, backgroundColor: colors.secondary }]}>
+                    <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: '600' }}>{option.label}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            ) : drawerModal === 'options' ? (
               <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 20, gap: 10 }}>
                 {[
                   { label: 'AI ব্যক্তিত্ব / উত্তর-স্টাইল', action: () => { setDrawerModal(null); chooseAiStyle(); } },
@@ -1064,24 +1148,39 @@ export default function ChatScreen() {
 
       {!messages.length ? (
         <View style={styles.welcome}>
-          <View style={[styles.welcomeMark, { backgroundColor: colors.secondary, borderColor: colors.primary }]}>
-            <BadboyLogo size={48} />
+          <View style={[styles.welcomeCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
+            <Image
+              source={require('../../assets/images/badboy-chat-hero.jpg')}
+              resizeMode="cover"
+              style={styles.welcomeArt}
+              accessibilityLabel="Badboy AI hooded character artwork"
+            />
+            <View style={styles.welcomeCopy}>
+              <View style={styles.welcomeCrown}>
+                <Feather name="award" size={19} color="#d946ef" />
+                <Text style={[styles.welcomeIntro, { color: colors.foreground }]}>Welcome to</Text>
+              </View>
+              <Text style={styles.welcomeBrand}>Badboy <Text style={styles.welcomeBrandAccent}>AI</Text></Text>
+              <Text style={[styles.welcomeTagline, { color: colors.primary }]}>Smart · Secure · Powerful</Text>
+              <Text style={[styles.welcomeText, { color: colors.foreground }]}>Ask anything, explore ideas, get help — I’m here for you!</Text>
+              <View style={styles.multiAiPill}>
+                <Feather name="zap" size={14} color="#fbbf24" />
+                <Text style={styles.multiAiText}>Powered by Multi-AI</Text>
+              </View>
+              <Text style={[styles.multiAiCaption, { color: colors.mutedForeground }]}>Free · Fast · Reliable</Text>
+            </View>
           </View>
-          <Text style={[styles.welcomeTitle, { color: colors.foreground }]}>কীভাবে সাহায্য করতে পারি?</Text>
-          <Text style={[styles.welcomeText, { color: colors.mutedForeground }]}>
-            আমি তোমার AI সহকারী। নিচের একটি বিষয় বেছে নাও অথবা মেসেজ লিখে শুরু করো।
-          </Text>
-          <View style={styles.suggestions}>
-            {['কোড লিখতে সাহায্য', 'নতুন কিছু শিখি', 'প্রজেক্ট ঠিক করি', 'একটি সৃজনশীল গল্প লেখো'].map((item) => (
-              <Pressable
-                key={item}
-                onPress={() => setDraft(item)}
-                style={[styles.suggestion, { borderColor: colors.border, backgroundColor: colors.card }]}
-              >
-                <Text style={{ color: colors.foreground, fontSize: 14 }}>{item}</Text>
-              </Pressable>
-            ))}
-          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open all Badboy AI tools"
+            onPress={() => setDrawerModal('tools')}
+            style={[styles.toolsLauncher, { borderColor: colors.border, backgroundColor: colors.card }]}
+          >
+            <Feather name="grid" size={18} color={colors.primary} />
+            <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: '700', flex: 1 }}>Tools &amp; Features</Text>
+            <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>8 tools + more</Text>
+            <Feather name="chevron-right" size={17} color={colors.primary} />
+          </Pressable>
         </View>
       ) : (
         <FlatList
@@ -1213,12 +1312,33 @@ const styles = StyleSheet.create({
   visualizerContainer: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 38, marginHorizontal: 8 },
   visualizerBar: { width: 3, borderRadius: 2 },
   iconButton: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  welcome: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22, paddingBottom: 20 },
-  welcomeMark: { width: 76, height: 76, borderRadius: 24, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  providerStrip: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 14, marginHorizontal: 12, marginTop: 8, marginBottom: 4, paddingHorizontal: 10, paddingVertical: 9, shadowColor: '#c026ff', shadowOpacity: 0.16, shadowRadius: 8, elevation: 3 },
+  providerCell: { flex: 1.15, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  providerStatus: { flex: 0.72, minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  onlineDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#00e676' },
+  providerLabel: { fontSize: 9, fontWeight: '800', letterSpacing: 0.8 },
+  providerValue: { fontSize: 11, fontWeight: '800', marginTop: 2 },
+  providerDivider: { width: 1, alignSelf: 'stretch', marginHorizontal: 10 },
+  welcome: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, paddingBottom: 16, gap: 12 },
+  welcomeCard: { width: '100%', minHeight: 228, flexDirection: 'row', overflow: 'hidden', borderWidth: 1.5, borderRadius: 20, shadowColor: '#c026ff', shadowOpacity: 0.28, shadowRadius: 14, elevation: 6 },
+  welcomeArt: { width: '42%', minHeight: 228, backgroundColor: '#100718' },
+  welcomeCopy: { flex: 1, minWidth: 0, justifyContent: 'center', paddingVertical: 13, paddingHorizontal: 10, gap: 5 },
+  welcomeCrown: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  welcomeIntro: { fontSize: 17, fontWeight: '800' },
+  welcomeBrand: { color: '#f5d0fe', fontSize: 27, fontWeight: '900', fontStyle: 'italic', letterSpacing: -1.2 },
+  welcomeBrandAccent: { color: '#ff315e' },
+  welcomeTagline: { fontSize: 11, fontWeight: '800', letterSpacing: 0.2 },
+  multiAiPill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: '#8b2cff', borderRadius: 18, paddingHorizontal: 9, paddingVertical: 6, backgroundColor: '#241038', marginTop: 3 },
+  multiAiText: { color: '#f5e9ff', fontSize: 10, fontWeight: '800' },
+  multiAiCaption: { fontSize: 10, textAlign: 'center' },
+  welcomeMark: { width: 76, height: 76, borderRadius: 24, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginBottom: 10, shadowColor: '#c026ff', shadowOpacity: 0.35, shadowRadius: 16, elevation: 6 },
   welcomeTitle: { fontSize: 24, fontWeight: '700', textAlign: 'center', letterSpacing: 0.1 },
   welcomeText: { fontSize: 14, lineHeight: 22, textAlign: 'center', marginTop: 8, maxWidth: 360 },
-  suggestions: { width: '100%', gap: 10, marginTop: 26 },
-  suggestion: { borderWidth: 1, borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16 },
+  suggestions: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 9, marginTop: 12 },
+  suggestion: { width: '48%', minHeight: 66, borderWidth: 1.2, borderRadius: 15, paddingVertical: 12, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center', shadowColor: '#8b2cff', shadowOpacity: 0.16, shadowRadius: 7, elevation: 2 },
+  toolsLauncher: { minHeight: 48, width: '100%', borderWidth: 1, borderRadius: 14, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 18 },
+  toolsGrid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 8, columnGap: 4, justifyContent: 'space-between' },
+  toolTile: { width: '23%', minHeight: 78, borderWidth: 1, borderRadius: 11, alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 7, paddingHorizontal: 3 },
   messageList: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
   messageRow: { width: '100%', alignItems: 'flex-start', marginVertical: 4 },
   userRow: { alignItems: 'flex-end' },

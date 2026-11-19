@@ -4,6 +4,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 const pressHandlers: Array<() => void> = [];
+const visibilityHandlers: Array<() => void> = [];
 const signInCalls: string[] = [];
 const hookState: unknown[] = [];
 let hookIndex = 0;
@@ -35,7 +36,8 @@ function renderOwnerLogin(Screen: React.ComponentType) {
 }
 
 const host = (tag: string) => function Host({ children, accessibilityLabel, placeholder, disabled, onPress }: any) {
-  if (tag === 'button' && typeof onPress === 'function') pressHandlers.push(onPress);
+  if (tag === 'button' && typeof onPress === 'function' && accessibilityLabel === 'Login Now') pressHandlers.push(onPress);
+  if (tag === 'button' && typeof onPress === 'function' && String(accessibilityLabel ?? '').includes('Owner Token')) visibilityHandlers.push(onPress);
   return React.createElement(tag, {
     ...(accessibilityLabel ? { 'aria-label': accessibilityLabel } : {}),
     ...(placeholder ? { placeholder } : {}),
@@ -43,12 +45,16 @@ const host = (tag: string) => function Host({ children, accessibilityLabel, plac
   }, children);
 };
 
+mock.module('../assets/images/badboy-hooded-art.jpg', { defaultExport: {} });
+
 mock.module('react-native', {
   namedExports: {
     ActivityIndicator: () => React.createElement('span', null, 'loading'),
     KeyboardAvoidingView: host('main'),
+    ImageBackground: host('figure'),
     Platform: { OS: 'android' },
     Pressable: host('button'),
+    ScrollView: host('main'),
     StyleSheet: { create: (styles: unknown) => styles },
     Text: host('span'),
     TextInput: host('input'),
@@ -73,6 +79,9 @@ test('Owner Login starts with a disabled secure-token action and explains local 
   assert.match(html, /Owner Login/);
   assert.match(html, /Paste Owner Token/);
   assert.match(html, /Secure Sign In/);
+  assert.match(html, />OR</);
+  assert.match(html, /Built for the Real Power Users/);
+  assert.match(html, /THINK BEYOND LIMITS/);
   assert.match(html, /disabled/);
   assert.match(html, /SecureStore/);
   assert.match(html, /Chat History ও সাধারণ Memory ফোনেই থাকবে/);
@@ -126,4 +135,17 @@ test('Owner Login ignores a second submit while an authentication request is pen
   await firstSubmit;
   holdSignIn = false;
   resolvePendingSignIn = null;
+});
+
+
+test('Owner Token visibility control toggles between show and hide accessibly', async () => {
+  const { default: OwnerLoginScreen } = await ownerLoginScreenPromise;
+  hookState.length = 0;
+  visibilityHandlers.length = 0;
+  const initial = renderOwnerLogin(OwnerLoginScreen);
+  assert.match(initial, /Show Owner Token/);
+  assert.equal(visibilityHandlers.length, 1);
+  visibilityHandlers[0]();
+  const visible = renderOwnerLogin(OwnerLoginScreen);
+  assert.match(visible, /Hide Owner Token/);
 });
