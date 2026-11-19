@@ -111,7 +111,7 @@ export async function readLocalState() {
     : {};
   const index = parseMemoryIndex(indexValue);
 
-  const restored = await Promise.all(index.map(async (item): Promise<MemoryNote | null> => {
+  const memoryResults = await Promise.allSettled(index.map(async (item): Promise<MemoryNote | null> => {
     const key = MEMORY_PREFIX + item.id;
     const stored = await getSecureOrFallback(key);
     if (stored === null) {
@@ -139,10 +139,21 @@ export async function readLocalState() {
     return migrated;
   }));
 
-  const memories = restored.filter((note): note is MemoryNote => note !== null);
-  if (index.length > 0) await persistMemoryIndex(memories);
+  const memories = memoryResults.flatMap((result) =>
+    result.status === 'fulfilled' && result.value !== null ? [result.value] : [],
+  );
+  const failedMemoryRead = memoryResults.find((result) => result.status === 'rejected');
+  const storageError = failedMemoryRead
+    ? failedMemoryRead.reason instanceof Error
+      ? failedMemoryRead.reason.message
+      : SECURE_STORAGE_ERROR
+    : null;
 
-  return { messages, settings, memories };
+  // Do not rewrite the index when any secure read failed: that could orphan
+  // notes that remain safely stored but could not be opened in this session.
+  if (index.length > 0 && !storageError) await persistMemoryIndex(memories);
+
+  return { messages, settings, memories, storageError };
 }
 
 export function persistMessages(messages: ChatMessage[]) {
