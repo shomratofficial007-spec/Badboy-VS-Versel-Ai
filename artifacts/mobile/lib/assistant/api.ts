@@ -30,7 +30,7 @@ async function streamSseResponse(
     };
     throw new Error(
       body.error ??
-        \`The assistant could not reply right now (HTTP \${response.status}).\`,
+        'The assistant could not reply right now (HTTP ' + response.status + ').',
     );
   }
 
