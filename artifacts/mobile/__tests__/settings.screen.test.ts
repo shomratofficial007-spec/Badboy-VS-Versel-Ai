@@ -1079,3 +1079,33 @@ test('Settings lists and previews an installed voice matching the selected langu
   assert.deepEqual(settingsUpdates.at(-1), { voiceIdentifier: 'en-US-test' });
   settings.voiceLanguage = 'bn-BD';
 });
+
+test('Settings Jarvis controls request overlay permission and expose stop and screen-awareness actions', async () => {
+  resetTelegramState();
+  const { default: SettingsScreen } = await settingsScreenPromise;
+  pressables.length = 0;
+  alerts.length = 0;
+  settingsUpdates.length = 0;
+  settings.floatingAssistantEnabled = false;
+
+  renderToStaticMarkup(React.createElement(SettingsScreen));
+  const startBubble = pressables.find((item) => item.label.includes('Start Bubble'));
+  const stopBubble = pressables.find((item) => item.label.includes('Stop Bubble'));
+  const configureScreen = pressables.find((item) => item.label.includes('Configure Screen Awareness'));
+  assert.ok(startBubble, 'Start Bubble action is rendered');
+  assert.ok(stopBubble, 'Stop Bubble action is rendered');
+  assert.ok(configureScreen, 'Screen Awareness settings action is rendered');
+
+  startBubble.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(alerts.at(-1)?.title, 'Permission প্রয়োজন');
+  assert.match(alerts.at(-1)?.message ?? '', /Display over other apps/);
+
+  stopBubble.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(settingsUpdates.at(-1), { floatingAssistantEnabled: false });
+
+  configureScreen.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(alerts.some((item) => item.title === 'Settings খুলতে সমস্যা'), false);
+});
