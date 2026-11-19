@@ -25,15 +25,18 @@ function withTestOwner(context: any) {
 
 // Existing endpoint tests exercise authenticated application behavior by default.
 // The dedicated /api/auth/verify tests below exercise credential verification without injecting a test token.
-const onRequestGet = (context: any) => {
-  const authenticated = withTestOwner(context);
-  return handleApiRequest(authenticated.request, authenticated.env);
-};
+const rawOnRequestGet = (context: any) =>
+  handleApiRequest(context.request, context.env);
+const rawOnRequestPost = (context: any) =>
+  handleApiRequest(context.request, context.env);
+const onRequestGet = (context: any) =>
+  rawOnRequestGet(withTestOwner(context));
 const onRequestPost = (context: any) => {
   const isCredentialVerification =
     new URL(context.request.url).pathname.replace(/\/+$/, "") === "/api/auth/verify";
-  const authenticated = isCredentialVerification ? context : withTestOwner(context);
-  return handleApiRequest(authenticated.request, authenticated.env);
+  return isCredentialVerification
+    ? rawOnRequestPost(context)
+    : rawOnRequestPost(withTestOwner(context));
 };
 
 function testAgentDb(options: {
