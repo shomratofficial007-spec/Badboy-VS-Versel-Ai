@@ -166,7 +166,7 @@ export function persistSettings(settings: AssistantSettings) {
 
 export async function storeMemoryNote(note: MemoryNote, memories: MemoryNote[]) {
   await setSecureOrFallback(MEMORY_PREFIX + note.id, JSON.stringify(note));
-  await persistMemoryIndex([...memories, note]);
+  await persistMemoryIndex([note, ...memories]);
 }
 
 export async function updateMemoryNote(updated: MemoryNote, memories: MemoryNote[]) {
