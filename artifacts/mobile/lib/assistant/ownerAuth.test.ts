@@ -149,3 +149,48 @@ test('recognizes the Worker owner-login-required response shown in chat', () => 
   assert.equal(isOwnerLoginRequiredError(new Error('Network request failed')), false);
   assert.equal(isOwnerLoginRequiredError(new Error('AI provider quota exceeded')), false);
 });
+
+
+test('rejects a persisted owner token when Worker verification says it is invalid', async () => {
+  const originalExpoOs = process.env.EXPO_OS;
+  try {
+    process.env.EXPO_OS = 'android';
+    await saveOwnerToken(OWNER_TOKEN);
+    globalThis.fetch = (async () => new Response(
+      JSON.stringify({ error: 'Owner login is required.' }),
+      { status: 401, headers: { 'Content-Type': 'application/json' } },
+    )) as typeof fetch;
+
+    assert.equal(await restoreOwnerSession(), false);
+    assert.equal(secureStoreToken, null);
+    assert.equal(await getOwnerToken(), null);
+  } finally {
+    if (originalExpoOs === undefined) delete process.env.EXPO_OS;
+    else process.env.EXPO_OS = originalExpoOs;
+  }
+});
+
+test('keeps a persisted owner token when session restore cannot reach the Worker', async () => {
+  const originalExpoOs = process.env.EXPO_OS;
+  try {
+    process.env.EXPO_OS = 'android';
+    await saveOwnerToken(OWNER_TOKEN);
+    globalThis.fetch = (async () => { throw new Error('Network request failed'); }) as typeof fetch;
+
+    assert.equal(await restoreOwnerSession(), false);
+    assert.equal(secureStoreToken, OWNER_TOKEN);
+  } finally {
+    if (originalExpoOs === undefined) delete process.env.EXPO_OS;
+    else process.env.EXPO_OS = originalExpoOs;
+  }
+});
+
+test('redirects every unauthenticated route to Owner Login and returns authenticated owners to Chat', async () => {
+  const { getOwnerRouteRedirect } = await import('./ownerAuth');
+  assert.equal(getOwnerRouteRedirect(false, []), '/owner-login');
+  assert.equal(getOwnerRouteRedirect(false, ['(tabs)', 'index']), '/owner-login');
+  assert.equal(getOwnerRouteRedirect(false, ['jarvis']), '/owner-login');
+  assert.equal(getOwnerRouteRedirect(false, ['owner-login']), null);
+  assert.equal(getOwnerRouteRedirect(true, ['owner-login']), '/(tabs)');
+  assert.equal(getOwnerRouteRedirect(true, ['(tabs)', 'index']), null);
+});
