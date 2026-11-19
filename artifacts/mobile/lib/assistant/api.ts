@@ -39,6 +39,7 @@ async function streamSseResponse(
   const decoder = new TextDecoder();
   let buffer = '';
   let complete = false;
+  let emittedContent = false;
   const processLine = (line: string) => {
     if (!line.startsWith('data: ')) return;
     const payload = line.slice(6).trim();
@@ -48,7 +49,7 @@ async function streamSseResponse(
     }
     const event = JSON.parse(payload) as { content?: string; error?: string };
     if (event.error) throw new Error(event.error);
-    if (event.content) onChunk(event.content);
+    if (event.content) { emittedContent = true; onChunk(event.content); }
   };
 
   try {
@@ -71,6 +72,7 @@ async function streamSseResponse(
       }
     }
     if (!complete) throw new Error('The assistant stream ended before its completion marker.');
+    if (!emittedContent) throw new Error('The assistant returned an empty response.');
   } catch (error) {
     await reader.cancel(error).catch(() => undefined);
     throw error;
@@ -89,6 +91,7 @@ async function streamOpenAICompatibleResponse(response: Response, onChunk: (chun
   const decoder = new TextDecoder();
   let buffer = '';
   let complete = false;
+  let emittedContent = false;
   const emitLine = (line: string) => {
     if (!line.startsWith('data:')) return;
     const payload = line.slice(5).trim();
@@ -105,7 +108,7 @@ async function streamOpenAICompatibleResponse(response: Response, onChunk: (chun
     }
     if (event.error) throw new Error('AI Provider stream error.');
     const content = event.choices?.[0]?.delta?.content;
-    if (typeof content === 'string' && content) onChunk(content);
+    if (typeof content === 'string' && content) { emittedContent = true; onChunk(content); }
   };
 
   try {
@@ -128,6 +131,7 @@ async function streamOpenAICompatibleResponse(response: Response, onChunk: (chun
       }
     }
     if (!complete) throw new Error('AI Provider stream ended before its completion marker.');
+    if (!emittedContent) throw new Error('AI Provider returned an empty response.');
   } catch (error) {
     await reader.cancel(error).catch(() => undefined);
     throw error;
@@ -267,6 +271,7 @@ export async function streamDeveloperAnalysis(
   let taskId = '';
   let actualEngine = engine;
   let complete = false;
+  let emittedContent = false;
   const processLine = (line: string) => {
     if (!line.startsWith('data: ')) return;
     const payload = line.slice(6).trim();
@@ -278,7 +283,7 @@ export async function streamDeveloperAnalysis(
     if (event.error) throw new Error(event.error);
     if (event.taskId) taskId = event.taskId;
     if (event.engine) actualEngine = event.engine;
-    if (event.content) onChunk(event.content);
+    if (event.content) { emittedContent = true; onChunk(event.content); }
   };
 
   try {
@@ -301,6 +306,7 @@ export async function streamDeveloperAnalysis(
       }
     }
     if (!complete) throw new Error('Developer Agent stream ended before its completion marker.');
+    if (!emittedContent) throw new Error('Developer Agent returned an empty response.');
     return { taskId, engine: actualEngine };
   } catch (error) {
     await reader.cancel(error).catch(() => undefined);
