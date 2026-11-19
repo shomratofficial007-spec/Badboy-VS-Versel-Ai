@@ -62,6 +62,7 @@ function logModelDiagnostic(event: string, model: string, statusCode?: number) {
 async function fetchChatWithFreeFallbacks(
   apiKey: string,
   messages: Array<{ role: "system" | "user"; content: string }>,
+  signal?: AbortSignal,
 ): Promise<{ response: Response; model: string }> {
   const models = [OPENROUTER_MODEL_ID, ...OPENROUTER_FREE_FALLBACKS];
   let lastError: unknown;
@@ -75,8 +76,9 @@ async function fetchChatWithFreeFallbacks(
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
-          "X-Title": "Badboy Voice Memory Assistant",
+          "X-Title": "Badboy AI",
         },
+        signal,
         body: JSON.stringify({
           model,
           max_tokens: 8192,
@@ -111,6 +113,7 @@ type DeveloperProvider = "gemini" | "openrouter";
 async function fetchDeveloperAnalysisWithProviders(
   env: Env,
   messages: Array<{ role: "system" | "user"; content: string }>,
+  signal?: AbortSignal,
 ): Promise<{ response: Response; provider: DeveloperProvider; model: string }> {
   const geminiApiKey = env.GEMINI_API_KEY?.trim() || "";
   const openrouterApiKey = env.OPENROUTER_API_KEY?.trim() || "";
@@ -121,7 +124,7 @@ async function fetchDeveloperAnalysisWithProviders(
     const model = getGeminiModel(env.GEMINI_MODEL);
     logModelDiagnostic("attempt", model);
     try {
-      const response = await fetchGeminiChat(geminiApiKey, messages, model);
+      const response = await fetchGeminiChat(geminiApiKey, messages, model, fetch, signal);
       if (response.ok && response.body) {
         logModelDiagnostic("selected", model, response.status);
         return { response, provider: "gemini", model };
@@ -138,7 +141,7 @@ async function fetchDeveloperAnalysisWithProviders(
   }
 
   if (openrouterApiKey) {
-    const routed = await fetchChatWithFreeFallbacks(openrouterApiKey, messages);
+    const routed = await fetchChatWithFreeFallbacks(openrouterApiKey, messages, signal);
     return { ...routed, provider: "openrouter" };
   }
   throw new Error("No Developer Agent AI provider is configured.");
@@ -311,17 +314,25 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
-function createUpstreamAbortSignal(request: Request, timeoutMs = 12_000): {
+function createUpstreamAbortSignal(request: Request, timeoutMs = 30_000): {
   signal: AbortSignal;
+  abort: (reason?: unknown) => void;
+  wasTimedOut: () => boolean;
   cleanup: () => void;
 } {
   const controller = new AbortController();
+  let timedOut = false;
   const abortFromClient = () => controller.abort(request.signal.reason);
   if (request.signal.aborted) abortFromClient();
   else request.signal.addEventListener("abort", abortFromClient, { once: true });
-  const timeout = setTimeout(() => controller.abort(new Error("Upstream request timed out")), timeoutMs);
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort(new Error("Upstream request timed out"));
+  }, timeoutMs);
   return {
     signal: controller.signal,
+    abort: (reason) => controller.abort(reason),
+    wasTimedOut: () => timedOut,
     cleanup: () => {
       clearTimeout(timeout);
       request.signal.removeEventListener("abort", abortFromClient);
@@ -711,7 +722,7 @@ async function handleSpeechRequest(request: Request, env: Env): Promise<Response
   // 2. Secondary fallback: OpenRouter audio/speech (if configured)
   const openrouterApiKey = env.OPENROUTER_API_KEY?.trim();
   if (openrouterApiKey) {
-    const upstreamAbort = createUpstreamAbortSignal(request, 12_000);
+    const upstreamAbort = createUpstreamAbortSignal(request, 30_000);
     try {
       const upstream = await fetch(`${OPENROUTER_BASE_URL}/audio/speech`, {
         method: "POST",
