@@ -550,7 +550,7 @@ export async function executeAgentTask(
   }
 
   // Gmail sending stays disabled until a structured message composer exists.
-  if (lower.includes('gmail') || lower.includes('email') || clean.includes('জিেইল') || clean.includes('ইমেইল')) {
+  if (lower.includes('gmail') || lower.includes('email') || clean.includes('জিমেইল') || clean.includes('ইমেইল')) {
     log('Gmail action যাচাই: structured recipient, subject ও body ছাড়া কোনো email API call করা হবে না।');
     if (!gmailAccessToken) {
       return {
