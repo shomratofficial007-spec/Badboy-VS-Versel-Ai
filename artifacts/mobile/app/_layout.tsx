@@ -1,15 +1,14 @@
-import React, { useEffect } from 'react';
-import { ActivityIndicator, Platform, View } from 'react-native';
+import React from 'react';
+import { ActivityIndicator, View } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { AssistantProvider, useAssistant } from '@/context/AssistantContext';
+import { AssistantProvider } from '@/context/AssistantContext';
 import { OwnerAuthProvider, useOwnerAuth } from '@/context/OwnerAuthContext';
 import { setAuthTokenGetter, setBaseUrl } from '@workspace/api-client-react';
 import { getOwnerToken } from '@/lib/assistant/ownerAuth';
-import { canDrawFloatingAssistant, startFloatingAssistant, stopFloatingAssistant } from '@/lib/assistant/jarvis';
 import { Stack } from 'expo-router';
 
 const domain = process.env.EXPO_PUBLIC_DOMAIN;
@@ -20,18 +19,6 @@ const queryClient = new QueryClient();
 
 function RootLayoutNav() {
   const { ready, authenticated } = useOwnerAuth();
-  const { ready: assistantReady, settings } = useAssistant();
-
-  useEffect(() => {
-    if (Platform.OS !== 'android' || !assistantReady) return;
-    if (!settings.floatingAssistantEnabled) {
-      void stopFloatingAssistant().catch(() => undefined);
-      return;
-    }
-    if (!canDrawFloatingAssistant()) return;
-    void startFloatingAssistant().catch(() => undefined);
-    return () => { void stopFloatingAssistant().catch(() => undefined); };
-  }, [assistantReady, settings.floatingAssistantEnabled]);
 
   if (!ready) {
     return (
