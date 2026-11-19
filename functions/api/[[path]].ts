@@ -1258,6 +1258,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     );
   }
 
+  const upstreamAbort = createUpstreamAbortSignal(request, 90_000);
   let upstream: Response;
   try {
     const routed = await fetchChatWithFreeFallbacks(apiKey, [
@@ -1266,20 +1267,27 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
         content: systemInstruction(personality, developerMode),
       },
       { role: "user", content: message.trim() },
-    ]);
+    ], upstreamAbort.signal);
     upstream = routed.response;
   } catch (err) {
+    const wasCancelled = request.signal.aborted;
+    const timedOut = upstreamAbort.wasTimedOut();
+    upstreamAbort.cleanup();
+    if (wasCancelled) return new Response(null, { status: 499, headers: CORS_HEADERS });
     console.error("[CF Function Error] OpenRouter fetch failed:", err instanceof Error ? err.message : String(err));
     return jsonResponse(
       {
-        code: "OPENROUTER_REQUEST_FAILED",
-        error: "OpenRouter service could not be reached. Check network connection.",
+        code: timedOut ? "OPENROUTER_REQUEST_TIMEOUT" : "OPENROUTER_REQUEST_FAILED",
+        error: timedOut
+          ? "OpenRouter request timed out. Please try again."
+          : "OpenRouter service could not be reached. Check network connection.",
       },
-      502
+      timedOut ? 504 : 502
     );
   }
 
   if (upstream.status === 429) {
+    upstreamAbort.cleanup();
     console.error("[CF Function Error] All configured free models are rate limited or unavailable (429).");
     return jsonResponse(
       {
@@ -1291,12 +1299,13 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   }
 
   if (!upstream.ok || !upstream.body) {
+    upstreamAbort.cleanup();
     // Avoid logging provider response bodies; keep diagnostics sanitized.
-    console.error(`[CF Function Error] OpenRouter upstream returned status ${upstream.status}.`);
+    console.error("[CF Function Error] OpenRouter upstream returned status " + upstream.status + ".");
     return jsonResponse(
       {
         code: "OPENROUTER_REQUEST_FAILED",
-        error: `OpenRouter error (${upstream.status}). Please try again later.`,
+        error: "OpenRouter error (" + upstream.status + "). Please try again later.",
       },
       502
     );
@@ -1305,12 +1314,21 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   const encoder = new TextEncoder();
   const reader = upstream.body.getReader();
   const decoder = new TextDecoder();
-
+  let downstreamCancelled = false;
   const stream = new ReadableStream({
     async start(controller) {
       let pending = "";
-      const send = (payload: string) =>
-        controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+      let streamClosed = false;
+      const send = (payload: string) => {
+        if (downstreamCancelled || streamClosed) return;
+        controller.enqueue(encoder.encode("data: " + payload + "\n\n"));
+      };
+      const close = () => {
+        if (streamClosed) return;
+        streamClosed = true;
+        try { controller.close(); } catch { /* downstream may already be closed */ }
+      };
+
       try {
         while (true) {
           const { done, value } = await reader.read();
@@ -1325,8 +1343,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
             for (const content of texts) send(JSON.stringify({ content }));
             if (streamDone) {
               send("[DONE]");
-              controller.close();
-              reader.releaseLock();
+              close();
               return;
             }
             boundary = pending.indexOf("\n\n");
@@ -1337,27 +1354,32 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
           const { texts } = extractDeltas(pending);
           for (const content of texts) send(JSON.stringify({ content }));
         }
-        send("[DONE]");
-        controller.close();
+        if (upstreamAbort.wasTimedOut()) {
+          send(JSON.stringify({ error: "OpenRouter request timed out." }));
+        } else {
+          send("[DONE]");
+        }
+        close();
       } catch (streamErr) {
+        const wasCancelled = downstreamCancelled || request.signal.aborted;
+        const timedOut = upstreamAbort.wasTimedOut();
         console.error("[CF Function Error] Stream reading interrupted:", streamErr instanceof Error ? streamErr.message : String(streamErr));
-        try {
-          send(
-            JSON.stringify({
-              error: "OpenRouter stream interrupted.",
-            })
-          );
-          controller.close();
-        } catch {
-          // Closed
+        if (!wasCancelled) {
+          send(JSON.stringify({
+            error: timedOut ? "OpenRouter request timed out." : "OpenRouter stream interrupted.",
+          }));
         }
+        close();
       } finally {
-        try {
-          reader.releaseLock();
-        } catch {
-          // Released
-        }
+        upstreamAbort.cleanup();
+        try { reader.releaseLock(); } catch { /* reader may already be released */ }
       }
+    },
+    async cancel(reason) {
+      downstreamCancelled = true;
+      upstreamAbort.abort(reason);
+      await reader.cancel(reason).catch(() => undefined);
+      upstreamAbort.cleanup();
     },
   });
 
