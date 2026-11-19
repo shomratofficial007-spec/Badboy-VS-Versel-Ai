@@ -38,65 +38,8 @@ if (!isReplitEnvironment) {
       return;
     }
 
-    const workspaceRoot = (function findRoot(dir) {
-      while (dir !== path.dirname(dir)) {
-        if (fs.existsSync(path.join(dir, 'pnpm-workspace.yaml'))) return dir;
-        dir = path.dirname(dir);
-      }
-      return projectRoot;
-    })(projectRoot);
-
-    // Expo export does not include Cloudflare's special _headers file in dist.
-    // Copy it explicitly so Workers Static Assets can apply the security headers.
-    const headersSource = path.join(projectRoot, 'public', '_headers');
-    const headersTarget = path.join(projectRoot, 'dist', '_headers');
-    if (fs.existsSync(headersSource)) {
-      fs.copyFileSync(headersSource, headersTarget);
-      console.log('Copied Cloudflare static asset headers to dist/_headers');
-    } else {
-      console.warn('Cloudflare static asset headers file is missing:', headersSource);
-      process.exitCode = 1;
-      return;
-    }
-
-    const tempDir = path.join(workspaceRoot, 'dist-worker-temp');
-    if (fs.existsSync(tempDir)) {
-      fs.rmSync(tempDir, { recursive: true, force: true });
-    }
-
-    console.log('Bundling Cloudflare Pages functions into _worker.js...');
-    const fnChild = spawn(
-      'npx', // NOSONAR: build-time tooling resolved from the developer/CI PATH, not user input.
-      ['wrangler', 'pages', 'functions', 'build', '--outdir', 'dist-worker-temp'],
-      { stdio: 'inherit', cwd: workspaceRoot },
-    );
-
-    fnChild.on('error', (err) => {
-      console.error('Failed to run wrangler pages functions build:', err.message);
-      process.exitCode = 1;
-    });
-
-    fnChild.on('exit', (fnCode) => {
-      if (fnCode === 0) {
-        const compiledJS = path.join(tempDir, 'index.js');
-        const targetWorker = path.join(projectRoot, 'dist', '_worker.js');
-        if (fs.existsSync(compiledJS)) {
-          fs.copyFileSync(compiledJS, targetWorker);
-          // Keep the Pages Functions bundle available for Pages builds, but prevent
-          // Workers Assets from publishing it as a public static file.
-          fs.writeFileSync(path.join(projectRoot, 'dist', '.assetsignore'), '_worker.js\n');
-          fs.rmSync(tempDir, { recursive: true, force: true });
-          console.log('Successfully bundled Cloudflare Pages worker at dist/_worker.js');
-          process.exitCode = 0;
-        } else {
-          console.error('Compiled function bundle not found at', compiledJS);
-          process.exitCode = 1;
-        }
-      } else {
-        console.error('Cloudflare Pages functions build failed with code:', fnCode);
-        process.exitCode = fnCode ?? 1;
-      }
-    });
+    console.log('Cloudflare Worker static web export is ready.');
+    process.exitCode = 0;
   });
   return;
 }
