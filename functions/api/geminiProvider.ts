@@ -108,6 +108,9 @@ export function adaptGeminiStreamToOpenAI(response: Response): Response {
         }
       }
     },
+    async cancel(reason) {
+      await reader.cancel(reason).catch(() => undefined);
+    },
   });
 
   const headers = new Headers(response.headers);
@@ -132,6 +135,7 @@ export async function fetchGeminiChat(
   messages: GeminiChatMessage[],
   model = DEFAULT_GEMINI_MODEL,
   fetcher: typeof fetch = fetch,
+  signal?: AbortSignal,
 ): Promise<Response> {
   const selectedModel = model.trim() || DEFAULT_GEMINI_MODEL;
   if (!/^[a-zA-Z0-9._-]{1,100}$/.test(selectedModel)) {
@@ -151,6 +155,7 @@ export async function fetchGeminiChat(
         "Content-Type": "application/json",
         "x-goog-api-key": apiKey,
       },
+      signal,
       body: JSON.stringify({
         ...payload,
         generationConfig: { maxOutputTokens: 8192 },
