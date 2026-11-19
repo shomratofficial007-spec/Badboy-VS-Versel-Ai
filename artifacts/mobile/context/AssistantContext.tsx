@@ -58,9 +58,13 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
         setSettings({ ...DEFAULT_SETTINGS, ...state.settings, roadmap: { ...DEFAULT_SETTINGS.roadmap, ...state.settings.roadmap } });
         setReady(true);
       })
-      .catch(() => {
+      .catch((cause) => {
         if (!mounted) return;
-        setStorageError('Local storage could not be opened. Your data was not sent anywhere.');
+        setStorageError(
+          cause instanceof Error
+            ? cause.message
+            : 'Local storage could not be opened. Your data was not sent anywhere.',
+        );
         setReady(true);
       });
     return () => {
