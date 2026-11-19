@@ -668,6 +668,7 @@ export function getProjectBrainSummary(): ProjectBrain {
       'Home Assistant, Slack, Discord, Google Calendar and Tavily require Worker secrets; /api/integrations/status is the runtime configuration source of truth.',
       'Static Plugin Registry statuses describe code/setup requirements, not live provider health; check /api/healthz, /api/developer/health and /api/integrations/status.',
       'Telegram actions require a user-configured bot token and chat ID.',
+      'Private Device Memory is stored locally and is not auto-added to AI prompts; AI context uses separate owner-scoped Cloudflare D1 Project Memory.',
       'Jarvis Screen Awareness requires explicit Android overlay and Accessibility permissions; text is read only after user action, best-effort redacted, and never auto-sent.',
       'The in-app Auto-QA panel reports NOT RUN unless actual CI/build evidence is supplied.',
     ],
