@@ -12,9 +12,16 @@ import {
   View,
 } from 'react-native';
 import { useOwnerAuth } from '@/context/OwnerAuthContext';
+import { Redirect } from 'expo-router';
+import { getOwnerRouteRedirect } from '@/lib/assistant/ownerAuth';
 
 export default function OwnerLoginScreen() {
-  const { signIn } = useOwnerAuth();
+  const { ready, authenticated, signIn } = useOwnerAuth();
+  const redirect = getOwnerRouteRedirect(ready, authenticated, ['owner-login']);
+  if (!ready) {
+    return <View style={styles.loading}><ActivityIndicator color="#d946ef" /></View>;
+  }
+  if (redirect) return <Redirect href={redirect} />;
   const [token, setToken] = useState('');
   const [tokenVisible, setTokenVisible] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -121,6 +128,7 @@ export default function OwnerLoginScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#07030d' },
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#07030d' },
   scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 18, paddingTop: 28, paddingBottom: 28, gap: 18 },
   hero: { minHeight: 286, width: '100%', alignItems: 'center', justifyContent: 'flex-end', paddingHorizontal: 14, paddingBottom: 16, paddingTop: 22, overflow: 'hidden', borderRadius: 20, borderWidth: 1.5, borderColor: '#8b2cff', shadowColor: '#a020f0', shadowOpacity: 0.45, shadowRadius: 18, elevation: 8 },
   heroArtworkImage: { borderRadius: 18 },
