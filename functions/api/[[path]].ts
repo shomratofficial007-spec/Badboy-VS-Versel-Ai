@@ -1359,6 +1359,10 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
             const { texts, done: streamDone } = extractDeltas(event);
             for (const content of texts) send(JSON.stringify({ content }));
             if (streamDone) {
+              if (downstreamCancelled || request.signal.aborted) {
+                close();
+                return;
+              }
               send("[DONE]");
               close();
               return;
@@ -1370,6 +1374,10 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
         if (pending.trim()) {
           const { texts } = extractDeltas(pending);
           for (const content of texts) send(JSON.stringify({ content }));
+        }
+        if (downstreamCancelled || request.signal.aborted) {
+          close();
+          return;
         }
         if (upstreamAbort.wasTimedOut()) {
           send(JSON.stringify({ error: "OpenRouter request timed out." }));
