@@ -1,14 +1,15 @@
-import React from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import React, { useEffect } from 'react';
+import { ActivityIndicator, AppState, Platform, View } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { AssistantProvider } from '@/context/AssistantContext';
+import { AssistantProvider, useAssistant } from '@/context/AssistantContext';
 import { OwnerAuthProvider, useOwnerAuth } from '@/context/OwnerAuthContext';
 import { setAuthTokenGetter, setBaseUrl } from '@workspace/api-client-react';
 import { getOwnerToken } from '@/lib/assistant/ownerAuth';
+import { canDrawFloatingAssistant, startFloatingAssistant, stopFloatingAssistant } from '@/lib/assistant/jarvis';
 import { Stack } from 'expo-router';
 
 const domain = process.env.EXPO_PUBLIC_DOMAIN;
@@ -18,7 +19,39 @@ setAuthTokenGetter(getOwnerToken);
 const queryClient = new QueryClient();
 
 function RootLayoutNav() {
-  const { ready } = useOwnerAuth();
+  const { ready, authenticated } = useOwnerAuth();
+  const { ready: assistantReady, settings } = useAssistant();
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+
+    const syncFloatingAssistant = () => {
+      // The overlay must never outlive the verified owner session.
+      if (
+        !ready ||
+        !assistantReady ||
+        !authenticated ||
+        !settings.floatingAssistantEnabled ||
+        !canDrawFloatingAssistant()
+      ) {
+        void stopFloatingAssistant().catch(() => undefined);
+        return;
+      }
+      void startFloatingAssistant().catch((cause) => {
+        console.warn('Could not restore the Jarvis floating assistant:', cause);
+      });
+    };
+
+    syncFloatingAssistant();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') syncFloatingAssistant();
+    });
+
+    return () => {
+      subscription.remove();
+      void stopFloatingAssistant().catch(() => undefined);
+    };
+  }, [ready, assistantReady, authenticated, settings.floatingAssistantEnabled]);
 
   // Do not let Expo Router render a deep-linked screen until the persisted
   // owner session has been restored and verified.
