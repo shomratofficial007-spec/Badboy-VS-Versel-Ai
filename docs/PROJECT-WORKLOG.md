@@ -147,3 +147,10 @@ Baseline commit inspected: `0664e673f145249e0ff2ff9b6d76c8145cb7d2b2`.
 - artifacts/mobile/scripts/build.js still invoked `wrangler pages functions build` after Expo web export and wrote a Pages `_worker.js` bundle. This was a hidden Pages deployment dependency missed by the initial filename-only cleanup. It is being removed so the Expo build emits static assets for the root Worker only.
 - README-PORTABLE.txt, replit.md, and .env.example contained stale Express/Postgres/PORT deployment instructions; these are being aligned with Cloudflare Worker development and secrets.
 - The root TypeScript project references the Cloudflare functions workspace and shared libraries only; no api-server TypeScript project reference was present.
+
+### Worker-native test migration and lockfile evidence
+
+- Removing Pages-specific exports exposed an existing test coupling: functions/functions.test.ts imported onRequestGet/onRequestPost from the Pages adapter. The tests now call the canonical handleApiRequest Worker handler directly and inject a test owner token only for protected routes; /api/auth/verify is exercised without token injection.
+- Removed the stale generated functions/functions.test.js file, which still imported the deleted Pages handlers. The maintained source test remains functions/functions.test.ts.
+- The repository's pnpm 10.8.1 lockfile refresh workflow was enabled for this branch and completed successfully (workflow run 44625061986). It regenerated the lockfile and removed the artifacts/api-server importer. The package snapshot section still contains some packages formerly used by Express; these are not importer dependencies and will be reviewed separately before claiming all transitive snapshots are pruned.
+- The first CI runs were superseded/cancelled by subsequent commits; validation must be read from the latest PR head only.
