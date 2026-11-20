@@ -5,6 +5,13 @@ export function normalizeProviderBaseUrl(value: string): string {
   try { parsed = new URL(input); } catch { throw new Error('সঠিক absolute HTTPS URL দিন।'); }
   if (parsed.protocol !== 'https:') throw new Error('নিরাপত্তার জন্য HTTPS endpoint ব্যবহার করুন।');
   if (parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error('Base URL-এ username, password, query বা fragment রাখা যাবে না।');
+  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
+  const blockedHost = !hostname.includes('.') ||
+    hostname.includes(':') ||
+    /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname) ||
+    ['localhost', '.localhost', '.local', '.internal', '.test', '.invalid', '.example', '.onion']
+      .some((suffix) => hostname === suffix || hostname.endsWith(suffix));
+  if (blockedHost) throw new Error('Cloudflare Worker থেকে public HTTPS hostname ব্যবহার করুন; localhost ও IP endpoint সমর্থিত নয়।');
   return parsed.toString().replace(/\/+$/, '');
 }
 
