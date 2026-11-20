@@ -7,7 +7,7 @@
 - pnpm --filter @workspace/functions test — run Cloudflare Worker API tests
 - pnpm --filter @workspace/mobile run test — run mobile tests
 - pnpm build — build the Expo web assets and validate the workspace
-- pnpm deploy — deploy the single root Cloudflare Worker (production deployment; use only with release authorization)
+- pnpm run deploy — deploy the single root Cloudflare Worker (production deployment; use only with release authorization)
 
 ## Architecture
 
