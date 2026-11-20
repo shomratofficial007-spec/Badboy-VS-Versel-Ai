@@ -1747,3 +1747,67 @@ test("assistant chat reports empty, truncated and malformed upstream streams wit
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("speech endpoint uses the authenticated OpenRouter audio fallback when Edge TTS is unavailable", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalWebSocket = globalThis.WebSocket;
+  let requestedUrl = "";
+  let authorization = "";
+  (globalThis as any).WebSocket = class {
+    constructor() { throw new Error("Edge TTS WebSocket is unavailable."); }
+  };
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requestedUrl = String(input);
+    authorization = new Headers(init?.headers).get("Authorization") ?? "";
+    return new Response(new Uint8Array([1, 2, 3]), {
+      status: 200,
+      headers: { "Content-Type": "audio/mpeg" },
+    });
+  }) as typeof globalThis.fetch;
+
+  try {
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/speech", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "হ্যালো", language: "bn-BD" }),
+      }),
+      env: { OPENROUTER_API_KEY: "test-openrouter-key" },
+    } as any);
+    assert.equal(response.status, 200);
+    assert.equal(requestedUrl, "https://openrouter.ai/api/v1/audio/speech");
+    assert.equal(authorization, "Bearer test-openrouter-key");
+    assert.equal(response.headers.get("X-TTS-Engine"), "openrouter-fish-audio");
+    assert.deepEqual(Array.from(new Uint8Array(await response.arrayBuffer())), [1, 2, 3]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalWebSocket === undefined) delete (globalThis as any).WebSocket;
+    else (globalThis as any).WebSocket = originalWebSocket;
+  }
+});
+
+test("assistant chat converts an upstream provider error event into a stream error", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response('data: {"error":"upstream failed"}\\n\\n', {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" },
+  })) as typeof globalThis.fetch;
+
+  try {
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "hello" }),
+      }),
+      env: { OPENROUTER_API_KEY: "test-openrouter-key" },
+    } as any);
+    assert.equal(response.status, 200);
+    const stream = await response.text();
+    assert.match(stream, /OpenRouter stream interrupted/);
+    assert.doesNotMatch(stream, /data: \\[DONE\\]/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
