@@ -479,7 +479,7 @@ function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {
   // Keep the historical test fixture indices stable while the Settings screen
   // adds new state for Telegram, voice search, reminders and device controls.
   const legacyStateIndexMap: Record<number, number> = {
-    9: 10, 10: 11, 12: 18, 14: 20, 15: 21, 16: 22, 17: 23, 18: 24,
+    9: 10, 10: 11, 12: 18, 14: 21, 15: 22, 16: 23, 17: 24, 18: 25,
     24: 30, 25: 31, 26: 32, 27: 33, 28: 34, 29: 35, 32: 38,
     40: 46, 41: 47, 42: 48, 43: 49,
   };
