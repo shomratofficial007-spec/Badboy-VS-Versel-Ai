@@ -85,11 +85,37 @@ export function isOwnerLoginRequiredError(error: unknown): boolean {
   return /owner login is required|owner (?:token|authentication).*?(?:invalid|expired|required|401)|(?:401|403).*?(?:owner|auth)/i.test(message);
 }
 
+export function getOwnerRouteRedirect(
+  ready: boolean,
+  authenticated: boolean,
+  segments: readonly string[],
+): '/owner-login' | '/(tabs)' | null {
+  if (!ready) return null;
+  const isOwnerLoginRoute = segments[0] === 'owner-login';
+  if (!authenticated && !isOwnerLoginRoute) return '/owner-login';
+  if (authenticated && isOwnerLoginRoute) return '/(tabs)';
+  return null;
+}
+
 export async function restoreOwnerSession(): Promise<boolean> {
-  // Re-read native persistence at app startup instead of trusting this module's
-  // in-memory cache. This makes a fresh JS runtime restore test meaningful and
-  // detects a token that was cleared from SecureStore outside this module.
-  if (isWebPlatform()) return Boolean(activeToken);
-  activeToken = null;
-  return Boolean(await getOwnerToken());
+  // Always re-read native persistence; a cached token is not proof of a valid
+  // owner session. The Worker remains the authority for authentication.
+  if (!isWebPlatform()) activeToken = null;
+  const token = await getOwnerToken();
+  if (!token) return false;
+
+  try {
+    await verifyOwnerToken(token);
+    return true;
+  } catch (error) {
+    const status = error && typeof error === 'object' && 'status' in error
+      ? (error as { status?: number }).status
+      : undefined;
+    // Revoke credentials that the Worker explicitly rejects. Preserve them on
+    // network errors so a temporary outage does not destroy the owner's token.
+    if (status === 401 || status === 403) {
+      await clearOwnerToken();
+    }
+    return false;
+  }
 }

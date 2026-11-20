@@ -9,6 +9,8 @@ const signInCalls: string[] = [];
 const hookState: unknown[] = [];
 let hookIndex = 0;
 let rejectSignIn = false;
+let authReady = true;
+let authenticated = false;
 let holdSignIn = false;
 let resolvePendingSignIn: (() => void) | null = null;
 
@@ -61,8 +63,13 @@ mock.module('react-native', {
     View: host('section'),
   },
 });
+mock.module('expo-router', {
+  namedExports: {
+    Redirect: ({ href }: { href: string }) => React.createElement('output', { 'data-redirect': href }, `redirect:${href}`),
+  },
+});
 mock.module('../context/OwnerAuthContext.tsx', {
-  namedExports: { useOwnerAuth: () => ({ signIn: async (token: string) => {
+  namedExports: { useOwnerAuth: () => ({ ready: authReady, authenticated, signIn: async (token: string) => {
     signInCalls.push(token);
     if (holdSignIn) await new Promise<void>((resolve) => { resolvePendingSignIn = resolve; });
     if (rejectSignIn) throw new Error('invalid owner token');
@@ -70,6 +77,29 @@ mock.module('../context/OwnerAuthContext.tsx', {
 });
 
 const ownerLoginScreenPromise = import('../app/owner-login');
+
+
+test('Owner Login waits for session restoration before showing the token form', async () => {
+  const { default: OwnerLoginScreen } = await ownerLoginScreenPromise;
+  authReady = false;
+  authenticated = false;
+  hookState.length = 0;
+  const html = renderOwnerLogin(OwnerLoginScreen);
+  assert.match(html, /loading/);
+  assert.doesNotMatch(html, /Paste Owner Token/);
+  authReady = true;
+});
+
+test('an already authenticated owner is redirected from Owner Login to Chat', async () => {
+  const { default: OwnerLoginScreen } = await ownerLoginScreenPromise;
+  authReady = true;
+  authenticated = true;
+  hookState.length = 0;
+  const html = renderOwnerLogin(OwnerLoginScreen);
+  assert.match(html, /data-redirect/);
+  assert.match(html, /redirect:\/\(tabs\)/);
+  authenticated = false;
+});
 
 test('Owner Login starts with a disabled secure-token action and explains local data privacy', async () => {
   const { default: OwnerLoginScreen } = await ownerLoginScreenPromise;
