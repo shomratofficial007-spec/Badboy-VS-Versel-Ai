@@ -1509,7 +1509,8 @@ test("BYOK provider chat is owner-authenticated and forwards only the provider k
     assert.equal(calls[0].redirect, "manual");
     assert.equal(calls[0].body.stream, true);
     assert.equal(calls[0].body.model, "gpt-4o-mini");
-    assert.equal(JSON.stringify(await response.headers), JSON.stringify(await response.headers));
+    const exposedResponseHeaders = [...response.headers.entries()].map(([name, value]) => name + ":" + value).join("\\n");
+    assert.equal(exposedResponseHeaders.includes("provider-secret-test"), false);
   } finally {
     globalThis.fetch = originalFetch;
   }
