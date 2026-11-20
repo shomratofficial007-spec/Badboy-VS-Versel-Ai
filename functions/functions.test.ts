@@ -1457,3 +1457,136 @@ test("direct Developer Agent helpers cover every engine and payload validation b
   assert.equal(resolveDeveloperAnalysisEngine("copilot").status, "unavailable");
   assert.equal(resolveDeveloperAnalysisEngine("auto").status, "fallback");
 });
+
+
+test("BYOK provider chat is owner-authenticated and forwards only the provider key to the selected HTTPS endpoint", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ url: string; headers: Headers; body: any; redirect?: string }> = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({
+      url: String(input),
+      headers: new Headers(init?.headers),
+      body: JSON.parse(String(init?.body)),
+      redirect: init?.redirect,
+    });
+    return new Response(
+      'data: {"choices":[{"delta":{"content":"proxied"}}]}\n\ndata: [DONE]\n\n',
+      { status: 200, headers: { "Content-Type": "text/event-stream; charset=utf-8" } },
+    );
+  }) as typeof fetch;
+
+  try {
+    const request = () => new Request("https://example.com/api/assistant/provider-chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Provider-Key": "provider-secret-test",
+      },
+      body: JSON.stringify({
+        providerId: "openai",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    });
+
+    const unauthorized = await rawOnRequestPost({
+      request: request(),
+      env: { BADBOY_OWNER_TOKEN: TEST_OWNER_TOKEN },
+    } as any);
+    assert.equal(unauthorized.status, 401);
+    assert.equal(calls.length, 0);
+
+    const response = await onRequestPost({ request: request(), env: {} } as any);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("Content-Type") ?? "", /text\/event-stream/i);
+    assert.match(await response.text(), /proxied/);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, "https://api.openai.com/v1/chat/completions");
+    assert.equal(calls[0].headers.get("Authorization"), "Bearer provider-secret-test");
+    assert.equal(calls[0].headers.get("X-Provider-Key"), null);
+    assert.equal(calls[0].headers.get("Content-Type"), "application/json");
+    assert.equal(calls[0].redirect, "manual");
+    assert.equal(calls[0].body.stream, true);
+    assert.equal(calls[0].body.model, "gpt-4o-mini");
+    assert.equal(JSON.stringify(await response.headers), JSON.stringify(await response.headers));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("BYOK provider model discovery is proxied and returns sanitized model IDs", async () => {
+  const originalFetch = globalThis.fetch;
+  let upstreamUrl = "";
+  let upstreamAuthorization = "";
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    upstreamUrl = String(input);
+    upstreamAuthorization = new Headers(init?.headers).get("Authorization") ?? "";
+    return new Response(JSON.stringify({
+      data: [
+        { id: "gpt-4o-mini" },
+        { id: "gpt-4o-mini" },
+        { id: "invalid model id" },
+        { id: "gpt-4.1" },
+      ],
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  }) as typeof fetch;
+
+  try {
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/provider-models", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Provider-Key": "provider-secret-test",
+        },
+        body: JSON.stringify({ providerId: "openai", baseUrl: "https://api.openai.com/v1" }),
+      }),
+      env: {},
+    } as any);
+    assert.equal(response.status, 200);
+    assert.equal(upstreamUrl, "https://api.openai.com/v1/models");
+    assert.equal(upstreamAuthorization, "Bearer provider-secret-test");
+    assert.deepEqual(await response.json(), {
+      data: [{ id: "gpt-4.1" }, { id: "gpt-4o-mini" }],
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("BYOK provider proxy rejects local HTTP/IP endpoints and blocks credential redirects", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = (async () => {
+    fetchCalls += 1;
+    return new Response(null, { status: 302, headers: { Location: "https://attacker.example/collect" } });
+  }) as typeof fetch;
+
+  try {
+    const invalid = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/provider-models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Provider-Key": "provider-secret-test" },
+        body: JSON.stringify({ providerId: "custom", baseUrl: "https://127.0.0.1:8443/v1" }),
+      }),
+      env: {},
+    } as any);
+    assert.equal(invalid.status, 400);
+    assert.equal(fetchCalls, 0);
+
+    const redirected = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/provider-models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Provider-Key": "provider-secret-test" },
+        body: JSON.stringify({ providerId: "custom", baseUrl: "https://api.example.com/v1" }),
+      }),
+      env: {},
+    } as any);
+    assert.equal(redirected.status, 502);
+    assert.match((await redirected.json() as any).error, /redirects are blocked/i);
+    assert.equal(fetchCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
