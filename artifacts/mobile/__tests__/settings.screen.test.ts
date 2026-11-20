@@ -3,9 +3,12 @@ import { mock, test } from 'node:test';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const mobileRoot = process.cwd().replace(/\\/$/, '').endsWith('/artifacts/mobile')
-  ? process.cwd()
-  : resolve(process.cwd(), 'artifacts/mobile');
+const currentWorkingDirectory = process.cwd().endsWith('/')
+  ? process.cwd().slice(0, -1)
+  : process.cwd();
+const mobileRoot = currentWorkingDirectory.endsWith('/artifacts/mobile')
+  ? currentWorkingDirectory
+  : resolve(currentWorkingDirectory, 'artifacts/mobile');
 const mobileModule = (path: string) => pathToFileURL(resolve(mobileRoot, path)).href;
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
