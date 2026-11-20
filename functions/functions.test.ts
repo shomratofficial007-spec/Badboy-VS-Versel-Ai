@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import test from "node:test";
 // Node ESM imports require .js extension when pointing to typescript files
-import { handleApiRequest } from "./api/[[path]].ts";
+import worker, { handleApiRequest } from "./api/[[path]].ts";
 import { handleDeveloperDataRequest } from "./api/developerData.ts";
 import {
   buildDeveloperAnalysisMessages,
@@ -1815,4 +1815,25 @@ test("assistant chat converts an upstream provider error event into a stream err
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test("Worker fetch wrapper applies security headers to every API response path", async () => {
+  const response = await worker.fetch(
+    new Request("https://example.com/api/assistant/provider-chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ providerId: "openai", messages: [] }),
+    }),
+    {},
+    { waitUntil() {} },
+  );
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get("Cache-Control"), "no-store");
+  assert.equal(response.headers.get("X-Content-Type-Options"), "nosniff");
+  assert.equal(response.headers.get("X-Frame-Options"), "DENY");
+  assert.equal(response.headers.get("Referrer-Policy"), "strict-origin-when-cross-origin");
+  assert.equal(response.headers.get("Strict-Transport-Security"), "max-age=31536000; includeSubDomains");
+  const payload = await response.json() as { code?: string };
+  assert.equal(payload.code, "OWNER_AUTH_NOT_CONFIGURED");
 });
