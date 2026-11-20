@@ -24,7 +24,7 @@ mock.module('./ownerAuth.ts', {
   namedExports: { getOwnerToken: async () => 'owner-token-test' },
 });
 mock.module('./ownerJsonRequest.ts', {
-  namedExports: { apiUrl: (path: string) => `https://worker.example/api/api${path}` },
+  namedExports: { apiUrl: (path: string) => `https://worker.example/api${path}` },
 });
 mock.module('./providerSettings.ts', {
   namedExports: {
