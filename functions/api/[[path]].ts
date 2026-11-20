@@ -1,4 +1,5 @@
 import { createUpstreamAbortSignal } from "./upstreamAbort.ts";
+import { handleProviderChatProxy, handleProviderModelsProxy } from "./providerProxy.ts";
 import { buildDeveloperAnalysisMessages, resolveDeveloperAnalysisEngine, validateDeveloperAnalysisPayload } from "./developerAgent.ts";
 import { authenticatePersonalOwner } from "./personalAuth.ts";
 import { handleDeveloperDataRequest } from "./developerData.ts";
@@ -40,7 +41,7 @@ interface Env {
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, X-Provider-Key",
 };
 
 // Removes trailing slashes without a backtracking regex (SonarCloud S5852).
@@ -160,6 +161,7 @@ function jsonResponse(data: unknown, status = 200) {
 }
 
 const MAX_CHAT_REQUEST_BYTES = 64 * 1024;
+const MAX_PROVIDER_REQUEST_BYTES = 160 * 1024;
 const MAX_DEVELOPER_REQUEST_BYTES = 16 * 1024;
 const MAX_SPEECH_REQUEST_BYTES = 64 * 1024;
 // Base64 expands audio by roughly 4/3. Keep the existing 6 MB encoded-audio
@@ -1222,6 +1224,17 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
 
   if (request.method === "POST" && (pathname === "/api/assistant/speech" || pathname === "/api/assistant/speak")) {
     return handleSpeechRequest(request, env);
+  }
+
+  if (request.method === "POST" && (
+    pathname === "/api/assistant/provider-chat" ||
+    pathname === "/api/assistant/provider-models"
+  )) {
+    const parsedBody = await readJsonBody(request, MAX_PROVIDER_REQUEST_BYTES);
+    if ("response" in parsedBody) return parsedBody.response;
+    return pathname === "/api/assistant/provider-chat"
+      ? handleProviderChatProxy(request, parsedBody.body)
+      : handleProviderModelsProxy(request, parsedBody.body);
   }
 
   // Preserve the legacy Netlify/Express voice route while keeping the
