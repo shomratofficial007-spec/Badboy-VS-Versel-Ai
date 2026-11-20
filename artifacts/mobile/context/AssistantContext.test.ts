@@ -143,7 +143,7 @@ test('AssistantProvider reports local storage restore failures without discardin
   await flushEffects();
   const value = renderProvider();
   assert.equal(value.ready, true);
-  assert.match(value.storageError, /Local storage could not be opened/);
+  assert.match(value.storageError, /disk unavailable/);
   assert.deepEqual(value.messages, []);
   assert.equal(value.settings.theme, 'badboy');
 });
