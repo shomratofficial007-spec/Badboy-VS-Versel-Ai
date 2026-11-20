@@ -1591,3 +1591,49 @@ test("BYOK provider proxy rejects local HTTP/IP endpoints and blocks credential 
     globalThis.fetch = originalFetch;
   }
 });
+
+test("Worker transcription and speech routes reject invalid requests and preserve client TTS fallback", async () => {
+  const transcriptionWithoutProvider = await onRequestPost({
+    request: new Request("https://example.com/api/assistant/transcribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ audioBase64: "YXVkaW8=", format: "wav" }),
+    }),
+    env: {},
+  } as any);
+  assert.equal(transcriptionWithoutProvider.status, 503);
+  assert.equal((await transcriptionWithoutProvider.json() as any).code, "AI_NOT_CONFIGURED");
+
+  const transcriptionWrongContentType = await onRequestPost({
+    request: new Request("https://example.com/api/assistant/transcribe", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: "not-json",
+    }),
+    env: { GROQ_API_KEY: "test-groq-key" },
+  } as any);
+  assert.equal(transcriptionWrongContentType.status, 415);
+
+  const invalidSpeech = await onRequestPost({
+    request: new Request("https://example.com/api/assistant/speech", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "   " }),
+    }),
+    env: {},
+  } as any);
+  assert.equal(invalidSpeech.status, 400);
+  assert.equal((await invalidSpeech.json() as any).code, "INVALID_SPEECH_REQUEST");
+
+  const unsupportedSpeechLocale = await onRequestPost({
+    request: new Request("https://example.com/api/assistant/speech", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "Hello", language: "zz-ZZ" }),
+    }),
+    env: {},
+  } as any);
+  assert.equal(unsupportedSpeechLocale.status, 503);
+  assert.equal((await unsupportedSpeechLocale.json() as any).code, "FALLBACK_TO_CLIENT_TTS");
+});
+
