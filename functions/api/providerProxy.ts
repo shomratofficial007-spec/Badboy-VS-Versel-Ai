@@ -101,6 +101,7 @@ function buildUpstreamHeaders(providerId: ProviderId, apiKey: string, accept: st
     Accept: accept,
   });
   if (providerId === "openrouter") {
+    headers.set("HTTP-Referer", "https://badboy-vs-versel-ai.app");
     headers.set("X-Title", "Badboy AI");
   }
   return headers;
