@@ -37,7 +37,7 @@ The canonical configuration is the root wrangler.json:
 Deploy from the repository root only:
 
 ```sh
-pnpm deploy
+pnpm run deploy
 ```
 
 Do not use Cloudflare Pages, Netlify, Express, Docker API deployment, or a second Worker project. The root GitHub Actions deployment workflow deploys on pushes to main; PR validation does not deploy production.
