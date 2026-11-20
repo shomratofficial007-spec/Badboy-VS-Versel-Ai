@@ -38,16 +38,32 @@ interface Env {
   GOOGLE_CALENDAR_ACCESS_TOKEN?: string;
 }
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, X-Provider-Key",
+const API_SECURITY_HEADERS = {
   "Cache-Control": "no-store",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
 };
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, X-Provider-Key",
+  ...API_SECURITY_HEADERS,
+};
+
+function withApiSecurityHeaders(response: Response): Response {
+  const headers = new Headers(response.headers);
+  for (const [name, value] of Object.entries(API_SECURITY_HEADERS)) {
+    headers.set(name, value);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
 
 // Removes trailing slashes without a backtracking regex (SonarCloud S5852).
 function trimTrailingSlashes(value: string): string {
@@ -1459,7 +1475,7 @@ export default {
       url.pathname === "/healthz" ||
       url.pathname === "/health"
     ) {
-      return handleApiRequest(request, env);
+      return withApiSecurityHeaders(await handleApiRequest(request, env));
     }
     const assets = (env as { ASSETS?: { fetch: (req: Request) => Promise<Response> } }).ASSETS;
     if (assets) {
