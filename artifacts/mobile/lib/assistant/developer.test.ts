@@ -14,7 +14,7 @@ mock.module('./storage', {
     storeMemoryNote: async () => undefined,
   },
 });
-import {
+const {
   generateDevelopmentPlan,
   getProjectBrainSummary,
   runAutoQASuite,
@@ -26,7 +26,7 @@ import {
   DEFAULT_REPO_CONFIG,
   createGitHubPullRequest,
   previewGitHubChanges,
-} from './developer';
+} = await import('./developer');
 
 test('detectMessageLanguage - identifies Bengali, Banglish, English, and mixed script', () => {
   assert.strictEqual(detectMessageLanguage('আজকের খবর কী?'), 'bn');
