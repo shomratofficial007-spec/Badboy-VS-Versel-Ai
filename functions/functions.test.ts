@@ -73,6 +73,11 @@ test("onRequestGet - health check endpoint returns status ok", async () => {
 
   const response = await onRequestGet(context);
   assert.strictEqual(response.status, 503);
+  assert.strictEqual(response.headers.get("Cache-Control"), "no-store");
+  assert.strictEqual(response.headers.get("X-Content-Type-Options"), "nosniff");
+  assert.strictEqual(response.headers.get("X-Frame-Options"), "DENY");
+  assert.strictEqual(response.headers.get("Referrer-Policy"), "strict-origin-when-cross-origin");
+  assert.strictEqual(response.headers.get("Strict-Transport-Security"), "max-age=31536000; includeSubDomains");
   const json = (await response.json()) as any;
   assert.deepStrictEqual(json, {
     status: "degraded",
