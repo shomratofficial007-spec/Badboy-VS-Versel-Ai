@@ -10,7 +10,7 @@ const currentWorkingDirectory = process.cwd().endsWith('/')
 const mobileRoot = currentWorkingDirectory.endsWith('/artifacts/mobile')
   ? currentWorkingDirectory
   : resolve(currentWorkingDirectory, 'artifacts/mobile');
-if (!existsSync(resolve(mobileRoot, 'lib/assistant/developerData.ts'))) {
+if (!existsSync(resolve(mobileRoot, 'lib/assistant/developerData'))) {
   throw new Error(`Settings test mock root does not contain mobile sources: ${mobileRoot}`);
 }
 console.log('SETTINGS_TEST_MOBILE_ROOT', mobileRoot);
@@ -111,8 +111,8 @@ const settings = {
 mock.module('../assets/images/badboy-settings-avatar.jpg', { defaultExport: {} });
 mock.module('expo-router', { namedExports: { useRouter: () => ({ back: () => {} }) } });
 
-mock.module(mobileModule('components/ProviderManagerSection.tsx'), { namedExports: { ProviderManagerSection: () => null } });
-mock.module(mobileModule('lib/assistant/jarvis.ts'), { namedExports: { canDrawFloatingAssistant: () => false, openFloatingAssistantPermissionSettings: async () => {}, startFloatingAssistant: async () => {}, stopFloatingAssistant: async () => {}, isScreenAwarenessEnabled: () => false, openScreenAwarenessSettings: async () => { screenSettingsCalls += 1; } } });
+mock.module(mobileModule('components/ProviderManagerSection'), { namedExports: { ProviderManagerSection: () => null } });
+mock.module(mobileModule('lib/assistant/jarvis'), { namedExports: { canDrawFloatingAssistant: () => false, openFloatingAssistantPermissionSettings: async () => {}, startFloatingAssistant: async () => {}, stopFloatingAssistant: async () => {}, isScreenAwarenessEnabled: () => false, openScreenAwarenessSettings: async () => { screenSettingsCalls += 1; } } });
 
 mock.module('react-native', {
   namedExports: {
@@ -137,7 +137,7 @@ mock.module('@expo/vector-icons', { namedExports: { Feather: () => null } });
 mock.module('react-native-safe-area-context', {
   namedExports: { useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) },
 });
-mock.module(mobileModule('context/AssistantContext.tsx'), {
+mock.module(mobileModule('context/AssistantContext'), {
   namedExports: {
     useAssistant: () => ({
       settings, updateSettings: (value: unknown) => { settingsUpdates.push(value); }, clearChat: async () => { clearChatCalls.push('cleared'); },
@@ -145,11 +145,11 @@ mock.module(mobileModule('context/AssistantContext.tsx'), {
     }),
   },
 });
-mock.module(mobileModule('context/OwnerAuthContext.tsx'), {
+mock.module(mobileModule('context/OwnerAuthContext'), {
   namedExports: { useOwnerAuth: () => ({ authenticated: true, signOut: async () => { signOutCalls.push('signed-out'); } }) },
 });
-mock.module(mobileModule('hooks/useColors.ts'), { namedExports: { useColors: () => colors } });
-mock.module(mobileModule('lib/assistant/voice.ts'), {
+mock.module(mobileModule('hooks/useColors'), { namedExports: { useColors: () => colors } });
+mock.module(mobileModule('lib/assistant/voice'), {
   namedExports: {
     VOICE_LANGUAGES: [
       { code: 'bn-BD', label: 'বাংলা (বাংলাদেশ)' },
@@ -177,7 +177,7 @@ mock.module(mobileModule('lib/assistant/voice.ts'), {
     stopSpeaking: async () => {},
   },
 });
-mock.module(mobileModule('lib/assistant/api.ts'), {
+mock.module(mobileModule('lib/assistant/api'), {
   namedExports: {
     streamDeveloperAnalysis: (...args: [string, string, string, (chunk: string) => void]) => {
       developerAnalysisCalls.push(args);
@@ -186,7 +186,7 @@ mock.module(mobileModule('lib/assistant/api.ts'), {
     streamReply: async () => {},
   },
 });
-mock.module(mobileModule('lib/assistant/developerData.ts'), {
+mock.module(mobileModule('lib/assistant/developerData'), {
   namedExports: {
     addDeveloperProjectMemory: (...args: [any]) => { developerDataCalls.push({ method: 'addDeveloperProjectMemory', args }); return developerDataHandlers.addDeveloperProjectMemory(...args); },
     deleteDeveloperProjectMemory: (...args: [string]) => { developerDataCalls.push({ method: 'deleteDeveloperProjectMemory', args }); return developerDataHandlers.deleteDeveloperProjectMemory(...args); },
@@ -199,10 +199,10 @@ mock.module(mobileModule('lib/assistant/developerData.ts'), {
     saveDeveloperProject: (...args: [any]) => { developerDataCalls.push({ method: 'saveDeveloperProject', args }); return developerDataHandlers.saveDeveloperProject(...args); },
   },
 });
-mock.module(mobileModule('lib/assistant/expertReview.ts'), {
+mock.module(mobileModule('lib/assistant/expertReview'), {
   namedExports: { buildExpertReviewPrompt: () => '', inspectBadboyRepository: async () => ({}) },
 });
-mock.module(mobileModule('lib/assistant/telegram.ts'), {
+mock.module(mobileModule('lib/assistant/telegram'), {
   namedExports: {
     getTelegramOwnerChatId: (...args: unknown[]) => { telegramCalls.push({ method: 'getTelegramOwnerChatId', args }); return telegramHandlers.getTelegramOwnerChatId(); },
     bindTelegramOwnerChat: (...args: [number]) => { telegramCalls.push({ method: 'bindTelegramOwnerChat', args }); return telegramHandlers.bindTelegramOwnerChat(...args); },
@@ -214,7 +214,7 @@ mock.module(mobileModule('lib/assistant/telegram.ts'), {
     sendTelegramMessage: (...args: [string]) => { telegramCalls.push({ method: 'sendTelegramMessage', args }); return telegramHandlers.sendTelegramMessage(...args); },
   },
 });
-mock.module(mobileModule('lib/assistant/developer.ts'), {
+mock.module(mobileModule('lib/assistant/developer'), {
   namedExports: {
     previewGitHubChanges: (...args: [any]) => { githubCalls.push({ method: 'previewGitHubChanges', args }); return githubHandlers.previewGitHubChanges(...args); },
     executeAgentTask: (...args: [string, boolean, boolean]) => { agentTaskCalls.push(args); return agentTaskHandler(...args); },
@@ -226,7 +226,7 @@ mock.module(mobileModule('lib/assistant/developer.ts'), {
     saveGitHubToken: (...args: [string]) => { githubCalls.push({ method: 'saveGitHubToken', args }); return githubHandlers.saveGitHubToken(...args); },
   },
 });
-mock.module(mobileModule('lib/assistant/developerEngine.ts'), {
+mock.module(mobileModule('lib/assistant/developerEngine'), {
   namedExports: { resolveDeveloperEngine: (engine: string) => engine === 'copilot' ? { status: 'unavailable', reason: 'Copilot runtime unavailable' } : { status: 'available', activeEngine: 'native' } },
 });
 
