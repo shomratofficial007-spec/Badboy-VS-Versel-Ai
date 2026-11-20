@@ -58,3 +58,4 @@ Thumbs.db
 
 # Generated Android local configuration
 artifacts/mobile/android/local.properties
+artifacts/mobile/static-build/
