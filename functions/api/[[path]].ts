@@ -1224,6 +1224,15 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     return handleSpeechRequest(request, env);
   }
 
+  // Preserve the legacy Netlify/Express voice route while keeping the
+  // current text-only model capability contract explicit on the Worker.
+  if (request.method === "POST" && pathname === "/api/assistant/voice") {
+    return jsonResponse({
+      code: "MODEL_AUDIO_UNSUPPORTED",
+      error: "The selected free chat model accepts text input and returns text only. Voice synthesis is handled by the supported /api/assistant/speech route or client-side TTS.",
+    }, 501);
+  }
+
   if (request.method !== "POST" || pathname !== "/api/assistant/chat") {
     return jsonResponse({ error: "Endpoint not found." }, 404);
   }
