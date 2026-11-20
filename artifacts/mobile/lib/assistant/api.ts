@@ -140,8 +140,8 @@ async function streamOpenAICompatibleResponse(response: Response, onChunk: (chun
   }
 }
 async function streamConfiguredProviderReply(message: string, settings: AssistantSettings, onChunk: (chunk: string) => void, history: ChatHistoryItem[] = [], memoryContext = '', skillContext = ''): Promise<void> {
-  // Keep Owner Login mandatory; the Owner Token is never sent to a third-party provider.
-  await ownerAuthorizationHeader();
+  // All provider traffic is proxied by the authenticated Cloudflare Worker.
+  // The provider key is sent only to the Worker, which forwards it without storing it.
   const providerId = settings.aiProvider;
   if (providerId === 'server') throw new Error('External Provider selection is required for this request.');
   const preset = AI_PROVIDER_PRESETS.find((item) => item.id === providerId);
@@ -156,10 +156,20 @@ async function streamConfiguredProviderReply(message: string, settings: Assistan
   const attempt = async (id: Exclude<typeof providerId, 'server'>, endpoint: string, selectedModel: string, onText: (chunk: string) => void) => {
     const apiKey = await getProviderApiKey(id);
     if (!apiKey) throw new Error('Provider ' + id + ' এর API Key Secure Storage-এ নেই।');
-    const response = await expoFetch(endpoint + '/chat/completions', {
+    const response = await expoFetch(apiUrl('/assistant/provider-chat'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: 'Bearer ' + apiKey },
-      body: JSON.stringify({ model: selectedModel, stream: true, max_tokens: 4096, messages }),
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        Authorization: await ownerAuthorizationHeader(),
+        'X-Provider-Key': apiKey,
+      },
+      body: JSON.stringify({
+        providerId: id,
+        baseUrl: endpoint,
+        model: selectedModel,
+        messages,
+      }),
     });
     await streamOpenAICompatibleResponse(response, onText);
   };
