@@ -1835,5 +1835,5 @@ test("Worker fetch wrapper applies security headers to every API response path",
   assert.equal(response.headers.get("Referrer-Policy"), "strict-origin-when-cross-origin");
   assert.equal(response.headers.get("Strict-Transport-Security"), "max-age=31536000; includeSubDomains");
   const payload = await response.json() as { code?: string };
-  assert.equal(payload.code, "OWNER_AUTH_NOT_CONFIGURED");
+  assert.equal(payload.code, "PERSONAL_AUTH_NOT_CONFIGURED");
 });
