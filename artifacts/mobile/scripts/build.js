@@ -15,9 +15,10 @@ function fail(message, code = 1) {
 // Cloudflare Workers serves one static Expo web export from artifacts/mobile/dist.
 // Replit/Pages-specific manifests and per-platform static-build bundles are not
 // deployment targets in the Cloudflare-only architecture.
+const expoCli = require.resolve('expo/bin/cli', { paths: [projectRoot] });
 const child = spawn(
-  'pnpm',
-  ['exec', 'expo', 'export', '--platform', 'web', '--output-dir', 'dist'],
+  process.execPath,
+  [expoCli, 'export', '--platform', 'web', '--output-dir', 'dist'],
   {
     stdio: 'inherit',
     cwd: projectRoot,
