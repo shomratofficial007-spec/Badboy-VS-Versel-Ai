@@ -1,6 +1,6 @@
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 const CARD_NUMBER_PATTERN = /\b(?:\d[ -]?){13,19}\b/g;
-const PHONE_OR_ACCOUNT_PATTERN = /\+?\d(?:[\s().-]*\d){9,}/g;
+const PHONE_OR_ACCOUNT_PATTERN = /\+?\d(?:[\s().-]{0,4}\d){9,}/g;
 const OTP_PATTERN = /\b(OTP|one[- ]time code|verification code|security code|2FA code)(?:\s*[:=]\s*|\s+)\d{4,8}\b/gi;
 const CVV_PATTERN = /\b(cvv|cvc|card security code)\s*[:=]\s*\d{3,4}\b/gi;
 const ACCOUNT_PATTERN = /\b(account number|bank account|routing number|national id|ssn)\s*[:=]\s*[A-Z0-9 -]{6,34}\b/gi;
