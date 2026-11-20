@@ -73,7 +73,7 @@ test("onRequestGet - health check endpoint returns status ok", async () => {
 
   const response = await onRequestGet(context);
   assert.strictEqual(response.status, 503);
-  assert.strictEqual(response.headers.get("Cache-Control"), "no-store");
+  assert.strictEqual(response.headers.get("Cache-Control"), "no-store, no-transform");
   assert.strictEqual(response.headers.get("X-Content-Type-Options"), "nosniff");
   assert.strictEqual(response.headers.get("X-Frame-Options"), "DENY");
   assert.strictEqual(response.headers.get("Referrer-Policy"), "strict-origin-when-cross-origin");
@@ -1829,7 +1829,7 @@ test("Worker fetch wrapper applies security headers to every API response path",
     { waitUntil() {} },
   );
   assert.equal(response.status, 503);
-  assert.equal(response.headers.get("Cache-Control"), "no-store");
+  assert.equal(response.headers.get("Cache-Control"), "no-store, no-transform");
   assert.equal(response.headers.get("X-Content-Type-Options"), "nosniff");
   assert.equal(response.headers.get("X-Frame-Options"), "DENY");
   assert.equal(response.headers.get("Referrer-Policy"), "strict-origin-when-cross-origin");
