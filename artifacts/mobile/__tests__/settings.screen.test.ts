@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 import { resolve } from 'node:path';
-import { existsSync, readdirSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 const currentWorkingDirectory = process.cwd().endsWith('/')
@@ -10,14 +9,6 @@ const currentWorkingDirectory = process.cwd().endsWith('/')
 const mobileRoot = currentWorkingDirectory.endsWith('/artifacts/mobile')
   ? currentWorkingDirectory
   : resolve(currentWorkingDirectory, 'artifacts/mobile');
-console.log(
-  'SETTINGS_TEST_MOBILE_ROOT',
-  mobileRoot,
-  'DEVELOPER_DATA_EXISTS',
-  existsSync(resolve(mobileRoot, 'lib/assistant/developerData.ts')),
-  'ASSISTANT_DIR',
-  readdirSync(resolve(mobileRoot, 'lib/assistant')).slice(0, 12),
-);
 const mobileModule = (path: string) => pathToFileURL(resolve(mobileRoot, path)).href;
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -499,8 +490,8 @@ function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {
   // adds new state for Telegram, voice search, reminders and device controls.
   const legacyStateIndexMap: Record<number, number> = {
     9: 10, 10: 11, 12: 19, 14: 21, 15: 22, 16: 23, 17: 24, 18: 25,
-    24: 30, 25: 31, 26: 32, 27: 33, 28: 34, 29: 35, 32: 38,
-    40: 46, 41: 47, 42: 48, 43: 49,
+    24: 31, 25: 32, 26: 33, 27: 34, 28: 35, 29: 36, 32: 39,
+    40: 47, 41: 48, 42: 49, 43: 50,
   };
   const mappedOverrides: Record<number, unknown> = {};
   for (const [index, value] of Object.entries(initialOverrides)) {
