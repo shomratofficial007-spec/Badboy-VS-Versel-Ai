@@ -1509,7 +1509,7 @@ test("BYOK provider chat is owner-authenticated and forwards only the provider k
     assert.equal(calls[0].redirect, "manual");
     assert.equal(calls[0].body.stream, true);
     assert.equal(calls[0].body.model, "gpt-4o-mini");
-    const exposedResponseHeaders = [...response.headers.entries()].map(([name, value]) => name + ":" + value).join("\\n");
+    const exposedResponseHeaders = [...response.headers.entries()].map(([name, value]) => name + ":" + value).join("\n");
     assert.equal(exposedResponseHeaders.includes("provider-secret-test"), false);
   } finally {
     globalThis.fetch = originalFetch;
@@ -1642,7 +1642,7 @@ test("Worker transcription and speech routes reject invalid requests and preserv
 test("developer analysis finalizes an empty upstream response as a failed task", async () => {
   const originalFetch = globalThis.fetch;
   const db = testAgentDb();
-  globalThis.fetch = (async () => new Response("data: [DONE]\\n\\n", {
+  globalThis.fetch = (async () => new Response("data: [DONE]\n\n", {
     status: 200,
     headers: { "Content-Type": "text/event-stream" },
   })) as typeof globalThis.fetch;
@@ -1670,7 +1670,7 @@ test("developer analysis records a failed task when the provider stream omits it
   const originalFetch = globalThis.fetch;
   const db = testAgentDb();
   globalThis.fetch = (async () => new Response(
-    'data: {"choices":[{"delta":{"content":"partial plan"}}]}\\n\\n',
+    'data: {"choices":[{"delta":{"content":"partial plan"}}]}\n\n',
     { status: 200, headers: { "Content-Type": "text/event-stream" } },
   )) as typeof globalThis.fetch;
 
@@ -1719,9 +1719,9 @@ test("developer analysis reports upstream network failures and finalizes its tas
 test("assistant chat reports empty, truncated and malformed upstream streams without a false completion marker", async () => {
   const originalFetch = globalThis.fetch;
   const cases = [
-    { name: "empty", body: "data: [DONE]\\n\\n", expected: /OpenRouter returned an empty response/ },
-    { name: "truncated", body: 'data: {"choices":[{"delta":{"content":"partial"}}]}\\n\\n', expected: /stream ended before the completion marker/ },
-    { name: "malformed", body: "data: {broken-json}\\n\\n", expected: /OpenRouter stream interrupted/ },
+    { name: "empty", body: "data: [DONE]\n\n", expected: /OpenRouter returned an empty response/ },
+    { name: "truncated", body: 'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n', expected: /stream ended before the completion marker/ },
+    { name: "malformed", body: "data: {broken-json}\n\n", expected: /OpenRouter stream interrupted/ },
   ];
 
   try {
@@ -1789,7 +1789,7 @@ test("speech endpoint uses the authenticated OpenRouter audio fallback when Edge
 
 test("assistant chat converts an upstream provider error event into a stream error", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () => new Response('data: {"error":"upstream failed"}\\n\\n', {
+  globalThis.fetch = (async () => new Response('data: {"error":"upstream failed"}\n\n', {
     status: 200,
     headers: { "Content-Type": "text/event-stream" },
   })) as typeof globalThis.fetch;
