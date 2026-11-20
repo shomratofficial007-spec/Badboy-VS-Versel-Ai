@@ -1637,3 +1637,113 @@ test("Worker transcription and speech routes reject invalid requests and preserv
   assert.equal((await unsupportedSpeechLocale.json() as any).code, "FALLBACK_TO_CLIENT_TTS");
 });
 
+
+
+test("developer analysis finalizes an empty upstream response as a failed task", async () => {
+  const originalFetch = globalThis.fetch;
+  const db = testAgentDb();
+  globalThis.fetch = (async () => new Response("data: [DONE]\\n\\n", {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" },
+  })) as typeof globalThis.fetch;
+
+  try {
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/developer/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: "Return a concise plan" }),
+      }),
+      env: { OPENROUTER_API_KEY: "test-key", AGENT_DB: db },
+    } as any);
+    assert.equal(response.status, 200);
+    const stream = await response.text();
+    assert.match(stream, /Developer Agent returned an empty response/);
+    assert.ok(db.calls.some((call) => call.sql.includes("UPDATE agent_tasks") && call.values.includes("failed")));
+    assert.ok(db.calls.some((call) => call.sql.includes("INSERT INTO agent_task_events") && call.values.includes("task_failed")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("developer analysis records a failed task when the provider stream omits its completion marker", async () => {
+  const originalFetch = globalThis.fetch;
+  const db = testAgentDb();
+  globalThis.fetch = (async () => new Response(
+    'data: {"choices":[{"delta":{"content":"partial plan"}}]}\\n\\n',
+    { status: 200, headers: { "Content-Type": "text/event-stream" } },
+  )) as typeof globalThis.fetch;
+
+  try {
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/developer/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: "Return a plan" }),
+      }),
+      env: { OPENROUTER_API_KEY: "test-key", AGENT_DB: db },
+    } as any);
+    assert.equal(response.status, 200);
+    const stream = await response.text();
+    assert.match(stream, /partial plan/);
+    assert.match(stream, /Developer Agent stream was interrupted/);
+    assert.ok(db.calls.some((call) => call.sql.includes("UPDATE agent_tasks") && call.values.includes("failed")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("developer analysis reports upstream network failures and finalizes its task", async () => {
+  const originalFetch = globalThis.fetch;
+  const db = testAgentDb();
+  globalThis.fetch = (async () => { throw new Error("upstream unavailable"); }) as typeof globalThis.fetch;
+
+  try {
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/developer/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: "Return a plan" }),
+      }),
+      env: { OPENROUTER_API_KEY: "test-key", AGENT_DB: db },
+    } as any);
+    assert.equal(response.status, 502);
+    const payload = await response.json() as { code?: string };
+    assert.equal(payload.code, "DEVELOPER_AGENT_UPSTREAM_FAILED");
+    assert.ok(db.calls.some((call) => call.sql.includes("UPDATE agent_tasks") && call.values.includes("failed")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("assistant chat reports empty, truncated and malformed upstream streams without a false completion marker", async () => {
+  const originalFetch = globalThis.fetch;
+  const cases = [
+    { name: "empty", body: "data: [DONE]\\n\\n", expected: /OpenRouter returned an empty response/ },
+    { name: "truncated", body: 'data: {"choices":[{"delta":{"content":"partial"}}]}\\n\\n', expected: /stream ended before the completion marker/ },
+    { name: "malformed", body: "data: {broken-json}\\n\\n", expected: /OpenRouter stream interrupted/ },
+  ];
+
+  try {
+    for (const scenario of cases) {
+      globalThis.fetch = (async () => new Response(scenario.body, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      })) as typeof globalThis.fetch;
+      const response = await onRequestPost({
+        request: new Request("https://example.com/api/assistant/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: "hello" }),
+        }),
+        env: { OPENROUTER_API_KEY: "test-key" },
+      } as any);
+      assert.equal(response.status, 200, scenario.name);
+      const stream = await response.text();
+      assert.match(stream, scenario.expected, scenario.name);
+      if (scenario.name !== "empty") assert.doesNotMatch(stream, /data: \\[DONE\\]/, scenario.name);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
