@@ -948,6 +948,32 @@ test("onRequestPost - stops fallback when an upstream returns HTTP 200 without a
 
 
 
+test("legacy assistant voice route remains owner-authenticated and returns the documented unsupported contract", async () => {
+  const env = { BADBOY_OWNER_TOKEN: TEST_OWNER_TOKEN };
+  const unauthorized = await rawOnRequestPost({
+    request: new Request("https://example.com/api/assistant/voice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "Hello" }),
+    }),
+    env,
+  } as any);
+  assert.equal(unauthorized.status, 401);
+
+  const response = await onRequestPost({
+    request: new Request("https://example.com/api/assistant/voice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "Hello" }),
+    }),
+    env: {},
+  } as any);
+  assert.equal(response.status, 501);
+  const body = await response.json() as any;
+  assert.equal(body.code, "MODEL_AUDIO_UNSUPPORTED");
+  assert.match(body.error, /text input and returns text only/i);
+});
+
 test("requires owner authentication for private API and Developer Agent routes", async () => {
   const env = {
     BADBOY_OWNER_TOKEN: TEST_OWNER_TOKEN,
@@ -959,6 +985,7 @@ test("requires owner authentication for private API and Developer Agent routes",
     "/api/assistant/transcribe",
     "/api/assistant/speech",
     "/api/assistant/speak",
+    "/api/assistant/voice",
     "/api/developer/analyze",
   ];
   for (const path of protectedPostPaths) {
