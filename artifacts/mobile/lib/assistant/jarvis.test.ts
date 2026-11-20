@@ -8,7 +8,7 @@ let overlaySettingsOpened = true;
 let overlayStarted = true;
 let screenAwarenessEnabled = true;
 let accessibilitySettingsOpened = true;
-let screenText = '  Dashboard  \\nDashboard\\nAccount status  ';
+let screenText = '  Dashboard  \nDashboard\nAccount status  ';
 let nativeModuleAvailable = true;
 
 const nativeModule = {
@@ -106,8 +106,8 @@ test('screen awareness status and settings reflect native permission state', asy
 test('readVisibleScreenText normalizes the returned screen context and rejects empty text', async () => {
   const jarvis = await jarvisPromise;
   platformOS = 'android';
-  screenText = '  Dashboard  \\nDashboard\\nAccount status  ';
-  assert.equal(await jarvis.readVisibleScreenText(), 'Dashboard\\nAccount status');
-  screenText = '  \\n  ';
+  screenText = '  Dashboard  \nDashboard\nAccount status  ';
+  assert.equal(await jarvis.readVisibleScreenText(), 'Dashboard\nAccount status');
+  screenText = '  \n  ';
   await assert.rejects(jarvis.readVisibleScreenText(), /পড়ার মতো কোনো লেখা পাওয়া যায়নি/);
 });
