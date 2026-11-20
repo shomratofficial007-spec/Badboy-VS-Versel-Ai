@@ -89,7 +89,7 @@ test('Memory screen renders saved notes, search and storage errors without movin
   assert.match(html, /আগামীকাল কাজ শেষ করব/);
   assert.match(html, /নোট খুঁজুন/);
   assert.match(html, /Local secure storage warning/);
-  assert.match(html, /এই তথ্যটি সম্পূর্ণ লোকাল|সম্পূর্ণ লোকাল/);
+  assert.match(html, /এই browser profile-এ থাকে/ && /encrypted নয়/);
 
   pressables.find((item) => item.label.includes('সম্পাদনা করুন'))?.onPress();
   pressables.find((item) => item.label.includes('নোট মুছুন'))?.onPress();
