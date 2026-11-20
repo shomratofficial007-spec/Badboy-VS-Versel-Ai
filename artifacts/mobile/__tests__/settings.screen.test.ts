@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 import { resolve } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 const currentWorkingDirectory = process.cwd().endsWith('/')
@@ -10,10 +10,14 @@ const currentWorkingDirectory = process.cwd().endsWith('/')
 const mobileRoot = currentWorkingDirectory.endsWith('/artifacts/mobile')
   ? currentWorkingDirectory
   : resolve(currentWorkingDirectory, 'artifacts/mobile');
-if (!existsSync(resolve(mobileRoot, 'lib/assistant/developerData'))) {
-  throw new Error(`Settings test mock root does not contain mobile sources: ${mobileRoot}`);
-}
-console.log('SETTINGS_TEST_MOBILE_ROOT', mobileRoot);
+console.log(
+  'SETTINGS_TEST_MOBILE_ROOT',
+  mobileRoot,
+  'DEVELOPER_DATA_EXISTS',
+  existsSync(resolve(mobileRoot, 'lib/assistant/developerData.ts')),
+  'ASSISTANT_DIR',
+  readdirSync(resolve(mobileRoot, 'lib/assistant')).slice(0, 12),
+);
 const mobileModule = (path: string) => pathToFileURL(resolve(mobileRoot, path)).href;
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
