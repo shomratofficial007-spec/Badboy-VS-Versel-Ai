@@ -207,7 +207,7 @@ export function ProviderManagerSection() {
       <Pressable onPress={saveSelection} disabled={(providerId !== 'server' && (!model.trim() || !baseUrl.trim() || !keyConfigured)) || (fallbackProvider !== 'none' && (providerId === 'server' || fallbackProvider === providerId || !fallbackModel.trim() || !fallbackKeyConfigured))} style={{ minHeight: 44, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', opacity: ((providerId !== 'server' && (!model.trim() || !baseUrl.trim() || !keyConfigured)) || (fallbackProvider !== 'none' && (fallbackProvider === providerId || !fallbackModel.trim() || !fallbackKeyConfigured))) ? 0.45 : 1 }}>
         <Text style={{ color: colors.primaryForeground, fontWeight: '800' }}>Save Provider & Model</Text>
       </Pressable>
-      <Text style={{ color: colors.mutedForeground, fontSize: 11, lineHeight: 16 }}>API Key শুধু এই Provider-এর জন্য Secure Storage-এ রাখা হয়। Chat request-এ Owner Login যাচাই করার পর Key সরাসরি নির্বাচিত HTTPS provider/proxy-তে পাঠানো হয়; Owner Token তৃতীয় পক্ষের কাছে পাঠানো হয় না। Server AI mode-এ Agent tools থাকে; custom provider mode-এ provider-এর OpenAI-compatible text chat ব্যবহৃত হয়।</Text>
+      <Text style={{ color: colors.mutedForeground, fontSize: 11, lineHeight: 16 }}>API Key শুধু এই Provider-এর জন্য ফোনের Secure Storage-এ রাখা হয়। Chat ও model-list request Owner Login যাচাইয়ের পর Cloudflare Worker-এর মাধ্যমে নির্বাচিত HTTPS provider/proxy-তে যায়; Worker Key persist বা application log করে না। Owner Token provider-এর কাছে পাঠানো হয় না। Server AI mode-এ Agent tools থাকে; custom provider mode-এ OpenAI-compatible text chat ব্যবহৃত হয়।</Text>
     </View>
   );
 }
