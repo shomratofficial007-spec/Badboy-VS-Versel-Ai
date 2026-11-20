@@ -105,6 +105,7 @@ export function ProviderManagerSection() {
   };
 
   const loadModels = async () => {
+    if (providerId === 'server') return;
     setBusy(true);
     setError('');
     try {
