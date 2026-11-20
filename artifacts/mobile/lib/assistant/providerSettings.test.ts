@@ -13,7 +13,7 @@ const keyStore = createProviderKeyStore({
 
 let ownerToken: string | null = 'owner-token-test';
 let providerResponse: Response = new Response(JSON.stringify({
-  data: [{ id: 'model-z' }, { id: 'model-a' }, { id: 'model-a' }, { id: '../unsafe' }, { id: 42 }],
+  data: [{ id: 'model-z' }, { id: 'model-a' }, { id: 'model-a' }, { id: 'bad model' }, { id: 42 }],
 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 let providerRequest: { url: string; init?: RequestInit } | null = null;
 
@@ -69,7 +69,7 @@ test('fetchProviderModels sends owner auth and the selected provider key through
   ownerToken = 'owner-token-test';
   providerRequest = null;
   providerResponse = new Response(JSON.stringify({
-    data: [{ id: 'model-z' }, { id: 'model-a' }, { id: 'model-a' }, { id: '../unsafe' }, { id: 42 }],
+    data: [{ id: 'model-z' }, { id: 'model-a' }, { id: 'model-a' }, { id: 'bad model' }, { id: 42 }],
   }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 
   const models = await fetchProviderModels('https://api.openai.com/v1', ' provider-key ', 'openai');
@@ -108,4 +108,14 @@ test('fetchProviderModels reports Worker errors and rejects invalid model payloa
     headers: { 'Content-Type': 'application/json' },
   });
   await assert.rejects(fetchProviderModels('https://api.openai.com/v1', 'provider-key', 'openai'), /OpenAI-compatible \/models response/);
+});
+
+test('provider API key helpers persist and remove keys through SecureStore', async () => {
+  const { saveProviderApiKey, getProviderApiKey, deleteProviderApiKey } = await providerSettingsPromise;
+  secureStoreAvailable = true;
+  secureValues.clear();
+  await saveProviderApiKey('openai', '  persisted-provider-key  ');
+  assert.equal(await getProviderApiKey('openai'), 'persisted-provider-key');
+  await deleteProviderApiKey('openai');
+  assert.equal(await getProviderApiKey('openai'), null);
 });
