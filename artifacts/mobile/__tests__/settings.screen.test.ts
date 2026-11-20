@@ -96,8 +96,8 @@ const settings = {
 mock.module('../assets/images/badboy-settings-avatar.jpg', { defaultExport: {} });
 mock.module('expo-router', { namedExports: { useRouter: () => ({ back: () => {} }) } });
 
-mock.module('@/components/ProviderManagerSection', { namedExports: { ProviderManagerSection: () => null } });
-mock.module('@/lib/assistant/jarvis', { namedExports: { canDrawFloatingAssistant: () => false, openFloatingAssistantPermissionSettings: async () => {}, startFloatingAssistant: async () => {}, stopFloatingAssistant: async () => {}, isScreenAwarenessEnabled: () => false, openScreenAwarenessSettings: async () => { screenSettingsCalls += 1; } } });
+mock.module('../components/ProviderManagerSection', { namedExports: { ProviderManagerSection: () => null } });
+mock.module('../lib/assistant/jarvis', { namedExports: { canDrawFloatingAssistant: () => false, openFloatingAssistantPermissionSettings: async () => {}, startFloatingAssistant: async () => {}, stopFloatingAssistant: async () => {}, isScreenAwarenessEnabled: () => false, openScreenAwarenessSettings: async () => { screenSettingsCalls += 1; } } });
 
 mock.module('react-native', {
   namedExports: {
@@ -122,7 +122,7 @@ mock.module('@expo/vector-icons', { namedExports: { Feather: () => null } });
 mock.module('react-native-safe-area-context', {
   namedExports: { useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) },
 });
-mock.module('@/context/AssistantContext', {
+mock.module('../context/AssistantContext', {
   namedExports: {
     useAssistant: () => ({
       settings, updateSettings: (value: unknown) => { settingsUpdates.push(value); }, clearChat: async () => { clearChatCalls.push('cleared'); },
@@ -130,11 +130,11 @@ mock.module('@/context/AssistantContext', {
     }),
   },
 });
-mock.module('@/context/OwnerAuthContext', {
+mock.module('../context/OwnerAuthContext', {
   namedExports: { useOwnerAuth: () => ({ authenticated: true, signOut: async () => { signOutCalls.push('signed-out'); } }) },
 });
-mock.module('@/hooks/useColors', { namedExports: { useColors: () => colors } });
-mock.module('@/lib/assistant/voice', {
+mock.module('../hooks/useColors', { namedExports: { useColors: () => colors } });
+mock.module('../lib/assistant/voice', {
   namedExports: {
     VOICE_LANGUAGES: [
       { code: 'bn-BD', label: 'বাংলা (বাংলাদেশ)' },
@@ -162,7 +162,7 @@ mock.module('@/lib/assistant/voice', {
     stopSpeaking: async () => {},
   },
 });
-mock.module('@/lib/assistant/api', {
+mock.module('../lib/assistant/api', {
   namedExports: {
     streamDeveloperAnalysis: (...args: [string, string, string, (chunk: string) => void]) => {
       developerAnalysisCalls.push(args);
@@ -171,7 +171,7 @@ mock.module('@/lib/assistant/api', {
     streamReply: async () => {},
   },
 });
-mock.module('@/lib/assistant/developerData', {
+mock.module('../lib/assistant/developerData', {
   namedExports: {
     addDeveloperProjectMemory: (...args: [any]) => { developerDataCalls.push({ method: 'addDeveloperProjectMemory', args }); return developerDataHandlers.addDeveloperProjectMemory(...args); },
     deleteDeveloperProjectMemory: (...args: [string]) => { developerDataCalls.push({ method: 'deleteDeveloperProjectMemory', args }); return developerDataHandlers.deleteDeveloperProjectMemory(...args); },
@@ -184,10 +184,10 @@ mock.module('@/lib/assistant/developerData', {
     saveDeveloperProject: (...args: [any]) => { developerDataCalls.push({ method: 'saveDeveloperProject', args }); return developerDataHandlers.saveDeveloperProject(...args); },
   },
 });
-mock.module('@/lib/assistant/expertReview', {
+mock.module('../lib/assistant/expertReview', {
   namedExports: { buildExpertReviewPrompt: () => '', inspectBadboyRepository: async () => ({}) },
 });
-mock.module('@/lib/assistant/telegram', {
+mock.module('../lib/assistant/telegram', {
   namedExports: {
     getTelegramOwnerChatId: (...args: unknown[]) => { telegramCalls.push({ method: 'getTelegramOwnerChatId', args }); return telegramHandlers.getTelegramOwnerChatId(); },
     bindTelegramOwnerChat: (...args: [number]) => { telegramCalls.push({ method: 'bindTelegramOwnerChat', args }); return telegramHandlers.bindTelegramOwnerChat(...args); },
@@ -199,7 +199,7 @@ mock.module('@/lib/assistant/telegram', {
     sendTelegramMessage: (...args: [string]) => { telegramCalls.push({ method: 'sendTelegramMessage', args }); return telegramHandlers.sendTelegramMessage(...args); },
   },
 });
-mock.module('@/lib/assistant/developer', {
+mock.module('../lib/assistant/developer', {
   namedExports: {
     previewGitHubChanges: (...args: [any]) => { githubCalls.push({ method: 'previewGitHubChanges', args }); return githubHandlers.previewGitHubChanges(...args); },
     executeAgentTask: (...args: [string, boolean, boolean]) => { agentTaskCalls.push(args); return agentTaskHandler(...args); },
@@ -211,7 +211,7 @@ mock.module('@/lib/assistant/developer', {
     saveGitHubToken: (...args: [string]) => { githubCalls.push({ method: 'saveGitHubToken', args }); return githubHandlers.saveGitHubToken(...args); },
   },
 });
-mock.module('@/lib/assistant/developerEngine', {
+mock.module('../lib/assistant/developerEngine', {
   namedExports: { resolveDeveloperEngine: (engine: string) => engine === 'copilot' ? { status: 'unavailable', reason: 'Copilot runtime unavailable' } : { status: 'available', activeEngine: 'native' } },
 });
 
@@ -479,7 +479,7 @@ function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {
   // Keep the historical test fixture indices stable while the Settings screen
   // adds new state for Telegram, voice search, reminders and device controls.
   const legacyStateIndexMap: Record<number, number> = {
-    9: 10, 10: 11, 12: 18, 14: 21, 15: 22, 16: 23, 17: 24, 18: 25,
+    9: 10, 10: 11, 12: 19, 14: 21, 15: 22, 16: 23, 17: 24, 18: 25,
     24: 30, 25: 31, 26: 32, 27: 33, 28: 34, 29: 35, 32: 38,
     40: 46, 41: 47, 42: 48, 43: 49,
   };
