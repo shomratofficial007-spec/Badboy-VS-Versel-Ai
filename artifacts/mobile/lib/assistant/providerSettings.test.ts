@@ -52,7 +52,7 @@ test('stores provider API keys only through the secure storage adapter', async (
 
 test('rejects empty, oversized and multiline provider keys', async () => {
   await assert.rejects(() => keyStore.save('openai', '  '));
-  await assert.rejects(() => keyStore.save('openai', 'key\\nwith-line-break'));
+  await assert.rejects(() => keyStore.save('openai', 'key\nwith-line-break'));
   await assert.rejects(() => keyStore.save('openai', 'x'.repeat(4097)));
 });
 
