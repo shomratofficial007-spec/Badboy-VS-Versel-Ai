@@ -56,7 +56,7 @@ if [[ "${#required_workflows[@]}" -eq 0 && "${android_scope}" != true ]]; then
   exit 0
 fi
 
-for attempt in $(seq 1 270); do
+for attempt in $(seq 1 360); do
   response="$(curl --silent --show-error --fail \
     -H "Authorization: Bearer ${GH_TOKEN}" \
     -H "Accept: application/vnd.github+json" \
@@ -135,7 +135,7 @@ for attempt in $(seq 1 270); do
     exit 0
   fi
 
-  echo "Waiting for ${pending} applicable upstream workflow(s) (attempt ${attempt}/270)."
+  echo "Waiting for ${pending} applicable upstream workflow(s) (attempt ${attempt}/360)."
   sleep 10
 done
 
