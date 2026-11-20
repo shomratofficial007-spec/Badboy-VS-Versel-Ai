@@ -1,5 +1,5 @@
 import assert from 'node:assert';
-import test from 'node:test';
+import { mock, test } from 'node:test';
 
 const legacyStorage = new Map<string, string>();
 const asyncStorage = {
