@@ -1,10 +1,10 @@
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 const CARD_NUMBER_PATTERN = /\b(?:\d[ -]?){13,19}\b/g;
 const PHONE_OR_ACCOUNT_PATTERN = /\+?\d(?:[\s().-]*\d){9,}/g;
-const OTP_PATTERN = /\b(OTP|one[- ]time code|verification code|security code|2FA code)\s*[:= -]?\s*\d{4,8}\b/gi;
+const OTP_PATTERN = /\b(OTP|one[- ]time code|verification code|security code|2FA code)(?:\s*[:=]\s*|\s+)\d{4,8}\b/gi;
 const CVV_PATTERN = /\b(cvv|cvc|card security code)\s*[:=]\s*\d{3,4}\b/gi;
 const ACCOUNT_PATTERN = /\b(account number|bank account|routing number|national id|ssn)\s*[:=]\s*[A-Z0-9 -]{6,34}\b/gi;
-const IBAN_PATTERN = /\b(IBAN)\s*[:=]?\s*[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/gi;
+const IBAN_PATTERN = /\b(IBAN)(?:\s*[:=]\s*|\s+)[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/gi;
 const PASSWORD_PATTERN = /\b(password|passcode|pin|cvv|cvc|security answer|secret)\s*[:=]\s*[^\r\n]+/gi;
 const API_CREDENTIAL_PATTERN = /\b(api[-_ ]?key|access token|refresh token|client secret|secret key)\s*[:=]\s*[^\r\n]+/gi;
 const AUTHORIZATION_PATTERN = /\b(authorization\s*[:=]\s*(?:bearer|basic))\s+\S+/gi;
