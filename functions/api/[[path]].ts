@@ -39,7 +39,7 @@ interface Env {
 }
 
 const API_SECURITY_HEADERS = {
-  "Cache-Control": "no-store",
+  "Cache-Control": "no-store, no-transform",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
   "X-Content-Type-Options": "nosniff",
@@ -175,7 +175,6 @@ function jsonResponse(data: unknown, status = 200) {
     status,
     headers: {
       "Content-Type": "application/json",
-      "Cache-Control": "no-store",
       ...CORS_HEADERS,
     },
   });
@@ -710,7 +709,6 @@ async function handleSpeechRequest(request: Request, env: Env): Promise<Response
         status: 200,
         headers: {
           "Content-Type": "audio/mpeg",
-          "Cache-Control": "no-store",
           "X-TTS-Voice": selectedVoice,
           "X-TTS-Engine": "microsoft-edge",
           ...CORS_HEADERS,
@@ -749,7 +747,6 @@ async function handleSpeechRequest(request: Request, env: Env): Promise<Response
             status: 200,
             headers: {
               "Content-Type": upstream.headers.get("content-type") || "audio/mpeg",
-              "Cache-Control": "no-store",
               "X-TTS-Voice": selectedVoice,
               "X-TTS-Engine": "openrouter-fish-audio",
               ...CORS_HEADERS,
@@ -1102,7 +1099,6 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
   return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
       "X-Badboy-Task-Id": taskId,
       "X-Badboy-Engine": engine,
       "X-Badboy-Provider": selectedProvider,
@@ -1459,7 +1455,6 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
       ...CORS_HEADERS,
     },
   });
