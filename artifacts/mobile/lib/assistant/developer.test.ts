@@ -1,5 +1,19 @@
 import assert from 'node:assert';
 import test from 'node:test';
+
+const legacyStorage = new Map<string, string>();
+const asyncStorage = {
+  getItem: async (key: string) => legacyStorage.get(key) ?? null,
+  setItem: async (key: string, value: string) => { legacyStorage.set(key, value); },
+  removeItem: async (key: string) => { legacyStorage.delete(key); },
+};
+mock.module('@react-native-async-storage/async-storage', { defaultExport: asyncStorage });
+mock.module('./storage', {
+  namedExports: {
+    readLocalState: async () => ({ messages: [], settings: {}, memories: [] }),
+    storeMemoryNote: async () => undefined,
+  },
+});
 import {
   generateDevelopmentPlan,
   getProjectBrainSummary,
