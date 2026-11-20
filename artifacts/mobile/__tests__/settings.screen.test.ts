@@ -1039,7 +1039,7 @@ test('Settings renders Project Brain, Auto QA, plugin, Android and web views wit
   assert.match(html, /npx eas-cli build --platform android --profile preview/);
 
   html = await createSettingsHookHarness({ 14: 'web' })();
-  assert.match(html, /Cloudflare Pages হোস্ট অ্যান্ড ডিপ্লয়/);
+  assert.match(html, /Cloudflare Worker Hosting & Deploy/);
   assert.match(html, /pnpm run build && pnpm run deploy/);
 });
 
