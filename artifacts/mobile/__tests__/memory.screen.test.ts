@@ -35,6 +35,7 @@ const host = (tag: string) => function Host({ children, accessibilityLabel, plac
 
 mock.module('react-native', {
   namedExports: {
+    Platform: { OS: 'web' },
     Alert: { alert: (title: string, message: string, buttons: any[] = []) => alerts.push({ title, message, buttons }) },
     Pressable: host('button'),
     ScrollView: host('main'),
