@@ -1,7 +1,5 @@
 import assert from 'node:assert';
 import { before, mock, test } from 'node:test';
-import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 const legacyStorage = new Map<string, string>();
 const asyncStorage = {
@@ -10,7 +8,7 @@ const asyncStorage = {
   removeItem: async (key: string) => { legacyStorage.delete(key); },
 };
 mock.module('@react-native-async-storage/async-storage', { defaultExport: asyncStorage });
-mock.module(pathToFileURL(resolve(process.cwd(), 'lib/assistant/storage.ts')).href, {
+mock.module('./storage', {
   namedExports: {
     readLocalState: async () => ({ messages: [], settings: {}, memories: [] }),
     storeMemoryNote: async () => undefined,
