@@ -269,7 +269,7 @@ export async function streamDeveloperAnalysis(
   }
 
   const reader = response.body?.getReader();
-  if (!reader) throw new Error('Developer Agent stream unavailable.');
+  if (!reader) throw new Error('Developer Agent response stream is unavailable.');
   const decoder = new TextDecoder();
   let buffer = '';
   let taskId = '';
