@@ -68,7 +68,7 @@ No feature may be silently removed, disabled, hidden without an equivalent disco
    - Use compact forms, clear actions, confirmation gates for sensitive/destructive operations, and inline result/error feedback.
    - Do not create a separate status screen, status dashboard, telemetry page, or large always-visible status/log panel. Progress or execution feedback may appear inline only when needed to explain an active task or its result.
    - Do not imply unsupported capabilities are operational. A control may be shown only when it has a real handler and verified permission boundary; unavailable capabilities must be clearly marked unavailable or omitted until implemented.
-   - Preserve existing GitHub authorization, preview/approval gates, agent execution safety, task history, and private Project Brain data behavior.
+   - Preserve existing GitHub authorization, preview/approval gates, agent execution safety, persisted task records, and private Project Brain data behavior. Task records remain stored; Settings must not render a permanent task-status/history dashboard. If history access is restored later, it must be explicitly opened from a task workflow, not presented as a status screen.
 
 ## Design system
 
@@ -80,7 +80,7 @@ No feature may be silently removed, disabled, hidden without an equivalent disco
 ## Implementation sequence
 
 ### Phase 0 — Baseline and integration audit
-- Read repository instructions and inspect the current branch/working tree and open PR #113.
+- Read repository instructions and inspect the current branch and the now-closed PR #113 reference branch. PR #113 was closed at the user's request; its head branch and commits were preserved.
 - Inventory the existing chat UI states, navigation routes, theme tokens, and interactive controls.
 - Identify current tests and establish a baseline for mobile typecheck/tests/build.
 - Record any overlap with PR #113 before touching shared files.
@@ -104,7 +104,7 @@ No feature may be silently removed, disabled, hidden without an equivalent disco
 - Run focused mobile tests and typecheck after each slice.
 - Run repository lint/typecheck/build and relevant CI workflows where feasible.
 - Validate light/dark mode, small-screen layout, keyboard/composer, streaming, voice, auth redirects, and all existing navigation paths.
-- Review PR #113 integration and resolve conflicts without discarding either change set.
+- Do not blindly integrate PR #113. Review its preserved head branch and selectively re-implement or cherry-pick only changes that pass the current requirements and independent verification; retain known gaps as open work.
 - Do not merge, deploy, or build/release an APK without separate explicit approval.
 
 ## Acceptance criteria
@@ -131,3 +131,11 @@ No feature may be silently removed, disabled, hidden without an equivalent disco
 ## Jarvis preservation — explicit user requirement
 
 Jarvis is a protected, non-removable capability in this redesign. Keep its existing entry points, identity, settings, permissions, wake-word / hands-free behavior, floating-assistant controls, screen-awareness controls, and related lifecycle handling intact. Reorganize or restyle its controls only; do not rename Jarvis into a generic feature, remove it, hide it behind an undiscoverable path, or replace working behavior with placeholder controls. Any change touching Jarvis must include regression coverage for the affected permission and lifecycle paths.
+
+
+## Current implementation notes (2026-11-22)
+
+- PR #113 is closed and unmerged by explicit user instruction. Its `feat/universal-free-ai-provider-manager` branch remains intact as an unmerged reference; none of its 65 commits were deleted or merged.
+- The first Settings implementation slice removes the oversized profile/status card, reduces typography and section density, and removes the always-visible Developer task-history, technical-log, and prior-development-history panels. Persisted task data and existing execution/approval handlers are not deleted.
+- Jarvis remains in Settings with Start/Stop Bubble and Screen Awareness controls; existing Jarvis implementation and permission flows are unchanged.
+- The Settings screen still needs broader category navigation and mobile-device validation. This first slice is not the complete redesign.
