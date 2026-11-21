@@ -1,7 +1,7 @@
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -812,9 +812,19 @@ export default function SettingsScreen() {
   };
 
   const sectionCard = { backgroundColor: colors.card, borderColor: colors.border };
+  const settingsScrollRef = useRef<any>(null);
+  const settingsSectionOffsets = useRef<Record<string, number>>({});
+  const recordSettingsSection = (key: string) => (event: { nativeEvent: { layout: { y: number } } }) => {
+    settingsSectionOffsets.current[key] = event.nativeEvent.layout.y;
+  };
+  const scrollToSettingsSection = (key: string) => () => {
+    const y = settingsSectionOffsets.current[key];
+    if (typeof y === 'number') settingsScrollRef.current?.scrollTo({ y, animated: true });
+  };
 
   return (
     <ScrollView
+      ref={settingsScrollRef}
       style={{ flex: 1, backgroundColor: colors.background }}
       contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top, 12) + 14, paddingBottom: Math.max(insets.bottom, 20) + 90 }]}
       keyboardShouldPersistTaps="handled"
@@ -837,7 +847,30 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      <Text style={[styles.eyebrow, { color: colors.primary }]}>ACCOUNT &amp; ACCESS</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.settingsCategoryNav}>
+        {([
+          ['account', 'Account'],
+          ['ai', 'AI'],
+          ['appearance', 'Appearance'],
+          ['privacy', 'Privacy'],
+          ['developer', 'Developer'],
+          ['jarvis', 'Jarvis'],
+          ['voice', 'Voice'],
+          ['management', 'More'],
+        ] as const).map(([id, label]) => (
+          <Pressable
+            key={id}
+            accessibilityRole="button"
+            accessibilityLabel={`Go to ${label} settings`}
+            onPress={scrollToSettingsSection(id)}
+            style={[styles.settingsCategoryChip, { backgroundColor: colors.card, borderColor: colors.border }]}
+          >
+            <Text style={[styles.settingsCategoryText, { color: colors.foreground }]}>{label}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+
+      <Text onLayout={recordSettingsSection('account')} style={[styles.eyebrow, { color: colors.primary }]}>ACCOUNT &amp; ACCESS</Text>
       <View style={[styles.section, sectionCard]}>
         <Pressable accessibilityRole="button" accessibilityLabel="Open Owner Panel" onPress={openOwnerPanel} style={styles.sectionTitleRow}>
           <Feather name="user" size={17} color={colors.primary} />
@@ -884,7 +917,7 @@ export default function SettingsScreen() {
         <Text style={{ color: colors.destructive, fontWeight: '700' }}>Owner Sign Out</Text>
       </Pressable>
 
-            <Text style={[styles.eyebrow, { color: colors.primary }]}>AI &amp; FEATURES</Text>
+            <Text onLayout={recordSettingsSection('ai')} style={[styles.eyebrow, { color: colors.primary }]}>AI &amp; FEATURES</Text>
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
           <Feather name="zap" size={17} color={colors.primary} />
@@ -989,7 +1022,7 @@ export default function SettingsScreen() {
         ) : null}
       </View>
 
-      <Text style={[styles.eyebrow, { color: colors.primary }]}>APPEARANCE</Text>
+      <Text onLayout={recordSettingsSection('appearance')} style={[styles.eyebrow, { color: colors.primary }]}>APPEARANCE</Text>
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}><Feather name="droplet" size={17} color={colors.primary} /><Text style={[styles.sectionTitle,{color:colors.foreground}]}>অ্যাপ থিম</Text></View>
         <Text style={[styles.body,{color:colors.mutedForeground,marginBottom:10}]}>পছন্দের রং বেছে নাও। পরিবর্তন সঙ্গে সঙ্গে পুরো অ্যাপে দেখা যাবে এবং এই ফোনেই সংরক্ষিত থাকবে।</Text>
@@ -1000,7 +1033,7 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      <Text style={[styles.eyebrow, { color: colors.primary }]}>PRIVACY &amp; PERSONALIZATION</Text>
+      <Text onLayout={recordSettingsSection('privacy')} style={[styles.eyebrow, { color: colors.primary }]}>PRIVACY &amp; PERSONALIZATION</Text>
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
           <Feather name="wifi" size={17} color={colors.primary} />
@@ -1102,7 +1135,7 @@ export default function SettingsScreen() {
         ) : null}
       </View>
 
-      <Text style={[styles.eyebrow, { color: colors.primary }]}>DEVELOPER TOOLS</Text>
+      <Text onLayout={recordSettingsSection('developer')} style={[styles.eyebrow, { color: colors.primary }]}>DEVELOPER TOOLS</Text>
       {/* Developer Control Center */}
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
@@ -1525,7 +1558,7 @@ export default function SettingsScreen() {
 
       <ProviderManagerSection />
 
-      <View style={[styles.section, sectionCard]}>
+      <View onLayout={recordSettingsSection('jarvis')} style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
           <Feather name="aperture" size={17} color={colors.primary} />
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Jarvis Assistant & Quick Access</Text>
@@ -1550,7 +1583,7 @@ export default function SettingsScreen() {
         <Text style={[styles.smallNote, { color: colors.mutedForeground }]}>Floating bubble: {settings.floatingAssistantEnabled ? 'On' : 'Off'}. পরিচিত sensitive pattern best-effort redacted হয়, সবকিছু ধরা নিশ্চিত নয়—Send করার আগে draft নিজে যাচাই করবে।</Text>
       </View>
 
-      <Text style={[styles.eyebrow, { color: colors.primary }]}>VOICE &amp; DEVICE</Text>
+      <Text onLayout={recordSettingsSection('voice')} style={[styles.eyebrow, { color: colors.primary }]}>VOICE &amp; DEVICE</Text>
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
           <Feather name="mic" size={17} color={colors.primary} />
@@ -1680,7 +1713,7 @@ export default function SettingsScreen() {
         {deviceActionError ? <Text style={[styles.errorText, { color: colors.destructive }]}>{deviceActionError}</Text> : null}
       </View>
 
-      <Text style={[styles.eyebrow, { color: colors.primary }]}>APP MANAGEMENT</Text>
+      <Text onLayout={recordSettingsSection('management')} style={[styles.eyebrow, { color: colors.primary }]}>APP MANAGEMENT</Text>
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
           <Feather name="layers" size={17} color={colors.primary} />
@@ -1850,6 +1883,9 @@ const styles = StyleSheet.create({
   footerBrand: { alignItems: 'center', paddingVertical: 14, gap: 2 },
   footerTitle: { fontSize: 14, fontWeight: '900', letterSpacing: 0.4 },
   settingsHeading: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 0, marginBottom: 2 },
+  settingsCategoryNav: { gap: 7, paddingVertical: 2, paddingBottom: 5 },
+  settingsCategoryChip: { minHeight: 32, borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
+  settingsCategoryText: { fontSize: 12, fontWeight: '600' },
   backButton: { width: 36, height: 36, borderWidth: 1, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   crownMark: { width: 36, height: 36, borderWidth: 1, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   accountInfoRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 12, borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: 9, marginTop: 10 },
