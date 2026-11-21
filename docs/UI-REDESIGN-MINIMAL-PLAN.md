@@ -54,9 +54,21 @@ No feature may be silently removed, disabled, hidden without an equivalent disco
    - Keep provider/model selection and connection status accessible from chat.
    - Do not change provider routing semantics or credentials storage as part of visual work.
 
-4. **Settings and advanced capabilities**
-   - Preserve all current settings and advanced screens.
-   - Apply shared visual tokens and reusable components incrementally; avoid broad rewrites of complex settings logic.
+4. **Settings — ChatGPT-inspired information architecture**
+   - Reorganize Settings into a clean, searchable-feeling, compact list of clearly named categories and rows, following familiar ChatGPT Settings usability patterns without copying proprietary assets.
+   - Use concise labels, short supporting descriptions, consistent icons, dividers, grouped controls, and compact typography. Avoid oversized hero/profile cards, decorative status badges, oversized headings, and clutter.
+   - Organize existing controls into predictable groups such as Account & Security, Personalization, Appearance, Notifications, Voice, Data & Memory, AI Provider & Models, Connected Apps/Integrations, and Advanced.
+   - Keep every existing setting and action discoverable; use drill-in subpages or compact expandable groups where appropriate rather than one extremely long mixed screen.
+   - Preserve owner authentication, destructive-action confirmations, privacy disclosures, SecureStore behavior, and all existing setting persistence.
+   - Provider/model setup pages introduced by PR #113 must remain accessible; do not duplicate or replace their provider-management implementation.
+
+5. **Developer Mode — mobile control surface, not a status dashboard**
+   - When enabled, Developer Mode must expose the existing supported developer capabilities in a mobile-first, task-oriented interface that can be operated from an Android phone.
+   - Group capabilities into concise workflows (for example: project/repository, planning and agent tasks, code review/analysis, QA/testing, Project Brain/memory, integrations, and release/recovery controls where actually implemented).
+   - Use compact forms, clear actions, confirmation gates for sensitive/destructive operations, and inline result/error feedback.
+   - Do not create a separate status screen, status dashboard, telemetry page, or large always-visible status/log panel. Progress or execution feedback may appear inline only when needed to explain an active task or its result.
+   - Do not imply unsupported capabilities are operational. A control may be shown only when it has a real handler and verified permission boundary; unavailable capabilities must be clearly marked unavailable or omitted until implemented.
+   - Preserve existing GitHub authorization, preview/approval gates, agent execution safety, task history, and private Project Brain data behavior.
 
 ## Design system
 
@@ -103,6 +115,9 @@ No feature may be silently removed, disabled, hidden without an equivalent disco
 - [ ] Existing API contracts, Cloudflare backend, auth/session, secure storage, and user data paths are unchanged.
 - [ ] Chat streaming, voice, wake-word, composer, message actions, and keyboard/safe-area behavior pass regression checks.
 - [ ] Existing routes and deep links remain valid.
+- [ ] Settings uses compact ChatGPT-inspired category navigation, concise labels, and no oversized decorative/status content.
+- [ ] Developer Mode exposes only real, supported mobile-operable actions; no separate status dashboard/screen is introduced.
+- [ ] Sensitive developer actions retain explicit confirmation and permission boundaries.
 - [ ] Mobile typecheck, relevant tests, lint, and build results are recorded accurately.
 - [ ] Android device validation is performed where a device/runtime is available; otherwise clearly marked unverified.
 
