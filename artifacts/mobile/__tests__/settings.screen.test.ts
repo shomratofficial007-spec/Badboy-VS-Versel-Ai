@@ -494,8 +494,8 @@ function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {
   // adds new state for Telegram, voice search, reminders and device controls.
   const legacyStateIndexMap: Record<number, number> = {
     9: 10, 10: 11, 12: 19, 14: 21, 15: 22, 16: 23, 17: 24, 18: 25,
-    24: 31, 25: 32, 26: 33, 27: 34, 28: 35, 29: 36, 32: 39,
-    40: 47, 41: 48, 42: 49, 43: 50,
+    24: 29, 25: 30, 26: 31, 27: 32, 28: 33, 29: 34, 32: 37,
+    40: 43, 41: 44, 42: 45, 43: 46,
   };
   const mappedOverrides: Record<number, unknown> = {};
   for (const [index, value] of Object.entries(initialOverrides)) {
