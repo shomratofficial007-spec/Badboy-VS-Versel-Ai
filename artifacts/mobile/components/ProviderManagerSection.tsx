@@ -178,7 +178,7 @@ export function ProviderManagerSection() {
           </View>
           <Text style={{ color: colors.foreground, fontWeight: '700', fontSize: 13 }}>Model ID</Text>
           <TextInput value={model} onChangeText={setModel} autoCapitalize="none" autoCorrect={false} placeholder="e.g. gpt-4o-mini / gemini-2.5-flash" placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 11, color: colors.foreground, fontSize: 13 }} />
-          {providerId !== 'cloudflare' ? (
+          {!['cloudflare', 'cohere', 'nvidia'].includes(providerId) ? (
             <Pressable onPress={() => void loadModels()} disabled={busy || !keyConfigured} style={{ minHeight: 40, borderRadius: 11, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, opacity: busy || !keyConfigured ? 0.5 : 1 }}>
               {busy ? <ActivityIndicator size="small" color={colors.primary} /> : <Feather name="refresh-cw" size={14} color={colors.primary} />}
               <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '700' }}>Fetch available models</Text>

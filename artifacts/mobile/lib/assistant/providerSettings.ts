@@ -22,7 +22,7 @@ export const AI_PROVIDER_PRESETS: AIProviderPreset[] = [
   { id: 'sambanova', label: 'SambaNova', baseUrl: 'https://api.sambanova.ai/v1' },
   { id: 'mistral', label: 'Mistral', baseUrl: 'https://api.mistral.ai/v1' },
   { id: 'cloudflare', label: 'Cloudflare Workers AI', baseUrl: '' },
-  { id: 'cohere', label: 'Cohere', baseUrl: 'https://api.cohere.com/compatibility/v1' },
+  { id: 'cohere', label: 'Cohere', baseUrl: 'https://api.cohere.ai/compatibility/v1' },
   { id: 'nvidia', label: 'NVIDIA NIM', baseUrl: 'https://integrate.api.nvidia.com/v1' },
   { id: 'custom', label: 'Custom / Proxy', baseUrl: '' },
 ];

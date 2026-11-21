@@ -16,7 +16,7 @@ const PROVIDER_BASE_URLS: Record<Exclude<ProviderId, "custom">, string> = {
   sambanova: "https://api.sambanova.ai/v1",
   mistral: "https://api.mistral.ai/v1",
   cloudflare: "",
-  cohere: "https://api.cohere.com/compatibility/v1",
+  cohere: "https://api.cohere.ai/compatibility/v1",
   nvidia: "https://integrate.api.nvidia.com/v1",
 };
 

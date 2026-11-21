@@ -18,9 +18,6 @@ test('provider model proxy accepts the additional public OpenAI-compatible provi
     ['cerebras', 'https://api.cerebras.ai/v1'],
     ['sambanova', 'https://api.sambanova.ai/v1'],
     ['mistral', 'https://api.mistral.ai/v1'],
-    ['cohere', 'https://api.cohere.com/compatibility/v1'],
-    ['nvidia', 'https://integrate.api.nvidia.com/v1'],
-    ['cloudflare', 'https://api.cloudflare.com/client/v4/accounts/test-account/ai/v1'],
   ] as const;
 
   try {
@@ -57,6 +54,48 @@ test('provider model proxy continues to reject unsupported provider identifiers'
     );
     assert.equal(response.status, 400);
     assert.equal(upstreamCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test('additional providers accept OpenAI-compatible chat completion requests', async () => {
+  const requested: Array<{ url: string; authorization: string | null }> = [];
+  globalThis.fetch = async (input, init) => {
+    requested.push({
+      url: String(input),
+      authorization: new Headers(init?.headers).get('Authorization'),
+    });
+    return new Response('data: [DONE]\\n\\n', {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  };
+  const providers = [
+    ['cohere', 'https://api.cohere.ai/compatibility/v1'],
+    ['nvidia', 'https://integrate.api.nvidia.com/v1'],
+    ['cloudflare', 'https://api.cloudflare.com/client/v4/accounts/test-account/ai/v1'],
+  ] as const;
+  try {
+    for (const [providerId, baseUrl] of providers) {
+      const response = await handleProviderChatProxy(
+        new Request('https://worker.example/api/assistant/provider-chat', {
+          method: 'POST',
+          headers: { 'X-Provider-Key': 'test-provider-key' },
+        }),
+        {
+          providerId,
+          baseUrl,
+          model: 'test-model',
+          messages: [{ role: 'user', content: 'hello' }],
+        },
+      );
+      assert.equal(response.status, 200, providerId + ' should accept chat completion requests');
+      assert.match(response.headers.get('content-type') ?? '', /text\/event-stream/);
+    }
+    assert.deepEqual(requested.map((item) => item.url), providers.map(([, baseUrl]) => baseUrl + '/chat/completions'));
+    assert.ok(requested.every((item) => item.authorization === 'Bearer test-provider-key'));
   } finally {
     globalThis.fetch = originalFetch;
   }
