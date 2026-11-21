@@ -160,7 +160,7 @@ test('streamAgenticReply uses configured fallback only when primary fails before
     const body = JSON.parse(String(init.body));
     requests.push({ providerId: body.provider?.providerId ?? 'server', model: body.provider?.model ?? '', key: new Headers(init.headers).get('X-Provider-Key') });
     if (requests.length === 1) return jsonResponse({ error: 'rate limited' }, 429);
-    return streamResponse(['data: {"content":"fallback answer"}\\n\\n', 'data: [DONE]\\n\\n']);
+    return streamResponse(['data: {"content":"fallback answer"}\n\n', 'data: [DONE]\n\n']);
   };
   const chunks: string[] = [];
   await streamAgenticReply('hello', {
