@@ -839,7 +839,7 @@ export default function SettingsScreen() {
           <Feather name="arrow-left" size={21} color={colors.foreground} />
         </Pressable>
         <View style={[styles.crownMark, { borderColor: colors.border, backgroundColor: colors.card }]}>
-          <Feather name="award" size={27} color={colors.primary} />
+          <Feather name="award" size={18} color={colors.primary} />
         </View>
         <View style={styles.brandCopy}>
           <Text style={[styles.title, { color: colors.foreground }]}>Settings</Text>
@@ -1247,7 +1247,6 @@ export default function SettingsScreen() {
                   </Pressable>
                 </View>
               ) : null}
-              
             </View>
 
             {/* Navigation Modules Tabs */}
@@ -1889,12 +1888,7 @@ const styles = StyleSheet.create({
   backButton: { width: 36, height: 36, borderWidth: 1, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   crownMark: { width: 36, height: 36, borderWidth: 1, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   accountInfoRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 12, borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: 9, marginTop: 10 },
-  brandHeader: { minHeight: 82, borderWidth: 1.5, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 5, shadowColor: '#c026ff', shadowOpacity: 0.22, shadowRadius: 12, elevation: 5 },
-  brandMark: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   brandCopy: { flex: 1, gap: 3 },
-  brandName: { fontSize: 18, fontWeight: '900', letterSpacing: 0.1 },
-  brandCaption: { fontSize: 11, letterSpacing: 0.4 },
-  settingsPill: { width: 34, height: 34, borderWidth: 1, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   eyebrow: { fontSize: 10, fontWeight: '700', letterSpacing: 0.6, marginTop: 3, paddingLeft: 2 },
   title: { fontSize: 20, fontWeight: '700', letterSpacing: -0.2 },
   subtitle: { fontSize: 12, lineHeight: 16, marginTop: 1 },
