@@ -10,7 +10,7 @@ import {
 
 export { normalizeProviderBaseUrl } from './providerSettingsCore';
 
-export type AIProviderId = 'server' | 'openai' | 'openrouter' | 'gemini' | 'groq' | 'together' | 'custom';
+export type AIProviderId = 'server' | 'openai' | 'openrouter' | 'gemini' | 'groq' | 'together' | 'cerebras' | 'sambanova' | 'mistral' | 'cloudflare' | 'cohere' | 'nvidia' | 'custom';
 export interface AIProviderPreset { id: Exclude<AIProviderId, 'server'>; label: string; baseUrl: string; }
 export const AI_PROVIDER_PRESETS: AIProviderPreset[] = [
   { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
@@ -18,6 +18,12 @@ export const AI_PROVIDER_PRESETS: AIProviderPreset[] = [
   { id: 'gemini', label: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai' },
   { id: 'groq', label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1' },
   { id: 'together', label: 'Together AI', baseUrl: 'https://api.together.xyz/v1' },
+  { id: 'cerebras', label: 'Cerebras', baseUrl: 'https://api.cerebras.ai/v1' },
+  { id: 'sambanova', label: 'SambaNova', baseUrl: 'https://api.sambanova.ai/v1' },
+  { id: 'mistral', label: 'Mistral', baseUrl: 'https://api.mistral.ai/v1' },
+  { id: 'cloudflare', label: 'Cloudflare Workers AI', baseUrl: '' },
+  { id: 'cohere', label: 'Cohere', baseUrl: 'https://api.cohere.ai/compatibility/v1' },
+  { id: 'nvidia', label: 'NVIDIA NIM', baseUrl: 'https://integrate.api.nvidia.com/v1' },
   { id: 'custom', label: 'Custom / Proxy', baseUrl: '' },
 ];
 

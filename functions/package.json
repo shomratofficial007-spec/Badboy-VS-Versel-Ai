@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --experimental-strip-types --test functions.test.ts developerAgent.test.ts agentStorage.test.ts accessAuth.test.ts personalAuth.test.ts developerData.test.ts api/agenticAssistant.test.ts api/agentMemory.test.ts api/integrationApprovals.test.ts api/integrationHub.test.ts",
+    "test": "node --experimental-strip-types --test functions.test.ts developerAgent.test.ts agentStorage.test.ts accessAuth.test.ts personalAuth.test.ts developerData.test.ts api/providerProxy.test.ts api/agenticAssistant.test.ts api/agentMemory.test.ts api/integrationApprovals.test.ts api/integrationHub.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {

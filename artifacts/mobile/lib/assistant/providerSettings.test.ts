@@ -119,3 +119,13 @@ test('provider API key helpers persist and remove keys through SecureStore', asy
   await deleteProviderApiKey('openai');
   assert.equal(await getProviderApiKey('openai'), null);
 });
+
+
+test('provider presets include the additional OpenAI-compatible providers from PR #113', async () => {
+  const { AI_PROVIDER_PRESETS } = await providerSettingsPromise;
+  const ids = AI_PROVIDER_PRESETS.map((provider) => provider.id);
+  for (const id of ['cerebras', 'sambanova', 'mistral', 'cloudflare', 'cohere', 'nvidia'] as const) {
+    assert.ok(ids.includes(id), 'missing provider preset: ' + id);
+  }
+  assert.equal(AI_PROVIDER_PRESETS.find((provider) => provider.id === 'cloudflare')?.baseUrl, '');
+});

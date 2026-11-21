@@ -243,8 +243,11 @@ test('Settings screen renders existing voice, privacy, developer and account con
   assert.match(html, /Server AI/);
   assert.match(html, /openrouter\/free/);
   assert.match(html, /Multi-AI Fallback/);
-  assert.match(html, /v1[.]0[.]0/);
-  assert.match(html, /Online/);
+  assert.doesNotMatch(html, /v1[.]0[.]0|Smart · Secure · Powerful/);
+  assert.match(html, /Jarvis Assistant/);
+  for (const category of ['Account', 'AI', 'Appearance', 'Privacy', 'Developer', 'Jarvis', 'Voice', 'More']) {
+    assert.ok(pressables.some((item) => item.label === `Go to ${category} settings`), `missing Settings category: ${category}`);
+  }
   assert.match(html, /APPEARANCE/);
   assert.match(html, /AI &amp; FEATURES|AI & FEATURES/);
   assert.match(html, /APP MANAGEMENT/);
@@ -265,7 +268,7 @@ test('Settings screen renders existing voice, privacy, developer and account con
   pressables.find((item) => item.label === 'Token Management')?.onPress();
   assert.equal(alerts.at(-1)?.title, 'Owner Token Management');
   assert.match(html, /চ্যাট ইতিহাস মুছুন/);
-  switchHandlers.find((item) => item.label === 'Develop mode')?.onValueChange(true);
+  switchHandlers.find((item) => item.label === 'Developer Mode')?.onValueChange(true);
   assert.deepEqual(settingsUpdates, [{ developerMode: true }]);
 
   pressables.find((item) => item.label.includes('Owner Sign Out'))?.onPress();
@@ -286,6 +289,7 @@ test('Settings reveals Developer Agent and Project Brain controls when developer
   assert.match(html, /Developer Agent|Developer Analysis|বিশ্লেষণ/);
   assert.match(html, /Project Brain|প্রজেক্ট ব্রেইন/);
   assert.match(html, /Auto QA|স্বয়ংক্রিয় পরীক্ষা/);
+  assert.doesNotMatch(html, /Private D1 Task History|Technical Logs|পূর্ববর্তী ডেভেলপমেন্ট হিস্ট্রি|Task ID:/);
 });
 
 test('Settings exposes voice consent, input/output, auto-speak, auto-submit and wake-word controls', async () => {
@@ -490,8 +494,8 @@ function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {
   // adds new state for Telegram, voice search, reminders and device controls.
   const legacyStateIndexMap: Record<number, number> = {
     9: 10, 10: 11, 12: 19, 14: 21, 15: 22, 16: 23, 17: 24, 18: 25,
-    24: 31, 25: 32, 26: 33, 27: 34, 28: 35, 29: 36, 32: 39,
-    40: 47, 41: 48, 42: 49, 43: 50,
+    24: 29, 25: 30, 26: 31, 27: 32, 28: 33, 29: 34, 32: 37,
+    40: 43, 41: 44, 42: 45, 43: 46,
   };
   const mappedOverrides: Record<number, unknown> = {};
   for (const [index, value] of Object.entries(initialOverrides)) {
@@ -515,6 +519,11 @@ function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {
             : next;
         },
       ];
+    },
+    useRef(initial: unknown) {
+      const index = cursor++;
+      if (!(index in slots)) slots[index] = { current: initial };
+      return slots[index] as { current: unknown };
     },
     useEffect(effect: () => unknown) { if (!effectsExecuted) effects.push(effect); },
   };
@@ -787,7 +796,7 @@ test('Settings Developer Agent sends private but never sensitive Project Brain n
   await new Promise((resolve) => setTimeout(resolve, 0));
   const html = await render();
   assert.match(html, /Native analysis result/);
-  assert.match(html, /Task ID: task-99/);
+  assert.doesNotMatch(html, /Task ID:/);
   assert.equal(developerAnalysisCalls.length, 1);
   assert.equal(developerAnalysisCalls[0][2], 'native');
   const context = JSON.parse(String(developerAnalysisCalls[0][1]));
@@ -795,7 +804,7 @@ test('Settings Developer Agent sends private but never sensitive Project Brain n
     category: 'project-note', content: 'Keep existing voice behavior', privacyLevel: 'private',
   }]);
   assert.doesNotMatch(String(developerAnalysisCalls[0][1]), /Sensitive owner data/);
-  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 1);
+  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 0);
 });
 
 test('Settings Developer Agent fails closed on unavailable Copilot and reports empty or failed Native analysis', async () => {
@@ -828,7 +837,7 @@ test('Settings Developer Agent fails closed on unavailable Copilot and reports e
   html = await errorRender();
   assert.match(html, /Project notes unavailable/);
   assert.equal(developerAnalysisCalls.length, 0);
-  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 1);
+  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 0);
 
   resetTelegramState();
   settings.developerEngine = 'native';
@@ -841,42 +850,11 @@ test('Settings Developer Agent fails closed on unavailable Copilot and reports e
   assert.match(html, /Developer Agent analysis সম্পন্ন করা যায়নি/);
 });
 
-test('Settings Developer task history refresh displays records and surfaces D1 read errors', async () => {
-  resetTelegramState();
-  settings.developerMode = true;
-  developerDataHandlers.listDeveloperTasks = async () => [{
-    task_id: 'task-history-1', owner_id: 'owner-1', status: 'completed', engine: 'native',
-    title: 'Settings regression suite', summary: null, parent_task_id: null,
-    created_at: '2026-11-08', updated_at: '2026-11-08',
-  }];
-  const render = createSettingsHookHarness();
-  await render();
-  const refreshTasks = pressables.find((item) => item.label.includes('Refresh'));
-  assert.ok(refreshTasks, 'Developer task history refresh action is rendered');
-  refreshTasks.onPress();
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 1);
-  assert.match(await render(), /Settings regression suite/);
-
-  resetTelegramState();
-  developerDataHandlers.listDeveloperTasks = async () => { throw new Error('Task history D1 unavailable'); };
-  const failureRender = createSettingsHookHarness();
-  await failureRender();
-  const refreshFailure = pressables.find((item) => item.label.includes('Refresh'));
-  assert.ok(refreshFailure, 'Developer task history refresh action is rendered for error case');
-  refreshFailure.onPress();
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 1);
-  assert.match(await failureRender(), /Task history D1 unavailable/);
-});
-
-
 test('Settings lifecycle loads the owner integrations, handles storage and memory read failures, and consumes Expert Review drafts', async () => {
   resetTelegramState();
   settings.developerMode = true;
   expertReviewDraftValue = 'Review this saved chat draft';
   telegramHandlers.hasTelegramBot = async () => { throw new Error('secure storage unavailable'); };
-  developerDataHandlers.listDeveloperTasks = async () => { throw new Error('task list unavailable'); };
   developerDataHandlers.listDeveloperProjects = async () => { throw new Error('project list unavailable'); };
   developerDataHandlers.listDeveloperProjectMemory = async () => { throw new Error('project memory unavailable'); };
 
@@ -894,7 +872,7 @@ test('Settings lifecycle loads the owner integrations, handles storage and memor
   assert.equal(reviewInput.value, 'Review this saved chat draft');
   assert.equal(clearExpertReviewDraftCalls, 1);
   assert.equal(telegramCalls.filter((item) => item.method === 'hasTelegramBot').length, 1);
-  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 1);
+  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 0);
   assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperProjects').length, 1);
   assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperProjectMemory').length, 1);
 });
@@ -963,9 +941,10 @@ test('Settings confirms a read-only GitHub preview and never creates a branch or
   await alerts.at(-1)?.buttons.find((button) => button.text === 'Preview দেখুন')?.onPress();
   await new Promise((resolve) => setTimeout(resolve, 0));
   let html = await successRender();
-  assert.match(html, /Read-only preview SHA:/);
-  assert.match(html, /No repository writes were performed/);
-  assert.match(html, /preview-base-sha/);
+  assert.doesNotMatch(html, /Read-only preview SHA:|No repository writes were performed|preview-base-sha/);
+  assert.equal(alerts.at(-1)?.title, 'GitHub preview সম্পন্ন');
+  assert.match(alerts.at(-1)?.message ?? '', /Base SHA: preview-base/);
+  assert.match(alerts.at(-1)?.message ?? '', /কোনো branch, file বা PR তৈরি হয়নি/);
   assert.deepEqual(githubCalls.find((item) => item.method === 'previewGitHubChanges')?.args, [{
     githubToken: 'ghp_test-token', paths: samplePlan.filesToModify,
   }]);
