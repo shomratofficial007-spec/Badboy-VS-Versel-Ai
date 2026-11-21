@@ -139,7 +139,7 @@ test('streamAgenticReply sends selected provider configuration to the full agent
     url = String(input);
     headers = new Headers(init.headers);
     sent = JSON.parse(String(init.body));
-    return streamResponse(['data: {"content":"orchestrated"}\\n\\n', 'data: [DONE]\\n\\n']);
+    return streamResponse(['data: {"content":"orchestrated"}\n\n', 'data: [DONE]\n\n']);
   };
   const chunks: string[] = [];
   await streamAgenticReply('plan this', {

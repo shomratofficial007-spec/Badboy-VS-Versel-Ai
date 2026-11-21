@@ -342,18 +342,18 @@ export function validateAgenticPayload(body: unknown): AgenticValidation {
     const allowedProviders = ["openai", "openrouter", "gemini", "groq", "together", "cerebras", "sambanova", "mistral", "cloudflare", "cohere", "nvidia", "custom"];
     if (typeof candidate.providerId !== "string" || !allowedProviders.includes(candidate.providerId)
       || typeof candidate.baseUrl !== "string" || candidate.baseUrl.length > 2048
-      || typeof candidate.model !== "string" || !/^[\\w./:-]{1,200}$/.test(candidate.model)) {
+      || typeof candidate.model !== "string" || !/^[\w./:-]{1,200}$/.test(candidate.model)) {
       return { ok: false, code: "INVALID_AGENTIC_PROVIDER", error: "provider must contain a supported provider ID, HTTPS base URL and model." };
     }
     try {
       const endpoint = new URL(candidate.baseUrl);
-      const host = endpoint.hostname.toLowerCase().replace(/\\.$/, "");
+      const host = endpoint.hostname.toLowerCase().replace(/\.$/, "");
       const blocked = !host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")
-        || host.endsWith(".test") || host.endsWith(".invalid") || host.endsWith(".example") || /^\\d{1,3}(?:\\.\\d{1,3}){3}$/.test(host)
+        || host.endsWith(".test") || host.endsWith(".invalid") || host.endsWith(".example") || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)
         || host.includes(":") || host.startsWith("[");
       if (endpoint.protocol !== "https:" || endpoint.username || endpoint.password || endpoint.search || endpoint.hash
         || (endpoint.port !== "" && endpoint.port !== "443") || blocked) throw new Error("blocked endpoint");
-      provider = { providerId: candidate.providerId, baseUrl: endpoint.origin + endpoint.pathname.replace(/\\/+$/, ""), model: candidate.model };
+      provider = { providerId: candidate.providerId, baseUrl: endpoint.origin + endpoint.pathname.replace(/\/+$/, ""), model: candidate.model };
     } catch {
       return { ok: false, code: "INVALID_AGENTIC_PROVIDER", error: "provider baseUrl must be a public HTTPS endpoint without credentials, query or fragment." };
     }
@@ -457,7 +457,7 @@ async function requestCompletion(
   const endpoint = provider ? provider.baseUrl + "/chat/completions" : OPENROUTER_URL;
   for (const model of models) {
     // Only the dynamic free router and explicitly free model IDs are allowed.
-    if (model !== "openrouter/free" && !model.endsWith(":free")) continue;
+    if (!provider && model !== "openrouter/free" && !model.endsWith(":free")) continue;
     const timeoutSignal = AbortSignal.timeout(options.timeoutMs ?? 20_000);
     const signal = options.signal
       ? AbortSignal.any([options.signal, timeoutSignal])
@@ -737,7 +737,7 @@ export async function handleAgenticAssistantRequest(request: Request, env: Agent
   if (!validation.ok) return jsonResponse({ code: validation.code, error: validation.error }, 400);
   const provider = validation.value.provider;
   const suppliedProviderKey = request.headers.get("X-Provider-Key")?.trim() ?? "";
-  if (provider && (!suppliedProviderKey || suppliedProviderKey.length > 4096 || /[\\r\\n]/.test(suppliedProviderKey))) {
+  if (provider && (!suppliedProviderKey || suppliedProviderKey.length > 4096 || /[\r\n]/.test(suppliedProviderKey))) {
     return jsonResponse({ code: "PROVIDER_KEY_REQUIRED", error: "The selected provider API key is missing or invalid." }, 401);
   }
   const apiKey = provider ? suppliedProviderKey : env.OPENROUTER_API_KEY?.trim();
