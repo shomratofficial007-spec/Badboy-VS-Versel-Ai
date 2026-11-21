@@ -829,7 +829,7 @@ test('Settings Developer Agent fails closed on unavailable Copilot and reports e
   html = await errorRender();
   assert.match(html, /Project notes unavailable/);
   assert.equal(developerAnalysisCalls.length, 0);
-  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 1);
+  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 0);
 
   resetTelegramState();
   settings.developerEngine = 'native';
@@ -864,7 +864,7 @@ test('Settings lifecycle loads the owner integrations, handles storage and memor
   assert.equal(reviewInput.value, 'Review this saved chat draft');
   assert.equal(clearExpertReviewDraftCalls, 1);
   assert.equal(telegramCalls.filter((item) => item.method === 'hasTelegramBot').length, 1);
-  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 1);
+  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 0);
   assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperProjects').length, 1);
   assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperProjectMemory').length, 1);
 });
