@@ -22,10 +22,10 @@ export type ThemeName = 'badboy' | 'neon' | 'ocean' | 'purple' | 'emerald' | 'su
 
 export interface AssistantSettings {
   /** Selected provider; server preserves the existing owner-managed OpenRouter route. */
-  aiProvider: 'server' | 'openai' | 'openrouter' | 'gemini' | 'groq' | 'together' | 'custom';
+  aiProvider: 'server' | 'openai' | 'openrouter' | 'gemini' | 'groq' | 'together' | 'cerebras' | 'sambanova' | 'mistral' | 'cloudflare' | 'cohere' | 'nvidia' | 'custom';
   aiModel: string;
   aiBaseUrl: string;
-  aiFallbackProvider: 'none' | 'openai' | 'openrouter' | 'gemini' | 'groq' | 'together';
+  aiFallbackProvider: 'none' | 'openai' | 'openrouter' | 'gemini' | 'groq' | 'together' | 'cerebras' | 'sambanova' | 'mistral' | 'cloudflare' | 'cohere' | 'nvidia';
   aiFallbackModel: string;
   theme: ThemeName;
   onlineAI: boolean;
