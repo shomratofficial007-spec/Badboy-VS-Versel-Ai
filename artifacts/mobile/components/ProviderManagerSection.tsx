@@ -163,7 +163,7 @@ export function ProviderManagerSection() {
         <>
           <Text style={{ color: colors.foreground, fontWeight: '700', fontSize: 13 }}>API Base URL / Proxy Endpoint</Text>
           <TextInput value={baseUrl} onChangeText={setBaseUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://api.example.com/v1" placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 11, color: colors.foreground, fontSize: 13 }} />
-          <Text style={{ color: colors.mutedForeground, fontSize: 11, lineHeight: 16 }}>OpenAI-compatible HTTPS endpoint প্রয়োজন। Chat ও model-list request Cloudflare Worker-এর মাধ্যমে যাবে; Worker API Key সংরক্ষণ করে না। Custom proxy-তে localhost বা private IP ব্যবহার করা যাবে না।</Text>
+          <Text style={{ color: colors.mutedForeground, fontSize: 11, lineHeight: 16 }}>{providerId === 'cloudflare' ? 'Cloudflare Workers AI Base URL-এ Account ID যুক্ত করুন: https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/ai/v1 । Model ID হাতে লিখুন; এই endpoint-এ OpenAI-compatible model discovery নেই।' : 'OpenAI-compatible HTTPS endpoint প্রয়োজন। Chat ও model-list request Cloudflare Worker-এর মাধ্যমে যাবে; Worker API Key সংরক্ষণ করে না। Custom proxy-তে localhost বা private IP ব্যবহার করা যাবে না।'}</Text>
           <Text style={{ color: colors.foreground, fontWeight: '700', fontSize: 13 }}>API Key</Text>
           <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, flexDirection: 'row', alignItems: 'center', paddingRight: 10 }}>
             <TextInput value={keyDraft} onChangeText={setKeyDraft} secureTextEntry autoCapitalize="none" autoCorrect={false} placeholder={keyConfigured ? 'Saved key আছে • নতুন Key দিলে replace হবে' : 'Paste your provider API key'} placeholderTextColor={colors.mutedForeground} style={{ flex: 1, padding: 11, color: colors.foreground, fontSize: 13 }} />
@@ -178,10 +178,12 @@ export function ProviderManagerSection() {
           </View>
           <Text style={{ color: colors.foreground, fontWeight: '700', fontSize: 13 }}>Model ID</Text>
           <TextInput value={model} onChangeText={setModel} autoCapitalize="none" autoCorrect={false} placeholder="e.g. gpt-4o-mini / gemini-2.5-flash" placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 11, color: colors.foreground, fontSize: 13 }} />
-          <Pressable onPress={() => void loadModels()} disabled={busy || !keyConfigured} style={{ minHeight: 40, borderRadius: 11, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, opacity: busy || !keyConfigured ? 0.5 : 1 }}>
-            {busy ? <ActivityIndicator size="small" color={colors.primary} /> : <Feather name="refresh-cw" size={14} color={colors.primary} />}
-            <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '700' }}>Fetch available models</Text>
-          </Pressable>
+          {providerId !== 'cloudflare' ? (
+            <Pressable onPress={() => void loadModels()} disabled={busy || !keyConfigured} style={{ minHeight: 40, borderRadius: 11, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, opacity: busy || !keyConfigured ? 0.5 : 1 }}>
+              {busy ? <ActivityIndicator size="small" color={colors.primary} /> : <Feather name="refresh-cw" size={14} color={colors.primary} />}
+              <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '700' }}>Fetch available models</Text>
+            </Pressable>
+          ) : null}
           {models.length > 0 ? <ScrollView nestedScrollEnabled style={{ maxHeight: 180, borderWidth: 1, borderColor: colors.border, borderRadius: 11 }} contentContainerStyle={{ padding: 6, gap: 4 }}>
             {models.map((item) => <Pressable key={item} onPress={() => setModel(item)} style={{ padding: 9, borderRadius: 8, backgroundColor: model === item ? colors.secondary : colors.background }}>
               <Text style={{ color: model === item ? colors.primary : colors.foreground, fontSize: 12, fontWeight: model === item ? '800' : '500' }}>{item}</Text>
