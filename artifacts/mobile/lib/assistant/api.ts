@@ -223,7 +223,7 @@ export async function streamAgenticReply(
   const selectedProvider = settings.aiProvider && settings.aiProvider !== 'server' ? settings.aiProvider : null;
   const selectedPreset = selectedProvider ? AI_PROVIDER_PRESETS.find((item) => item.id === selectedProvider) : undefined;
   const selectedBaseUrl = selectedProvider ? normalizeProviderBaseUrl(settings.aiBaseUrl || selectedPreset?.baseUrl || '') : '';
-  const selectedModel = settings.aiModel.trim();
+  const selectedModel = (settings.aiModel ?? '').trim();
   const selectedApiKey = selectedProvider ? await getProviderApiKey(selectedProvider) : null;
   if (selectedProvider && (!selectedModel || !selectedBaseUrl || !selectedApiKey)) {
     throw new Error(!selectedModel ? 'Settings থেকে একটি Model নির্বাচন করুন।' : !selectedApiKey ? 'নির্বাচিত Provider-এর API Key Secure Storage-এ নেই।' : 'Provider Base URL সঠিক নয়।');
