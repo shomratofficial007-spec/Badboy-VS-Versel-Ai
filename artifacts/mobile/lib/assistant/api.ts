@@ -230,30 +230,58 @@ export async function streamAgenticReply(
   }
   const safeMemoryContext = memoryContext.trim().slice(0, 5000);
   const safeSkillContext = skillContext.trim().slice(0, 4000);
-  const response = await expoFetch(apiUrl('/assistant/agent'), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-      Authorization: await ownerAuthorizationHeader(),
-      ...(selectedApiKey ? { 'X-Provider-Key': selectedApiKey } : {}),
-    },
-    body: JSON.stringify({
-      message,
-      ...(selectedProvider ? { provider: { providerId: selectedProvider, baseUrl: selectedBaseUrl, model: selectedModel } } : {}),
-      personality: `${settings.personality}\n\nLanguage preference: ${settings.voiceLanguage}.`,
-      memoryContext: safeMemoryContext,
-      skillContext: safeSkillContext,
-      developerMode: settings.developerMode,
-      mode: 'multi',
-      enabledPlugins: enabledPluginIds,
-      history: history.slice(-8).map(({ role, content }) => ({
-        role,
-        content: content.slice(0, 3000),
-      })),
-    }),
-  });
-  await streamSseResponse(response, onChunk);
+  const sendAgenticRequest = async (
+    providerId: typeof selectedProvider,
+    baseUrl: string,
+    model: string,
+    apiKey: string | null,
+    onText: (chunk: string) => void,
+  ) => {
+    const response = await expoFetch(apiUrl('/assistant/agent'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        Authorization: await ownerAuthorizationHeader(),
+        ...(apiKey ? { 'X-Provider-Key': apiKey } : {}),
+      },
+      body: JSON.stringify({
+        message,
+        ...(providerId ? { provider: { providerId, baseUrl, model } } : {}),
+        personality: `${settings.personality}\n\nLanguage preference: ${settings.voiceLanguage}.`,
+        memoryContext: safeMemoryContext,
+        skillContext: safeSkillContext,
+        developerMode: settings.developerMode,
+        mode: 'multi',
+        enabledPlugins: enabledPluginIds,
+        history: history.slice(-8).map(({ role, content }) => ({
+          role,
+          content: content.slice(0, 3000),
+        })),
+      }),
+    });
+    await streamSseResponse(response, onText);
+  };
+
+  let primaryEmitted = false;
+  try {
+    await sendAgenticRequest(selectedProvider, selectedBaseUrl, selectedModel, selectedApiKey, (chunk) => {
+      primaryEmitted = true;
+      onChunk(chunk);
+    });
+  } catch (primaryError) {
+    const fallbackId = settings.aiFallbackProvider ?? 'none';
+    const fallbackModel = settings.aiFallbackModel?.trim() ?? '';
+    const fallbackPreset = AI_PROVIDER_PRESETS.find((item) => item.id === fallbackId);
+    // Retry only before any final answer text is emitted; never splice two model answers.
+    if (!selectedProvider || primaryEmitted || fallbackId === 'none' || fallbackId === selectedProvider || !fallbackPreset || !fallbackModel) {
+      throw primaryError;
+    }
+    const fallbackKey = await getProviderApiKey(fallbackId);
+    if (!fallbackKey) throw primaryError;
+    const fallbackBaseUrl = normalizeProviderBaseUrl(fallbackPreset.baseUrl);
+    await sendAgenticRequest(fallbackId, fallbackBaseUrl, fallbackModel, fallbackKey, onChunk);
+  }
 }
 
 export type DeveloperEngineRequest = 'native' | 'copilot' | 'auto';

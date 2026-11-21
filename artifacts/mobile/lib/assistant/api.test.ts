@@ -153,6 +153,29 @@ test('streamAgenticReply sends selected provider configuration to the full agent
   assert.deepEqual(chunks, ['orchestrated']);
 });
 
+test('streamAgenticReply uses configured fallback only when primary fails before final text', async () => {
+  const { streamAgenticReply } = await apiPromise;
+  const requests: Array<{ providerId: string; model: string; key: string | null }> = [];
+  fetchHandler = async (_input, init) => {
+    const body = JSON.parse(String(init.body));
+    requests.push({ providerId: body.provider?.providerId ?? 'server', model: body.provider?.model ?? '', key: new Headers(init.headers).get('X-Provider-Key') });
+    if (requests.length === 1) return jsonResponse({ error: 'rate limited' }, 429);
+    return streamResponse(['data: {"content":"fallback answer"}\\n\\n', 'data: [DONE]\\n\\n']);
+  };
+  const chunks: string[] = [];
+  await streamAgenticReply('hello', {
+    aiProvider: 'openai', aiModel: 'primary-model', aiBaseUrl: 'https://api.openai.com/v1',
+    aiFallbackProvider: 'groq', aiFallbackModel: 'fallback-model',
+    personality: 'helpful', voiceLanguage: 'en-US', developerMode: false,
+  } as any, [], (chunk) => chunks.push(chunk));
+  assert.deepEqual(requests.map(({ providerId, model }) => ({ providerId, model })), [
+    { providerId: 'openai', model: 'primary-model' },
+    { providerId: 'groq', model: 'fallback-model' },
+  ]);
+  assert.ok(requests.every((request) => request.key === 'provider-key-test'));
+  assert.deepEqual(chunks, ['fallback answer']);
+});
+
 test('streamAgenticReply sends owner-authenticated bounded history and consumes agentic SSE', async () => {
   const { streamAgenticReply } = await apiPromise;
   let url = '';
