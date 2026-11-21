@@ -1092,7 +1092,7 @@ export default function ChatScreen() {
                       setDrawerModal(null);
                       router.push('/(tabs)/settings?section=developer' as never);
                     }}
-                    style={[styles.infoCard, { borderColor: colors.border, backgroundColor: colors.background, flexDirection: 'row', alignItems: 'center', gap: 10 }]}
+                    style={[styles.toolsLauncher, { borderColor: colors.border, backgroundColor: colors.background, flexDirection: 'row', alignItems: 'center', gap: 10 }]}
                   >
                     <Feather name="code" size={20} color={colors.primary} />
                     <View style={{ flex: 1 }}>
