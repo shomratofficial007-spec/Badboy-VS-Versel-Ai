@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { handleProviderChatProxy, handleProviderModelsProxy } from './providerProxy';
+import { handleProviderChatProxy, handleProviderModelsProxy } from './providerProxy.ts';
 
 const originalFetch = globalThis.fetch;
 
