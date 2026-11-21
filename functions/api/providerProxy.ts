@@ -1,4 +1,4 @@
-type ProviderId = "openai" | "openrouter" | "gemini" | "groq" | "together" | "custom";
+type ProviderId = "openai" | "openrouter" | "gemini" | "groq" | "together" | "cerebras" | "sambanova" | "mistral" | "cloudflare" | "cohere" | "nvidia" | "custom";
 type ChatRole = "system" | "user" | "assistant";
 
 type ChatMessage = {
@@ -12,6 +12,12 @@ const PROVIDER_BASE_URLS: Record<Exclude<ProviderId, "custom">, string> = {
   gemini: "https://generativelanguage.googleapis.com/v1beta/openai",
   groq: "https://api.groq.com/openai/v1",
   together: "https://api.together.xyz/v1",
+  cerebras: "https://api.cerebras.ai/v1",
+  sambanova: "https://api.sambanova.ai/v1",
+  mistral: "https://api.mistral.ai/v1",
+  cloudflare: "",
+  cohere: "https://api.cohere.com/compatibility/v1",
+  nvidia: "https://integrate.api.nvidia.com/v1",
 };
 
 const CORS_HEADERS = {
@@ -41,6 +47,12 @@ function providerIdFrom(value: unknown): ProviderId | null {
     value === "gemini" ||
     value === "groq" ||
     value === "together" ||
+    value === "cerebras" ||
+    value === "sambanova" ||
+    value === "mistral" ||
+    value === "cloudflare" ||
+    value === "cohere" ||
+    value === "nvidia" ||
     value === "custom"
     ? value
     : null;
