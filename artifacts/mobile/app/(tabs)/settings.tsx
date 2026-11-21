@@ -1144,8 +1144,8 @@ export default function SettingsScreen() {
         </View>
         <SettingSwitch
           colors={colors}
-          title="Develop mode"
-          subtitle="ওয়েব ডেভেলপমেন্ট, অ্যান্ড্রয়েড এপিকে, অটো কিউএ এবং ব্যাডবয় সেলফ-ডেভেলপমেন্ট।"
+          title="Developer Mode"
+          subtitle="ফোন থেকেই project, code review, QA ও integrations পরিচালনা করুন।"
           value={settings.developerMode}
           onValueChange={(value) => updateSettings({ developerMode: value })}
         />
