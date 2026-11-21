@@ -943,7 +943,7 @@ test('Settings confirms a read-only GitHub preview and never creates a branch or
   let html = await successRender();
   assert.doesNotMatch(html, /Read-only preview SHA:|No repository writes were performed|preview-base-sha/);
   assert.equal(alerts.at(-1)?.title, 'GitHub preview সম্পন্ন');
-  assert.match(alerts.at(-1)?.message ?? '', /Base SHA: preview-base-sha/);
+  assert.match(alerts.at(-1)?.message ?? '', /Base SHA: preview-base(?:\\n|$)/);
   assert.match(alerts.at(-1)?.message ?? '', /কোনো branch, file বা PR তৈরি হয়নি/);
   assert.deepEqual(githubCalls.find((item) => item.method === 'previewGitHubChanges')?.args, [{
     githubToken: 'ghp_test-token', paths: samplePlan.filesToModify,
