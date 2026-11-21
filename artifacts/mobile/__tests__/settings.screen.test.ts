@@ -104,7 +104,7 @@ const settings = {
   voiceLanguage: 'bn-BD', voiceIdentifier: null, roadmap,
 };
 mock.module('../assets/images/badboy-settings-avatar.jpg', { defaultExport: {} });
-mock.module('expo-router', { namedExports: { useRouter: () => ({ back: () => {} }) } });
+mock.module('expo-router', { namedExports: { useRouter: () => ({ back: () => {} }), useLocalSearchParams: () => ({}) } });
 
 mock.module(mobileModule('components/ProviderManagerSection'), { namedExports: { ProviderManagerSection: () => null } });
 mock.module(mobileModule('lib/assistant/jarvis'), { namedExports: { canDrawFloatingAssistant: () => false, openFloatingAssistantPermissionSettings: async () => {}, startFloatingAssistant: async () => {}, stopFloatingAssistant: async () => {}, isScreenAwarenessEnabled: () => false, openScreenAwarenessSettings: async () => { screenSettingsCalls += 1; } } });
