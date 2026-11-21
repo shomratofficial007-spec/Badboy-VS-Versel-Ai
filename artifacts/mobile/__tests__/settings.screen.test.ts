@@ -520,6 +520,11 @@ function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {
         },
       ];
     },
+    useRef(initial: unknown) {
+      const index = cursor++;
+      if (!(index in slots)) slots[index] = { current: initial };
+      return slots[index] as { current: unknown };
+    },
     useEffect(effect: () => unknown) { if (!effectsExecuted) effects.push(effect); },
   };
   const render = async () => {
