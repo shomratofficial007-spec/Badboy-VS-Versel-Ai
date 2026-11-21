@@ -243,8 +243,8 @@ test('Settings screen renders existing voice, privacy, developer and account con
   assert.match(html, /Server AI/);
   assert.match(html, /openrouter\/free/);
   assert.match(html, /Multi-AI Fallback/);
-  assert.match(html, /v1[.]0[.]0/);
-  assert.match(html, /Online/);
+  assert.doesNotMatch(html, /v1[.]0[.]0|Smart · Secure · Powerful/);
+  assert.match(html, /Jarvis Assistant/);
   assert.match(html, /APPEARANCE/);
   assert.match(html, /AI &amp; FEATURES|AI & FEATURES/);
   assert.match(html, /APP MANAGEMENT/);
@@ -286,6 +286,7 @@ test('Settings reveals Developer Agent and Project Brain controls when developer
   assert.match(html, /Developer Agent|Developer Analysis|বিশ্লেষণ/);
   assert.match(html, /Project Brain|প্রজেক্ট ব্রেইন/);
   assert.match(html, /Auto QA|স্বয়ংক্রিয় পরীক্ষা/);
+  assert.doesNotMatch(html, /Private D1 Task History|Technical Logs|পূর্ববর্তী ডেভেলপমেন্ট হিস্ট্রি|Task ID:/);
 });
 
 test('Settings exposes voice consent, input/output, auto-speak, auto-submit and wake-word controls', async () => {
@@ -787,7 +788,7 @@ test('Settings Developer Agent sends private but never sensitive Project Brain n
   await new Promise((resolve) => setTimeout(resolve, 0));
   const html = await render();
   assert.match(html, /Native analysis result/);
-  assert.match(html, /Task ID: task-99/);
+  assert.doesNotMatch(html, /Task ID:/);
   assert.equal(developerAnalysisCalls.length, 1);
   assert.equal(developerAnalysisCalls[0][2], 'native');
   const context = JSON.parse(String(developerAnalysisCalls[0][1]));
@@ -795,7 +796,7 @@ test('Settings Developer Agent sends private but never sensitive Project Brain n
     category: 'project-note', content: 'Keep existing voice behavior', privacyLevel: 'private',
   }]);
   assert.doesNotMatch(String(developerAnalysisCalls[0][1]), /Sensitive owner data/);
-  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 1);
+  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 0);
 });
 
 test('Settings Developer Agent fails closed on unavailable Copilot and reports empty or failed Native analysis', async () => {
@@ -841,42 +842,11 @@ test('Settings Developer Agent fails closed on unavailable Copilot and reports e
   assert.match(html, /Developer Agent analysis সম্পন্ন করা যায়নি/);
 });
 
-test('Settings Developer task history refresh displays records and surfaces D1 read errors', async () => {
-  resetTelegramState();
-  settings.developerMode = true;
-  developerDataHandlers.listDeveloperTasks = async () => [{
-    task_id: 'task-history-1', owner_id: 'owner-1', status: 'completed', engine: 'native',
-    title: 'Settings regression suite', summary: null, parent_task_id: null,
-    created_at: '2026-11-08', updated_at: '2026-11-08',
-  }];
-  const render = createSettingsHookHarness();
-  await render();
-  const refreshTasks = pressables.find((item) => item.label.includes('Refresh'));
-  assert.ok(refreshTasks, 'Developer task history refresh action is rendered');
-  refreshTasks.onPress();
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 1);
-  assert.match(await render(), /Settings regression suite/);
-
-  resetTelegramState();
-  developerDataHandlers.listDeveloperTasks = async () => { throw new Error('Task history D1 unavailable'); };
-  const failureRender = createSettingsHookHarness();
-  await failureRender();
-  const refreshFailure = pressables.find((item) => item.label.includes('Refresh'));
-  assert.ok(refreshFailure, 'Developer task history refresh action is rendered for error case');
-  refreshFailure.onPress();
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(developerDataCalls.filter((item) => item.method === 'listDeveloperTasks').length, 1);
-  assert.match(await failureRender(), /Task history D1 unavailable/);
-});
-
-
 test('Settings lifecycle loads the owner integrations, handles storage and memory read failures, and consumes Expert Review drafts', async () => {
   resetTelegramState();
   settings.developerMode = true;
   expertReviewDraftValue = 'Review this saved chat draft';
   telegramHandlers.hasTelegramBot = async () => { throw new Error('secure storage unavailable'); };
-  developerDataHandlers.listDeveloperTasks = async () => { throw new Error('task list unavailable'); };
   developerDataHandlers.listDeveloperProjects = async () => { throw new Error('project list unavailable'); };
   developerDataHandlers.listDeveloperProjectMemory = async () => { throw new Error('project memory unavailable'); };
 
