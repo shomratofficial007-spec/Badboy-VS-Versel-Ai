@@ -220,9 +220,13 @@ export async function streamAgenticReply(
   skillContext = '',
   enabledPluginIds: AgentPluginId[] = DEFAULT_AGENT_PLUGIN_IDS,
 ) {
-  if (settings.aiProvider && settings.aiProvider !== 'server') {
-    await streamConfiguredProviderReply(message, settings, onChunk, history, memoryContext, skillContext);
-    return;
+  const selectedProvider = settings.aiProvider && settings.aiProvider !== 'server' ? settings.aiProvider : null;
+  const selectedPreset = selectedProvider ? AI_PROVIDER_PRESETS.find((item) => item.id === selectedProvider) : undefined;
+  const selectedBaseUrl = selectedProvider ? normalizeProviderBaseUrl(settings.aiBaseUrl || selectedPreset?.baseUrl || '') : '';
+  const selectedModel = settings.aiModel.trim();
+  const selectedApiKey = selectedProvider ? await getProviderApiKey(selectedProvider) : null;
+  if (selectedProvider && (!selectedModel || !selectedBaseUrl || !selectedApiKey)) {
+    throw new Error(!selectedModel ? 'Settings থেকে একটি Model নির্বাচন করুন।' : !selectedApiKey ? 'নির্বাচিত Provider-এর API Key Secure Storage-এ নেই।' : 'Provider Base URL সঠিক নয়।');
   }
   const safeMemoryContext = memoryContext.trim().slice(0, 5000);
   const safeSkillContext = skillContext.trim().slice(0, 4000);
@@ -232,9 +236,11 @@ export async function streamAgenticReply(
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
       Authorization: await ownerAuthorizationHeader(),
+      ...(selectedApiKey ? { 'X-Provider-Key': selectedApiKey } : {}),
     },
     body: JSON.stringify({
       message,
+      ...(selectedProvider ? { provider: { providerId: selectedProvider, baseUrl: selectedBaseUrl, model: selectedModel } } : {}),
       personality: `${settings.personality}\n\nLanguage preference: ${settings.voiceLanguage}.`,
       memoryContext: safeMemoryContext,
       skillContext: safeSkillContext,

@@ -173,6 +173,49 @@ test("agentic endpoint requires a server-side OpenRouter key", async () => {
   assert.equal(payload.code, "AI_NOT_CONFIGURED");
 });
 
+test("selected provider and model are used for planner, tool calling, reviewer and synthesizer", async () => {
+  const calls: Array<{ url: string; authorization: string | null; model: string; stream: boolean }> = [];
+  globalThis.fetch = async (input, init) => {
+    const payload = JSON.parse(String(init?.body)) as { model: string; stream: boolean; response_format?: { type: string }; messages: Array<{ role: string; content: unknown }> };
+    calls.push({ url: String(input), authorization: new Headers(init?.headers).get("Authorization"), model: payload.model, stream: payload.stream });
+    if (calls.length === 1) return completion(JSON.stringify({ goal: "plan", steps: [{ id: "1", task: "execute", success_criteria: "done" }], risks: [] }));
+    if (calls.length === 2) return completion("", [{ id: "tool-1", function: { name: "calculator", arguments: JSON.stringify({ expression: "6 * 7" }) } }]);
+    if (calls.length === 3) return completion("executor done");
+    if (calls.length === 4) return completion("review done");
+    if (calls.length === 5) return finalStream();
+    throw new Error("Unexpected provider call");
+  };
+  try {
+    const response = await handleAgenticAssistantRequest(agentRequest({
+      message: "6 * 7", mode: "multi",
+      provider: { providerId: "openai", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" },
+    }, { "content-type": "application/json", "X-Provider-Key": "user-provider-secret" }), {});
+    assert.equal(response.status, 200);
+    const body = await response.text();
+    assert.match(body, /planner/);
+    assert.match(body, /executor/);
+    assert.match(body, /reviewer/);
+    assert.match(body, /synthesizer/);
+    assert.equal(calls.length, 5);
+    assert.ok(calls.every((call) => call.url === "https://api.openai.com/v1/chat/completions"));
+    assert.ok(calls.every((call) => call.authorization === "Bearer user-provider-secret"));
+    assert.ok(calls.every((call) => call.model === "gpt-4o-mini"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agentic provider configuration rejects unsafe endpoints and missing keys", async () => {
+  const unsafe = await handleAgenticAssistantRequest(agentRequest({
+    message: "hello", provider: { providerId: "openai", baseUrl: "https://127.0.0.1/v1", model: "gpt-4o-mini" },
+  }, { "content-type": "application/json", "X-Provider-Key": "key" }), {});
+  assert.equal(unsafe.status, 400);
+  const missingKey = await handleAgenticAssistantRequest(agentRequest({
+    message: "hello", provider: { providerId: "openai", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" },
+  }), {});
+  assert.equal(missingKey.status, 401);
+});
+
 test("multi-agent endpoint plans, executes allowlisted tools, reviews, and streams final Bangla answer", async () => {
   const calls: Array<{ model: string; stream: boolean; response_format?: { type: string }; messages: Array<{ role: string; content: unknown }> }> = [];
   globalThis.fetch = async (_input, init) => {

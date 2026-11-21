@@ -56,6 +56,7 @@ export type AgenticPayload = {
   enabledPlugins: AgentPluginId[];
   memoryContext: string;
   skillContext: string;
+  provider?: { providerId: string; baseUrl: string; model: string };
 };
 
 export type AgenticValidation =
@@ -333,6 +334,30 @@ export function validateAgenticPayload(body: unknown): AgenticValidation {
   const skillContext = value.skillContext === undefined ? "" : value.skillContext;
   if (typeof memoryContext !== "string" || memoryContext.length > 5000) return { ok: false, code: "INVALID_AGENTIC_CONTEXT", error: "memoryContext must be a string up to 5,000 characters." };
   if (typeof skillContext !== "string" || skillContext.length > 4000) return { ok: false, code: "INVALID_AGENTIC_CONTEXT", error: "skillContext must be a string up to 4,000 characters." };
+  const rawProvider = value.provider;
+  let provider: AgenticPayload["provider"];
+  if (rawProvider !== undefined) {
+    if (!rawProvider || typeof rawProvider !== "object" || Array.isArray(rawProvider)) return { ok: false, code: "INVALID_AGENTIC_PROVIDER", error: "provider must contain a supported provider ID, HTTPS base URL and model." };
+    const candidate = rawProvider as Record<string, unknown>;
+    const allowedProviders = ["openai", "openrouter", "gemini", "groq", "together", "cerebras", "sambanova", "mistral", "cloudflare", "cohere", "nvidia", "custom"];
+    if (typeof candidate.providerId !== "string" || !allowedProviders.includes(candidate.providerId)
+      || typeof candidate.baseUrl !== "string" || candidate.baseUrl.length > 2048
+      || typeof candidate.model !== "string" || !/^[\\w./:-]{1,200}$/.test(candidate.model)) {
+      return { ok: false, code: "INVALID_AGENTIC_PROVIDER", error: "provider must contain a supported provider ID, HTTPS base URL and model." };
+    }
+    try {
+      const endpoint = new URL(candidate.baseUrl);
+      const host = endpoint.hostname.toLowerCase().replace(/\\.$/, "");
+      const blocked = !host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")
+        || host.endsWith(".test") || host.endsWith(".invalid") || host.endsWith(".example") || /^\\d{1,3}(?:\\.\\d{1,3}){3}$/.test(host)
+        || host.includes(":") || host.startsWith("[");
+      if (endpoint.protocol !== "https:" || endpoint.username || endpoint.password || endpoint.search || endpoint.hash
+        || (endpoint.port !== "" && endpoint.port !== "443") || blocked) throw new Error("blocked endpoint");
+      provider = { providerId: candidate.providerId, baseUrl: endpoint.origin + endpoint.pathname.replace(/\\/+$/, ""), model: candidate.model };
+    } catch {
+      return { ok: false, code: "INVALID_AGENTIC_PROVIDER", error: "provider baseUrl must be a public HTTPS endpoint without credentials, query or fragment." };
+    }
+  }
   const rawHistory = value.history === undefined ? [] : value.history;
   if (!Array.isArray(rawHistory) || rawHistory.length > MAX_HISTORY_MESSAGES) {
     return { ok: false, code: "INVALID_AGENTIC_HISTORY", error: "History must contain at most eight messages." };
@@ -363,6 +388,7 @@ export function validateAgenticPayload(body: unknown): AgenticValidation {
       enabledPlugins,
       memoryContext: memoryContext.trim(),
       skillContext: skillContext.trim(),
+      ...(provider ? { provider } : {}),
     },
   };
 }
@@ -424,9 +450,12 @@ async function requestCompletion(
   apiKey: string,
   messages: ChatMessage[],
   options: { tools?: boolean; toolDefinitions?: readonly unknown[]; stream?: boolean; maxTokens?: number; responseFormat?: "json_object"; signal?: AbortSignal; timeoutMs?: number } = {},
+  provider?: AgenticPayload["provider"],
 ): Promise<Response> {
   let lastStatus = 503;
-  for (const model of selectAgentModels(messages)) {
+  const models = provider ? [provider.model] : selectAgentModels(messages);
+  const endpoint = provider ? provider.baseUrl + "/chat/completions" : OPENROUTER_URL;
+  for (const model of models) {
     // Only the dynamic free router and explicitly free model IDs are allowed.
     if (model !== "openrouter/free" && !model.endsWith(":free")) continue;
     const timeoutSignal = AbortSignal.timeout(options.timeoutMs ?? 20_000);
@@ -435,12 +464,13 @@ async function requestCompletion(
       : timeoutSignal;
     let response: Response;
     try {
-      response = await fetch(OPENROUTER_URL, {
+      response = await fetch(endpoint, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
           "X-Title": "Badboy Agentic Assistant",
+          ...(provider?.providerId === "openrouter" ? { "HTTP-Referer": "https://badboy-vs-versel-ai.app" } : {}),
         },
         signal,
         body: JSON.stringify({
@@ -465,8 +495,8 @@ async function requestCompletion(
   return jsonResponse({ code: "AGENT_MODELS_UNAVAILABLE", error: `No configured free model is available (last HTTP ${lastStatus}).` }, lastStatus === 429 ? 429 : lastStatus === 504 ? 504 : 502);
 }
 
-async function completeText(apiKey: string, messages: ChatMessage[], tools = false, toolDefinitions?: readonly unknown[], responseFormat?: "json_object", signal?: AbortSignal): Promise<{ content: string; messages: ChatMessage[] }> {
-  const response = await requestCompletion(apiKey, messages, { tools, toolDefinitions, responseFormat, maxTokens: 1800, signal, timeoutMs: 20_000 });
+async function completeText(apiKey: string, messages: ChatMessage[], tools = false, toolDefinitions?: readonly unknown[], responseFormat?: "json_object", signal?: AbortSignal, provider?: AgenticPayload["provider"]): Promise<{ content: string; messages: ChatMessage[] }> {
+  const response = await requestCompletion(apiKey, messages, { tools, toolDefinitions, responseFormat, maxTokens: 1800, signal, timeoutMs: 20_000 }, provider);
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as CompletionResponse;
     throw new Error(modelErrorMessage(body, response.status));
@@ -497,6 +527,7 @@ async function runToolAgent(
   env: IntegrationEnv,
   enabledPlugins: AgentPluginId[],
   signal?: AbortSignal,
+  provider?: AgenticPayload["provider"],
 ): Promise<string> {
   const toolPluginMap: Record<string, AgentPluginId> = {
     web_research: "web-research",
@@ -512,7 +543,7 @@ async function runToolAgent(
   let current = [...messages];
   let totalCalls = 0;
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-    const result = await completeText(apiKey, current, true, enabledToolDefinitions, undefined, signal);
+    const result = await completeText(apiKey, current, true, enabledToolDefinitions, undefined, signal, provider);
     current = result.messages;
     const assistant = current[current.length - 1];
     const calls = assistant.tool_calls ?? [];
@@ -559,7 +590,7 @@ function jsonResponse(data: unknown, status = 200): Response {
       "Cache-Control": "no-store",
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, X-Provider-Key",
     },
   });
 }
@@ -603,8 +634,9 @@ async function streamFinalAnswer(
   apiKey: string,
   messages: ChatMessage[],
   signal?: AbortSignal,
+  provider?: AgenticPayload["provider"],
 ): Promise<Response> {
-  const upstream = await requestCompletion(apiKey, messages, { stream: true, maxTokens: 2400, signal, timeoutMs: 90_000 });
+  const upstream = await requestCompletion(apiKey, messages, { stream: true, maxTokens: 2400, signal, timeoutMs: 90_000 }, provider);
   if (!upstream.ok || !upstream.body) {
     const body = await upstream.json().catch(() => ({})) as CompletionResponse;
     return jsonResponse({ code: "AGENT_FINAL_RESPONSE_FAILED", error: modelErrorMessage(body, upstream.status) }, upstream.status === 429 ? 429 : upstream.status === 504 ? 504 : 502);
@@ -703,7 +735,12 @@ export async function handleAgenticAssistantRequest(request: Request, env: Agent
   if (rawBody instanceof Response) return rawBody;
   const validation = validateAgenticPayload(rawBody);
   if (!validation.ok) return jsonResponse({ code: validation.code, error: validation.error }, 400);
-  const apiKey = env.OPENROUTER_API_KEY?.trim();
+  const provider = validation.value.provider;
+  const suppliedProviderKey = request.headers.get("X-Provider-Key")?.trim() ?? "";
+  if (provider && (!suppliedProviderKey || suppliedProviderKey.length > 4096 || /[\\r\\n]/.test(suppliedProviderKey))) {
+    return jsonResponse({ code: "PROVIDER_KEY_REQUIRED", error: "The selected provider API key is missing or invalid." }, 401);
+  }
+  const apiKey = provider ? suppliedProviderKey : env.OPENROUTER_API_KEY?.trim();
   if (!apiKey) return jsonResponse({ code: "AI_NOT_CONFIGURED", error: "OpenRouter is not configured on the server." }, 503);
 
   const { message, personality, developerMode, mode, history, enabledPlugins, memoryContext, skillContext } = validation.value;
@@ -753,13 +790,13 @@ export async function handleAgenticAssistantRequest(request: Request, env: Agent
           ];
           let planned: { content: string; messages: ChatMessage[] };
           try {
-            planned = await completeText(apiKey, plannerMessages, false, undefined, "json_object", requestSignal);
+            planned = await completeText(apiKey, plannerMessages, false, undefined, "json_object", requestSignal, provider);
           } catch {
             // Provider/model may not support JSON mode; retry with an explicit JSON-only prompt.
             planned = await completeText(apiKey, [
               ...plannerMessages,
               { role: "system", content: "Fallback: return only valid JSON. Do not use Markdown fences." },
-            ], false, undefined, undefined, requestSignal);
+            ], false, undefined, undefined, requestSignal, provider);
           }
           let structuredPlan = normalizeStructuredAgentPlan(planned.content);
           if (!structuredPlan) {
@@ -768,7 +805,7 @@ export async function handleAgenticAssistantRequest(request: Request, env: Agent
                 ...plannerMessages,
                 { role: "assistant", content: planned.content.slice(0, 3000) },
                 { role: "user", content: "Your previous plan was not valid structured JSON. Return a valid JSON object with goal, steps (1-8 task/success_criteria objects), and risks only." },
-              ], false, undefined, "json_object", requestSignal);
+              ], false, undefined, "json_object", requestSignal, provider);
               structuredPlan = normalizeStructuredAgentPlan(repaired.content);
               send({ type: "recovery", reason: "invalid_structured_plan", recovered: Boolean(structuredPlan) });
             } catch {
@@ -789,7 +826,7 @@ export async function handleAgenticAssistantRequest(request: Request, env: Agent
           ...baseMessages.slice(1),
           { role: "assistant", content: "পরিকল্পনা:\n" + plan },
         ];
-        const execution = await runToolAgent(apiKey, executorMessages, send, env, enabledPlugins, requestSignal);
+        const execution = await runToolAgent(apiKey, executorMessages, send, env, enabledPlugins, requestSignal, provider);
         send({ type: "agent", agent: "executor", status: "completed" });
 
         if (mode === "multi") {
@@ -797,7 +834,7 @@ export async function handleAgenticAssistantRequest(request: Request, env: Agent
           const reviewed = await completeText(apiKey, [
             { role: "system", content: "You are Badboy Reviewer. Check the proposed answer for correctness, missing requirements, unsupported claims, and safety. Return concise review notes in Bangla. Do not invent facts." },
             { role: "user", content: "User request:\n" + message + "\n\nPlan:\n" + plan + "\n\nExecutor result:\n" + execution + "\n\nList any corrections needed." },
-          ], false, undefined, undefined, requestSignal);
+          ], false, undefined, undefined, requestSignal, provider);
           review = reviewed.content.slice(0, 3000) || review;
           send({ type: "agent", agent: "reviewer", status: "completed" });
         }
@@ -807,7 +844,7 @@ export async function handleAgenticAssistantRequest(request: Request, env: Agent
           { role: "system", content: system + "\n\nYou are the final synthesizer in a multi-agent workflow. Answer the user's original request directly. Incorporate valid reviewer corrections, do not mention internal orchestration unless asked, and do not claim actions that were not performed." },
           { role: "user", content: "Original request:\n" + message + "\n\nPlan:\n" + plan + "\n\nExecutor result (including any tool findings):\n" + execution + "\n\nReviewer notes:\n" + review + "\n\nWrite the final answer in Bangla unless English was explicitly requested." },
         ];
-        const finalResponse = await streamFinalAnswer(apiKey, finalMessages, requestSignal);
+        const finalResponse = await streamFinalAnswer(apiKey, finalMessages, requestSignal, provider);
         if (!finalResponse.ok || !finalResponse.body) {
           const body = await finalResponse.text();
           send({ error: body.slice(0, 1000) || "Could not synthesize the final response." });

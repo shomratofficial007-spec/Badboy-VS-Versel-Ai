@@ -130,26 +130,29 @@ test('streamReply rejects a selected-provider stream that ends without its compl
   );
 });
 
-test('streamAgenticReply falls back to a second provider only before any primary text is emitted', async () => {
+test('streamAgenticReply sends selected provider configuration to the full agentic Worker workflow', async () => {
   const { streamAgenticReply } = await apiPromise;
-  const requests: Array<{ url: string; providerId: string; baseUrl: string }> = [];
+  let sent: any;
+  let headers: Headers | undefined;
+  let url = '';
   fetchHandler = async (input, init) => {
-    const body = JSON.parse(String(init.body));
-    requests.push({ url: String(input), providerId: body.providerId, baseUrl: body.baseUrl });
-    const headers = new Headers(init.headers);
-    assert.equal(headers.get('Authorization'), 'Bearer owner-token-test');
-    assert.equal(headers.get('X-Provider-Key'), 'provider-key-test');
-    if (requests.length === 1) return jsonResponse({ error: 'rate limited' }, 429);
-    return streamResponse(['data: {"choices":[{"delta":{"content":"fallback answer"}}]}\n\n', 'data: [DONE]\n\n']);
+    url = String(input);
+    headers = new Headers(init.headers);
+    sent = JSON.parse(String(init.body));
+    return streamResponse(['data: {"content":"orchestrated"}\\n\\n', 'data: [DONE]\\n\\n']);
   };
   const chunks: string[] = [];
-  await streamAgenticReply('hello', { aiProvider: 'openai', aiModel: 'primary-model', aiBaseUrl: 'https://api.openai.com/v1', aiFallbackProvider: 'groq', aiFallbackModel: 'fallback-model', personality: 'helpful', voiceLanguage: 'en-US', developerMode: false } as any, [], (chunk) => chunks.push(chunk));
-  assert.deepEqual(requests, [
-    { url: 'https://worker.example/api/assistant/provider-chat', providerId: 'openai', baseUrl: 'https://api.openai.com/v1' },
-    { url: 'https://worker.example/api/assistant/provider-chat', providerId: 'groq', baseUrl: 'https://api.groq.com/openai/v1' },
-  ]);
-  assert.deepEqual(chunks, ['fallback answer']);
+  await streamAgenticReply('plan this', {
+    aiProvider: 'openai', aiModel: 'gpt-4o-mini', aiBaseUrl: 'https://api.openai.com/v1',
+    personality: 'helpful', voiceLanguage: 'en-US', developerMode: true,
+  } as any, [], (chunk) => chunks.push(chunk));
+  assert.equal(url, 'https://worker.example/api/assistant/agent');
+  assert.equal(headers?.get('X-Provider-Key'), 'provider-key-test');
+  assert.deepEqual(sent.provider, { providerId: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' });
+  assert.equal(sent.mode, 'multi');
+  assert.deepEqual(chunks, ['orchestrated']);
 });
+
 test('streamAgenticReply sends owner-authenticated bounded history and consumes agentic SSE', async () => {
   const { streamAgenticReply } = await apiPromise;
   let url = '';
