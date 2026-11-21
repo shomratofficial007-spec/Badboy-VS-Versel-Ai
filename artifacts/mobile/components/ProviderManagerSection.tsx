@@ -193,7 +193,7 @@ export function ProviderManagerSection() {
         <Text style={{ color: colors.foreground, fontWeight: '800', fontSize: 13 }}>Multi-AI Fallback Routing</Text>
         <Text style={{ color: colors.mutedForeground, fontSize: 11, lineHeight: 16 }}>External Primary provider unavailable হলে প্রথম উত্তর আসার আগেই বিকল্প Provider-এ চেষ্টা করবে। Server AI-এর fallback তার নিজস্ব server routing দিয়ে নিয়ন্ত্রিত। উত্তর আংশিক আসার পর fallback হবে না, যাতে duplicate reply না হয়।</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-          {[{ id: 'none', label: 'Off' }, ...AI_PROVIDER_PRESETS.filter((item) => item.id !== 'custom').map((item) => ({ id: item.id, label: item.label }))].map((item) => {
+          {[{ id: 'none', label: 'Off' }, ...AI_PROVIDER_PRESETS.filter((item) => item.id !== 'custom' && item.id !== 'cloudflare').map((item) => ({ id: item.id, label: item.label }))].map((item) => {
             const selected = fallbackProvider === item.id;
             return <Pressable key={item.id} onPress={() => setFallbackProvider(item.id as typeof fallbackProvider)} disabled={providerId === 'server' && item.id !== 'none'} style={{ minHeight: 36, paddingHorizontal: 10, borderRadius: 10, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.secondary : colors.background, justifyContent: 'center', opacity: providerId === 'server' && item.id !== 'none' ? 0.4 : 1 }}><Text style={{ color: selected ? colors.primary : colors.foreground, fontSize: 11, fontWeight: selected ? '800' : '600' }}>{item.label}</Text></Pressable>;
           })}
