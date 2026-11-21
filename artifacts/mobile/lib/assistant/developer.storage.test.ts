@@ -12,6 +12,14 @@ const asyncStorage = {
 };
 
 mock.module('@react-native-async-storage/async-storage', { defaultExport: asyncStorage });
+// Token-helper tests do not exercise local-state persistence; isolate the
+// React Native storage adapter so Node does not transform react-native internals.
+mock.module('./storage', {
+  namedExports: {
+    readLocalState: async () => ({ messages: [], settings: {}, memories: [] }),
+    storeMemoryNote: async () => undefined,
+  },
+});
 mock.module('expo-secure-store', {
   namedExports: {
     isAvailableAsync: async () => secureAvailable,

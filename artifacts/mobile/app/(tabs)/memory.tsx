@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import {
   Alert,
   Pressable,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -51,7 +52,9 @@ export default function MemoryScreen() {
     if (!cleanTitle || !cleanContent || saving) return;
     Alert.alert(
       editingId ? 'নোট আপডেট করবেন?' : 'মেমোরিতে সংরক্ষণ করবেন?',
-      'এই তথ্যটি কেবল আপনার ডিভাইসের এনক্রিপ্টেড স্টোরেজে থাকবে। AI সার্ভিস বা সার্ভারে পাঠানো হবে না।',
+      Platform.OS === 'web'
+        ? 'এই নোট শুধু এই browser profile-এর local storage-এ থাকবে; app এটি encrypt করে না। এটি AI বা server-এ স্বয়ংক্রিয়ভাবে পাঠানো হবে না।'
+        : 'এই নোট Android/iOS SecureStore-এ encrypted অবস্থায় থাকবে। এটি AI prompt বা server-এ স্বয়ংক্রিয়ভাবে পাঠানো হবে না।',
       [
         { text: 'বাতিল', style: 'cancel' },
         {
@@ -71,7 +74,7 @@ export default function MemoryScreen() {
                 setTitle('');
                 setContent('');
               })
-              .catch(() => Alert.alert('সংরক্ষণ ব্যর্থ', 'ফোনের নিরাপদ স্টোরেজে স্থান পরীক্ষা করুন।'))
+              .catch((cause) => Alert.alert('সংরক্ষণ ব্যর্থ', cause instanceof Error ? cause.message : 'নিরাপদ স্টোরেজে নোট সংরক্ষণ করা যায়নি।'))
               .finally(() => setSaving(false));
           },
         },
@@ -89,8 +92,8 @@ export default function MemoryScreen() {
           text: 'স্থায়ীভাবে মুছুন',
           style: 'destructive',
           onPress: () => {
-            void deleteMemory(id).catch(() =>
-              Alert.alert('মুছতে সমস্যা হয়েছে', 'পুনরায় চেষ্টা করুন।')
+            void deleteMemory(id).catch((cause) =>
+              Alert.alert('মুছতে সমস্যা হয়েছে', cause instanceof Error ? cause.message : 'পুনরায় চেষ্টা করুন।')
             );
           },
         },
@@ -113,7 +116,9 @@ export default function MemoryScreen() {
       <Text style={[styles.eyebrow, { color: colors.primary }]}>LOCAL DEVICE STORAGE</Text>
       <Text style={[styles.title, { color: colors.foreground }]}>Private Memory</Text>
       <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-        এখানে সংরক্ষিত তথ্য সম্পূর্ণ লোকাল (ডিভাইসে)। কোনো ডেটা ক্লাউড সার্ভার বা AI মডেল ট্রেইনিংয়ে পাঠানো হয় না।
+        {Platform.OS === 'web'
+          ? 'Private Memory এই browser profile-এ থাকে; browser storage app দ্বারা encrypted নয়। এই নোট AI prompt-এ যোগ হয় না। AI-এর Project Memory আলাদা Cloudflare D1-এ থাকে।'
+          : 'Private Memory Android/iOS SecureStore-এ encrypted থাকে এবং AI prompt-এ স্বয়ংক্রিয়ভাবে যোগ হয় না। AI-এর Project Memory আলাদা Cloudflare D1-এ থাকে।'}
       </Text>
 
       {/* Form Card */}
@@ -131,7 +136,7 @@ export default function MemoryScreen() {
         <TextInput
           value={title}
           onChangeText={setTitle}
-          placeholder="মেমোরির শিরোনাম (যেমন: কাজের তালিকা, ব্যাংকের নোট)"
+          placeholder="মেমোরির শিরোনাম (যেমন: কাজের তালিকা, ব্যক্তিগত নোট)"
           placeholderTextColor={colors.mutedForeground}
           maxLength={80}
           style={[styles.titleInput, { color: colors.foreground, borderColor: colors.input }]}

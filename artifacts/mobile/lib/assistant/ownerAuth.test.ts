@@ -32,6 +32,9 @@ test('keeps the owner token in the active session and restores an existing sessi
   assert.equal(await getOwnerToken(), null);
   assert.equal(await restoreOwnerSession(), false);
 
+  globalThis.fetch = (async () => new Response(JSON.stringify({ authenticated: true }), {
+    status: 200, headers: { 'Content-Type': 'application/json' },
+  })) as typeof fetch;
   await saveOwnerToken(OWNER_TOKEN);
   assert.equal(await getOwnerToken(), OWNER_TOKEN);
   assert.equal(await restoreOwnerSession(), true);
@@ -51,6 +54,9 @@ test('uses SecureStore on native when EXPO_OS is omitted by a custom build', asy
       value: {},
     });
 
+    globalThis.fetch = (async () => new Response(JSON.stringify({ authenticated: true }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    })) as typeof fetch;
     await saveOwnerToken(OWNER_TOKEN);
     assert.equal(secureStoreToken, OWNER_TOKEN);
     assert.equal(await getOwnerToken(), OWNER_TOKEN);
@@ -75,6 +81,9 @@ test('uses SecureStore when Expo explicitly identifies Android', async () => {
   const originalExpoOs = process.env.EXPO_OS;
   try {
     process.env.EXPO_OS = 'android';
+    globalThis.fetch = (async () => new Response(JSON.stringify({ authenticated: true }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    })) as typeof fetch;
     await saveOwnerToken(OWNER_TOKEN);
     assert.equal(secureStoreToken, OWNER_TOKEN);
     assert.equal(await restoreOwnerSession(), true);
@@ -148,4 +157,64 @@ test('recognizes the Worker owner-login-required response shown in chat', () => 
   );
   assert.equal(isOwnerLoginRequiredError(new Error('Network request failed')), false);
   assert.equal(isOwnerLoginRequiredError(new Error('AI provider quota exceeded')), false);
+});
+
+
+test('rejects a persisted owner token when Worker verification says it is invalid', async () => {
+  const originalExpoOs = process.env.EXPO_OS;
+  try {
+    process.env.EXPO_OS = 'android';
+    await saveOwnerToken(OWNER_TOKEN);
+    globalThis.fetch = (async () => new Response(
+      JSON.stringify({ error: 'Owner login is required.' }),
+      { status: 401, headers: { 'Content-Type': 'application/json' } },
+    )) as typeof fetch;
+
+    assert.equal(await restoreOwnerSession(), false);
+    assert.equal(secureStoreToken, null);
+    assert.equal(await getOwnerToken(), null);
+  } finally {
+    if (originalExpoOs === undefined) delete process.env.EXPO_OS;
+    else process.env.EXPO_OS = originalExpoOs;
+  }
+});
+
+test('keeps a persisted owner token when session restore cannot reach the Worker', async () => {
+  const originalExpoOs = process.env.EXPO_OS;
+  try {
+    process.env.EXPO_OS = 'android';
+    await saveOwnerToken(OWNER_TOKEN);
+    globalThis.fetch = (async () => { throw new Error('Network request failed'); }) as typeof fetch;
+
+    assert.equal(await restoreOwnerSession(), false);
+    assert.equal(secureStoreToken, OWNER_TOKEN);
+  } finally {
+    if (originalExpoOs === undefined) delete process.env.EXPO_OS;
+    else process.env.EXPO_OS = originalExpoOs;
+  }
+});
+
+test('redirects every unauthenticated route to Owner Login and returns authenticated owners to Chat', async () => {
+  const { getOwnerRouteRedirect } = await import('./ownerAuth');
+  assert.equal(getOwnerRouteRedirect(false, false, ['(tabs)', 'index']), null);
+  assert.equal(getOwnerRouteRedirect(true, false, []), '/owner-login');
+  assert.equal(getOwnerRouteRedirect(true, false, ['(tabs)', 'index']), '/owner-login');
+  assert.equal(getOwnerRouteRedirect(true, false, ['jarvis']), '/owner-login');
+  assert.equal(getOwnerRouteRedirect(true, false, ['owner-login']), null);
+  assert.equal(getOwnerRouteRedirect(true, true, ['owner-login']), '/(tabs)');
+  assert.equal(getOwnerRouteRedirect(true, true, ['(tabs)', 'index']), null);
+});
+
+
+test('times out a stalled Worker verification so the app can leave the startup spinner', async () => {
+  let requestSignal: AbortSignal | null | undefined;
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    requestSignal = init?.signal;
+    return await new Promise<Response>((_resolve, reject) => {
+      requestSignal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+    });
+  }) as typeof fetch;
+
+  await assert.rejects(verifyOwnerToken(OWNER_TOKEN, 5), /Owner verification timed out/);
+  assert.equal(requestSignal?.aborted, true);
 });

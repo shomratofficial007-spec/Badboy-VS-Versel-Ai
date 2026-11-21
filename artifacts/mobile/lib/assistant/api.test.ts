@@ -24,7 +24,7 @@ mock.module('./ownerAuth.ts', {
   namedExports: { getOwnerToken: async () => 'owner-token-test' },
 });
 mock.module('./ownerJsonRequest.ts', {
-  namedExports: { apiUrl: (path: string) => `https://worker.example${path}` },
+  namedExports: { apiUrl: (path: string) => `https://worker.example/api${path}` },
 });
 mock.module('./providerSettings.ts', {
   namedExports: {
@@ -82,14 +82,23 @@ test('streamReply sends owner-authenticated request and parses split SSE frames'
     voiceLanguage: 'bn-BD',
     developerMode: true,
   } as any, (chunk) => chunks.push(chunk));
-  assert.equal(url, 'https://worker.example/assistant/chat');
+  assert.equal(url, 'https://worker.example/api/assistant/chat');
   assert.equal(sent.message, 'হ্যালো');
   assert.equal(sent.developerMode, true);
   assert.match(sent.personality, /bn-BD/);
   assert.deepEqual(chunks, ['বাংলা উত্তর', 'সম্পূর্ণ']);
 });
 
-test('streamReply routes to the selected provider without forwarding the Owner Token', async () => {
+test('streamReply rejects a Worker stream that ends without its completion marker', async () => {
+  const { streamReply } = await apiPromise;
+  fetchHandler = async () => streamResponse(['data: {"content":"partial answer"}\n\n']);
+  await assert.rejects(
+    streamReply('hello', { personality: 'helpful', voiceLanguage: 'en-US', developerMode: false } as any, () => undefined),
+    /ended before its completion marker/,
+  );
+});
+
+test('streamReply routes selected-provider traffic through the authenticated Worker', async () => {
   const { streamReply } = await apiPromise;
   let url = '';
   let sent: any;
@@ -98,29 +107,47 @@ test('streamReply routes to the selected provider without forwarding the Owner T
     url = String(input);
     sent = JSON.parse(String(init.body));
     headers = new Headers(init.headers);
-    return streamResponse(['data: {"choices":[{"delta":{"content":"Provider reply"}}]}']);
+    return streamResponse(['data: {"choices":[{"delta":{"content":"Provider reply"}}]}\n\n', 'data: [DONE]\n\n']);
   };
   const chunks: string[] = [];
   await streamReply('hello', { aiProvider: 'openai', aiModel: 'gpt-4o-mini', aiBaseUrl: 'https://api.openai.com/v1', personality: 'helpful', voiceLanguage: 'en-US', developerMode: false } as any, (chunk) => chunks.push(chunk));
-  assert.equal(url, 'https://api.openai.com/v1/chat/completions');
-  assert.equal(headers?.get('Authorization'), 'Bearer provider-key-test');
-  assert.equal(headers?.get('Authorization')?.includes('owner-token-test'), false);
+  assert.equal(url, 'https://worker.example/api/assistant/provider-chat');
+  assert.equal(headers?.get('Authorization'), 'Bearer owner-token-test');
+  assert.equal(headers?.get('X-Provider-Key'), 'provider-key-test');
+  assert.equal(sent.providerId, 'openai');
+  assert.equal(sent.baseUrl, 'https://api.openai.com/v1');
   assert.equal(sent.model, 'gpt-4o-mini');
   assert.equal(sent.messages.at(-1).content, 'hello');
   assert.deepEqual(chunks, ['Provider reply']);
 });
 
+test('streamReply rejects a selected-provider stream that ends without its completion marker', async () => {
+  const { streamReply } = await apiPromise;
+  fetchHandler = async () => streamResponse(['data: {"choices":[{"delta":{"content":"partial answer"}}]}\n\n']);
+  await assert.rejects(
+    streamReply('hello', { aiProvider: 'openai', aiModel: 'gpt-4o-mini', aiBaseUrl: 'https://api.openai.com/v1', personality: 'helpful', voiceLanguage: 'en-US', developerMode: false } as any, () => undefined),
+    /ended before its completion marker/,
+  );
+});
+
 test('streamAgenticReply falls back to a second provider only before any primary text is emitted', async () => {
   const { streamAgenticReply } = await apiPromise;
-  const urls: string[] = [];
-  fetchHandler = async (input) => {
-    urls.push(String(input));
-    if (urls.length === 1) return jsonResponse({ error: 'rate limited' }, 429);
+  const requests: Array<{ url: string; providerId: string; baseUrl: string }> = [];
+  fetchHandler = async (input, init) => {
+    const body = JSON.parse(String(init.body));
+    requests.push({ url: String(input), providerId: body.providerId, baseUrl: body.baseUrl });
+    const headers = new Headers(init.headers);
+    assert.equal(headers.get('Authorization'), 'Bearer owner-token-test');
+    assert.equal(headers.get('X-Provider-Key'), 'provider-key-test');
+    if (requests.length === 1) return jsonResponse({ error: 'rate limited' }, 429);
     return streamResponse(['data: {"choices":[{"delta":{"content":"fallback answer"}}]}\n\n', 'data: [DONE]\n\n']);
   };
   const chunks: string[] = [];
   await streamAgenticReply('hello', { aiProvider: 'openai', aiModel: 'primary-model', aiBaseUrl: 'https://api.openai.com/v1', aiFallbackProvider: 'groq', aiFallbackModel: 'fallback-model', personality: 'helpful', voiceLanguage: 'en-US', developerMode: false } as any, [], (chunk) => chunks.push(chunk));
-  assert.deepEqual(urls, ['https://api.openai.com/v1/chat/completions', 'https://api.groq.com/openai/v1/chat/completions']);
+  assert.deepEqual(requests, [
+    { url: 'https://worker.example/api/assistant/provider-chat', providerId: 'openai', baseUrl: 'https://api.openai.com/v1' },
+    { url: 'https://worker.example/api/assistant/provider-chat', providerId: 'groq', baseUrl: 'https://api.groq.com/openai/v1' },
+  ]);
   assert.deepEqual(chunks, ['fallback answer']);
 });
 test('streamAgenticReply sends owner-authenticated bounded history and consumes agentic SSE', async () => {
@@ -149,7 +176,7 @@ test('streamAgenticReply sends owner-authenticated bounded history and consumes 
     'Skill: Project Planner\\nInstructions: split work into tested steps.',
     ['web-research', 'discord-history'],
   );
-  assert.equal(url, 'https://worker.example/assistant/agent');
+  assert.equal(url, 'https://worker.example/api/assistant/agent');
   assert.equal(sent.message, '6 * 7 কত?');
   assert.equal(sent.mode, 'multi');
   assert.deepEqual(sent.enabledPlugins, ['web-research', 'discord-history']);
@@ -235,6 +262,15 @@ test('streamDeveloperAnalysis handles HTTP, stream, and event errors', async () 
   );
 });
 
+test('streamDeveloperAnalysis rejects a stream that ends without its completion marker', async () => {
+  const { streamDeveloperAnalysis } = await apiPromise;
+  fetchHandler = async () => streamResponse(['data: {"content":"partial analysis"}\n\n']);
+  await assert.rejects(
+    streamDeveloperAnalysis('prompt', 'project context', 'native', () => undefined),
+    /ended before its completion marker/,
+  );
+});
+
 test('searchAgentMemory uses owner auth and bounds the project search request', async () => {
   const { searchAgentMemory } = await apiPromise;
   let url = '';
@@ -254,7 +290,7 @@ test('searchAgentMemory uses owner auth and bounds the project search request', 
     }], sensitiveExcluded: true });
   };
   const memories = await searchAgentMemory(' project-1 ', '  preserve features  ', 500);
-  assert.equal(url, 'https://worker.example/agent/memory/search');
+  assert.equal(url, 'https://worker.example/api/agent/memory/search');
   assert.deepEqual(sent, { projectId: 'project-1', query: 'preserve features', limit: 10 });
   assert.equal(memories[0].content, 'Keep existing features');
 });
@@ -284,7 +320,7 @@ test('transcribeAudio maps language, sends audio and returns trimmed transcript'
   const { transcribeAudio } = await apiPromise;
   let sent: any;
   fetchHandler = async (url, init) => {
-    assert.equal(String(url), 'https://worker.example/assistant/transcribe');
+    assert.equal(String(url), 'https://worker.example/api/assistant/transcribe');
     assert.equal(authFrom(init), 'Bearer owner-token-test');
     assert.ok(init.signal instanceof AbortSignal, 'transcription request must be cancellable');
     assert.equal(init.signal.aborted, false);
@@ -318,7 +354,7 @@ test('transcribeRecordedAudio validates the recording and reads base64 audio', a
 test('requestSpeech returns audio bytes and rejects HTTP or empty audio responses', async () => {
   const { requestSpeech } = await apiPromise;
   fetchHandler = async (url, init) => {
-    assert.equal(String(url), 'https://worker.example/assistant/speech');
+    assert.equal(String(url), 'https://worker.example/api/assistant/speech');
     assert.equal(authFrom(init), 'Bearer owner-token-test');
     assert.ok(init.signal instanceof AbortSignal, 'speech request must be cancellable');
     assert.equal(init.signal.aborted, false);
@@ -353,7 +389,7 @@ test('searchWebResearch uses owner auth, bounds queries and returns HTTPS source
     });
   };
   const result = await searchWebResearch('  AI research  ');
-  assert.equal(url, 'https://worker.example/research/search');
+  assert.equal(url, 'https://worker.example/api/research/search');
   assert.deepEqual(sent, { query: 'AI research', maxResults: 5 });
   assert.equal(result.results.length, 1);
   assert.equal(result.results[0].url, 'https://example.com');
@@ -385,7 +421,7 @@ test('getIntegrationStatus uses owner authentication and returns readiness flags
     } });
   };
   const result = await getIntegrationStatus();
-  assert.equal(url, 'https://worker.example/integrations/status');
+  assert.equal(url, 'https://worker.example/api/integrations/status');
   assert.equal(result.research.configured, true);
   assert.equal(result.homeAssistant.configured, false);
   assert.equal(result.providerSecretsStayServerSide, true);
@@ -417,7 +453,7 @@ test('getDiscordMessages validates channel IDs and uses owner-authenticated serv
     });
   };
   const messages = await getDiscordMessages(' 12345678901234567 ');
-  assert.equal(requestedUrl, 'https://worker.example/integrations/discord/messages?channel=12345678901234567');
+  assert.equal(requestedUrl, 'https://worker.example/api/integrations/discord/messages?channel=12345678901234567');
   assert.deepEqual(messages, [{
     id: '12345678901234567',
     timestamp: '2026-11-15T10:00:00.000Z',
@@ -452,7 +488,7 @@ test('getCalendarEvents validates UTC time and returns bounded owner-authenticat
     }] });
   };
   const events = await getCalendarEvents('2026-11-15T00:00:00Z');
-  assert.equal(requestedUrl, 'https://worker.example/integrations/google-calendar/events?timeMin=2026-11-15T00%3A00%3A00Z');
+  assert.equal(requestedUrl, 'https://worker.example/api/integrations/google-calendar/events?timeMin=2026-11-15T00%3A00%3A00Z');
   assert.equal(events[0].summary, 'Planning');
 });
 
@@ -480,7 +516,7 @@ test('getSlackMessages validates channel IDs and uses owner-authenticated bounde
   assert.deepEqual(await getSlackMessages(' C123456 '), [
     { timestamp: '1730000000.000001', user: 'U123456', text: 'hello from Slack' },
   ]);
-  assert.equal(requestedUrl, 'https://worker.example/integrations/slack/history?channel=C123456');
+  assert.equal(requestedUrl, 'https://worker.example/api/integrations/slack/history?channel=C123456');
 });
 
 test('getSlackMessages reports provider errors and malformed message lists', async () => {
@@ -505,7 +541,7 @@ test('getHomeAssistantStates returns bounded owner-authenticated entity states',
   assert.deepEqual(await getHomeAssistantStates(), [
     { entityId: 'light.office', state: 'on', friendlyName: 'Office' },
   ]);
-  assert.equal(requestedUrl, 'https://worker.example/integrations/home-assistant/states');
+  assert.equal(requestedUrl, 'https://worker.example/api/integrations/home-assistant/states');
 });
 
 test('getHomeAssistantStates surfaces backend errors and malformed state lists', async () => {

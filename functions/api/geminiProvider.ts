@@ -10,6 +10,7 @@ interface GeminiStreamPart {
 }
 
 interface GeminiStreamChunk {
+  error?: { message?: string } | string;
   candidates?: Array<{
     content?: {
       parts?: GeminiStreamPart[];
@@ -48,6 +49,7 @@ export function adaptGeminiStreamToOpenAI(response: Response): Response {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
+  let cancelled = false;
 
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -65,8 +67,10 @@ export function adaptGeminiStreamToOpenAI(response: Response): Response {
         try {
           parsed = JSON.parse(data) as GeminiStreamChunk;
         } catch {
+          // Ignore malformed provider frames; later valid SSE events may still be usable.
           return;
         }
+        if (parsed.error) throw new Error("Gemini returned an upstream stream error.");
 
         const textParts = (parsed.candidates ?? [])
           .flatMap((candidate) => candidate.content?.parts ?? [])
@@ -74,10 +78,16 @@ export function adaptGeminiStreamToOpenAI(response: Response): Response {
           .filter((part): part is string => typeof part === "string" && part.length > 0);
 
         for (const content of textParts) {
+          if (cancelled) return;
           const chunk = {
             choices: [{ index: 0, delta: { content }, finish_reason: null }],
           };
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+          } catch {
+            cancelled = true;
+            return;
+          }
         }
       };
 
@@ -96,10 +106,14 @@ export function adaptGeminiStreamToOpenAI(response: Response): Response {
 
         pending += decoder.decode();
         if (pending.trim()) emitEvent(pending);
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-        controller.close();
+        if (!cancelled) {
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        }
       } catch (error) {
-        controller.error(error);
+        if (!cancelled) {
+          try { controller.error(error); } catch { /* downstream may already be closed */ }
+        }
       } finally {
         try {
           reader.releaseLock();
@@ -107,6 +121,10 @@ export function adaptGeminiStreamToOpenAI(response: Response): Response {
           // The source may already have released its reader.
         }
       }
+    },
+    async cancel(reason) {
+      cancelled = true;
+      await reader.cancel(reason).catch(() => undefined);
     },
   });
 
@@ -132,6 +150,7 @@ export async function fetchGeminiChat(
   messages: GeminiChatMessage[],
   model = DEFAULT_GEMINI_MODEL,
   fetcher: typeof fetch = fetch,
+  signal?: AbortSignal,
 ): Promise<Response> {
   const selectedModel = model.trim() || DEFAULT_GEMINI_MODEL;
   if (!/^[a-zA-Z0-9._-]{1,100}$/.test(selectedModel)) {
@@ -151,6 +170,7 @@ export async function fetchGeminiChat(
         "Content-Type": "application/json",
         "x-goog-api-key": apiKey,
       },
+      signal,
       body: JSON.stringify({
         ...payload,
         generationConfig: { maxOutputTokens: 8192 },

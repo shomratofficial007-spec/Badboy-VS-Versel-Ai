@@ -6,6 +6,9 @@ test('provider base URLs require HTTPS and strip trailing slashes', () => {
   assert.equal(normalizeProviderBaseUrl('https://api.example.com/v1/'), 'https://api.example.com/v1');
   assert.throws(() => normalizeProviderBaseUrl('http://api.example.com/v1'), /HTTPS/);
   assert.throws(() => normalizeProviderBaseUrl('http://localhost:8787/v1'), /HTTPS/);
+  assert.throws(() => normalizeProviderBaseUrl('https://localhost/v1'), /public HTTPS hostname/);
+  assert.throws(() => normalizeProviderBaseUrl('https://127.0.0.1/v1'), /public HTTPS hostname/);
+  assert.throws(() => normalizeProviderBaseUrl('https://api.example.com:8443/v1'), /port 443/);
   assert.throws(() => normalizeProviderBaseUrl('https://user:pass@api.example.com/v1'), /username/);
 });
 

@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import test from "node:test";
 // Node ESM imports require .js extension when pointing to typescript files
-import { onRequestGet as rawOnRequestGet, onRequestPost as rawOnRequestPost } from "./api/[[path]].ts";
+import worker, { handleApiRequest } from "./api/[[path]].ts";
 import { handleDeveloperDataRequest } from "./api/developerData.ts";
 import {
   buildDeveloperAnalysisMessages,
@@ -24,12 +24,20 @@ function withTestOwner(context: any) {
 }
 
 // Existing endpoint tests exercise authenticated application behavior by default.
-// The dedicated /api/auth/verify tests below call the raw handlers to test credentials.
-const onRequestGet = (context: any) => rawOnRequestGet(withTestOwner(context));
-const onRequestPost = (context: any) =>
-  new URL(context.request.url).pathname.replace(/\/+$/, "") === "/api/auth/verify"
+// The dedicated /api/auth/verify tests below exercise credential verification without injecting a test token.
+const rawOnRequestGet = (context: any) =>
+  handleApiRequest(context.request, context.env);
+const rawOnRequestPost = (context: any) =>
+  handleApiRequest(context.request, context.env);
+const onRequestGet = (context: any) =>
+  rawOnRequestGet(withTestOwner(context));
+const onRequestPost = (context: any) => {
+  const isCredentialVerification =
+    new URL(context.request.url).pathname.replace(/\/+$/, "") === "/api/auth/verify";
+  return isCredentialVerification
     ? rawOnRequestPost(context)
     : rawOnRequestPost(withTestOwner(context));
+};
 
 function testAgentDb(options: {
   changes?: number;
@@ -65,6 +73,11 @@ test("onRequestGet - health check endpoint returns status ok", async () => {
 
   const response = await onRequestGet(context);
   assert.strictEqual(response.status, 503);
+  assert.strictEqual(response.headers.get("Cache-Control"), "no-store, no-transform");
+  assert.strictEqual(response.headers.get("X-Content-Type-Options"), "nosniff");
+  assert.strictEqual(response.headers.get("X-Frame-Options"), "DENY");
+  assert.strictEqual(response.headers.get("Referrer-Policy"), "strict-origin-when-cross-origin");
+  assert.strictEqual(response.headers.get("Strict-Transport-Security"), "max-age=31536000; includeSubDomains");
   const json = (await response.json()) as any;
   assert.deepStrictEqual(json, {
     status: "degraded",
@@ -940,6 +953,32 @@ test("onRequestPost - stops fallback when an upstream returns HTTP 200 without a
 
 
 
+test("legacy assistant voice route remains owner-authenticated and returns the documented unsupported contract", async () => {
+  const env = { BADBOY_OWNER_TOKEN: TEST_OWNER_TOKEN };
+  const unauthorized = await rawOnRequestPost({
+    request: new Request("https://example.com/api/assistant/voice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "Hello" }),
+    }),
+    env,
+  } as any);
+  assert.equal(unauthorized.status, 401);
+
+  const response = await onRequestPost({
+    request: new Request("https://example.com/api/assistant/voice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "Hello" }),
+    }),
+    env: {},
+  } as any);
+  assert.equal(response.status, 501);
+  const body = await response.json() as any;
+  assert.equal(body.code, "MODEL_AUDIO_UNSUPPORTED");
+  assert.match(body.error, /text input and returns text only/i);
+});
+
 test("requires owner authentication for private API and Developer Agent routes", async () => {
   const env = {
     BADBOY_OWNER_TOKEN: TEST_OWNER_TOKEN,
@@ -951,6 +990,7 @@ test("requires owner authentication for private API and Developer Agent routes",
     "/api/assistant/transcribe",
     "/api/assistant/speech",
     "/api/assistant/speak",
+    "/api/assistant/voice",
     "/api/developer/analyze",
   ];
   for (const path of protectedPostPaths) {
@@ -1421,4 +1461,379 @@ test("direct Developer Agent helpers cover every engine and payload validation b
   assert.equal(resolveDeveloperAnalysisEngine("native").status, "ready");
   assert.equal(resolveDeveloperAnalysisEngine("copilot").status, "unavailable");
   assert.equal(resolveDeveloperAnalysisEngine("auto").status, "fallback");
+});
+
+
+test("BYOK provider chat is owner-authenticated and forwards only the provider key to the selected HTTPS endpoint", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ url: string; headers: Headers; body: any; redirect?: string }> = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({
+      url: String(input),
+      headers: new Headers(init?.headers),
+      body: JSON.parse(String(init?.body)),
+      redirect: init?.redirect,
+    });
+    return new Response(
+      'data: {"choices":[{"delta":{"content":"proxied"}}]}\n\ndata: [DONE]\n\n',
+      { status: 200, headers: { "Content-Type": "text/event-stream; charset=utf-8" } },
+    );
+  }) as typeof fetch;
+
+  try {
+    const request = () => new Request("https://example.com/api/assistant/provider-chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Provider-Key": "provider-secret-test",
+      },
+      body: JSON.stringify({
+        providerId: "openai",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    });
+
+    const unauthorized = await rawOnRequestPost({
+      request: request(),
+      env: { BADBOY_OWNER_TOKEN: TEST_OWNER_TOKEN },
+    } as any);
+    assert.equal(unauthorized.status, 401);
+    assert.equal(calls.length, 0);
+
+    const response = await onRequestPost({ request: request(), env: {} } as any);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("Content-Type") ?? "", /text\/event-stream/i);
+    assert.match(await response.text(), /proxied/);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, "https://api.openai.com/v1/chat/completions");
+    assert.equal(calls[0].headers.get("Authorization"), "Bearer provider-secret-test");
+    assert.equal(calls[0].headers.get("X-Provider-Key"), null);
+    assert.equal(calls[0].headers.get("Content-Type"), "application/json");
+    assert.equal(calls[0].redirect, "manual");
+    assert.equal(calls[0].body.stream, true);
+    assert.equal(calls[0].body.model, "gpt-4o-mini");
+    const exposedResponseHeaders = [...response.headers.entries()].map(([name, value]) => name + ":" + value).join("\n");
+    assert.equal(exposedResponseHeaders.includes("provider-secret-test"), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("BYOK provider model discovery is proxied and returns sanitized model IDs", async () => {
+  const originalFetch = globalThis.fetch;
+  let upstreamUrl = "";
+  let upstreamAuthorization = "";
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    upstreamUrl = String(input);
+    upstreamAuthorization = new Headers(init?.headers).get("Authorization") ?? "";
+    return new Response(JSON.stringify({
+      data: [
+        { id: "gpt-4o-mini" },
+        { id: "gpt-4o-mini" },
+        { id: "invalid model id" },
+        { id: "gpt-4.1" },
+      ],
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  }) as typeof fetch;
+
+  try {
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/provider-models", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Provider-Key": "provider-secret-test",
+        },
+        body: JSON.stringify({ providerId: "openai", baseUrl: "https://api.openai.com/v1" }),
+      }),
+      env: {},
+    } as any);
+    assert.equal(response.status, 200);
+    assert.equal(upstreamUrl, "https://api.openai.com/v1/models");
+    assert.equal(upstreamAuthorization, "Bearer provider-secret-test");
+    assert.deepEqual(await response.json(), {
+      data: [{ id: "gpt-4.1" }, { id: "gpt-4o-mini" }],
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("BYOK provider proxy rejects local HTTP/IP endpoints and blocks credential redirects", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = (async () => {
+    fetchCalls += 1;
+    return new Response(null, { status: 302, headers: { Location: "https://attacker.example/collect" } });
+  }) as typeof fetch;
+
+  try {
+    const invalid = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/provider-models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Provider-Key": "provider-secret-test" },
+        body: JSON.stringify({ providerId: "custom", baseUrl: "https://127.0.0.1:8443/v1" }),
+      }),
+      env: {},
+    } as any);
+    assert.equal(invalid.status, 400);
+    assert.equal(fetchCalls, 0);
+
+    const redirected = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/provider-models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Provider-Key": "provider-secret-test" },
+        body: JSON.stringify({ providerId: "custom", baseUrl: "https://api.example.com/v1" }),
+      }),
+      env: {},
+    } as any);
+    assert.equal(redirected.status, 502);
+    assert.match((await redirected.json() as any).error, /redirects are blocked/i);
+    assert.equal(fetchCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Worker transcription and speech routes reject invalid requests and preserve client TTS fallback", async () => {
+  const transcriptionWithoutProvider = await onRequestPost({
+    request: new Request("https://example.com/api/assistant/transcribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ audioBase64: "YXVkaW8=", format: "wav" }),
+    }),
+    env: {},
+  } as any);
+  assert.equal(transcriptionWithoutProvider.status, 503);
+  assert.equal((await transcriptionWithoutProvider.json() as any).code, "AI_NOT_CONFIGURED");
+
+  const transcriptionWrongContentType = await onRequestPost({
+    request: new Request("https://example.com/api/assistant/transcribe", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: "not-json",
+    }),
+    env: { GROQ_API_KEY: "test-groq-key" },
+  } as any);
+  assert.equal(transcriptionWrongContentType.status, 415);
+
+  const invalidSpeech = await onRequestPost({
+    request: new Request("https://example.com/api/assistant/speech", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "   " }),
+    }),
+    env: {},
+  } as any);
+  assert.equal(invalidSpeech.status, 400);
+  assert.equal((await invalidSpeech.json() as any).code, "INVALID_SPEECH_REQUEST");
+
+  const unsupportedSpeechLocale = await onRequestPost({
+    request: new Request("https://example.com/api/assistant/speech", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "Hello", language: "zz-ZZ" }),
+    }),
+    env: {},
+  } as any);
+  assert.equal(unsupportedSpeechLocale.status, 503);
+  assert.equal((await unsupportedSpeechLocale.json() as any).code, "FALLBACK_TO_CLIENT_TTS");
+});
+
+
+
+test("developer analysis finalizes an empty upstream response as a failed task", async () => {
+  const originalFetch = globalThis.fetch;
+  const db = testAgentDb();
+  globalThis.fetch = (async () => new Response("data: [DONE]\n\n", {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" },
+  })) as typeof globalThis.fetch;
+
+  try {
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/developer/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: "Return a concise plan" }),
+      }),
+      env: { OPENROUTER_API_KEY: "test-key", AGENT_DB: db },
+    } as any);
+    assert.equal(response.status, 200);
+    const stream = await response.text();
+    assert.match(stream, /Developer Agent returned an empty response/);
+    assert.ok(db.calls.some((call) => call.sql.includes("UPDATE agent_tasks") && call.values.includes("failed")));
+    assert.ok(db.calls.some((call) => call.sql.includes("INSERT INTO agent_task_events") && call.values.includes("task_failed")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("developer analysis records a failed task when the provider stream omits its completion marker", async () => {
+  const originalFetch = globalThis.fetch;
+  const db = testAgentDb();
+  globalThis.fetch = (async () => new Response(
+    'data: {"choices":[{"delta":{"content":"partial plan"}}]}\n\n',
+    { status: 200, headers: { "Content-Type": "text/event-stream" } },
+  )) as typeof globalThis.fetch;
+
+  try {
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/developer/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: "Return a plan" }),
+      }),
+      env: { OPENROUTER_API_KEY: "test-key", AGENT_DB: db },
+    } as any);
+    assert.equal(response.status, 200);
+    const stream = await response.text();
+    assert.match(stream, /partial plan/);
+    assert.match(stream, /Developer Agent stream was interrupted/);
+    assert.ok(db.calls.some((call) => call.sql.includes("UPDATE agent_tasks") && call.values.includes("failed")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("developer analysis reports upstream network failures and finalizes its task", async () => {
+  const originalFetch = globalThis.fetch;
+  const db = testAgentDb();
+  globalThis.fetch = (async () => { throw new Error("upstream unavailable"); }) as typeof globalThis.fetch;
+
+  try {
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/developer/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: "Return a plan" }),
+      }),
+      env: { OPENROUTER_API_KEY: "test-key", AGENT_DB: db },
+    } as any);
+    assert.equal(response.status, 502);
+    const payload = await response.json() as { code?: string };
+    assert.equal(payload.code, "DEVELOPER_AGENT_UPSTREAM_FAILED");
+    assert.ok(db.calls.some((call) => call.sql.includes("UPDATE agent_tasks") && call.values.includes("failed")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("assistant chat reports empty, truncated and malformed upstream streams without a false completion marker", async () => {
+  const originalFetch = globalThis.fetch;
+  const cases = [
+    { name: "empty", body: "data: [DONE]\n\n", expected: /OpenRouter returned an empty response/ },
+    { name: "truncated", body: 'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n', expected: /stream ended before the completion marker/ },
+    { name: "malformed", body: "data: {broken-json}\n\n", expected: /OpenRouter stream interrupted/ },
+  ];
+
+  try {
+    for (const scenario of cases) {
+      globalThis.fetch = (async () => new Response(scenario.body, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      })) as typeof globalThis.fetch;
+      const response = await onRequestPost({
+        request: new Request("https://example.com/api/assistant/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: "hello" }),
+        }),
+        env: { OPENROUTER_API_KEY: "test-key" },
+      } as any);
+      assert.equal(response.status, 200, scenario.name);
+      const stream = await response.text();
+      assert.match(stream, scenario.expected, scenario.name);
+      if (scenario.name !== "empty") assert.doesNotMatch(stream, /data: \\[DONE\\]/, scenario.name);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("speech endpoint uses the authenticated OpenRouter audio fallback when Edge TTS is unavailable", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalWebSocket = globalThis.WebSocket;
+  let requestedUrl = "";
+  let authorization = "";
+  (globalThis as any).WebSocket = class {
+    constructor() { throw new Error("Edge TTS WebSocket is unavailable."); }
+  };
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requestedUrl = String(input);
+    authorization = new Headers(init?.headers).get("Authorization") ?? "";
+    return new Response(new Uint8Array([1, 2, 3]), {
+      status: 200,
+      headers: { "Content-Type": "audio/mpeg" },
+    });
+  }) as typeof globalThis.fetch;
+
+  try {
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/speech", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "হ্যালো", language: "bn-BD" }),
+      }),
+      env: { OPENROUTER_API_KEY: "test-openrouter-key" },
+    } as any);
+    assert.equal(response.status, 200);
+    assert.equal(requestedUrl, "https://openrouter.ai/api/v1/audio/speech");
+    assert.equal(authorization, "Bearer test-openrouter-key");
+    assert.equal(response.headers.get("X-TTS-Engine"), "openrouter-fish-audio");
+    assert.deepEqual(Array.from(new Uint8Array(await response.arrayBuffer())), [1, 2, 3]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalWebSocket === undefined) delete (globalThis as any).WebSocket;
+    else (globalThis as any).WebSocket = originalWebSocket;
+  }
+});
+
+test("assistant chat converts an upstream provider error event into a stream error", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response('data: {"error":"upstream failed"}\n\n', {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" },
+  })) as typeof globalThis.fetch;
+
+  try {
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "hello" }),
+      }),
+      env: { OPENROUTER_API_KEY: "test-openrouter-key" },
+    } as any);
+    assert.equal(response.status, 200);
+    const stream = await response.text();
+    assert.match(stream, /OpenRouter stream interrupted/);
+    assert.doesNotMatch(stream, /data: \\[DONE\\]/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("Worker fetch wrapper applies security headers to every API response path", async () => {
+  const response = await worker.fetch(
+    new Request("https://example.com/api/assistant/provider-chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ providerId: "openai", messages: [] }),
+    }),
+    {},
+    { waitUntil() {} },
+  );
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get("Cache-Control"), "no-store, no-transform");
+  assert.equal(response.headers.get("X-Content-Type-Options"), "nosniff");
+  assert.equal(response.headers.get("X-Frame-Options"), "DENY");
+  assert.equal(response.headers.get("Referrer-Policy"), "strict-origin-when-cross-origin");
+  assert.equal(response.headers.get("Strict-Transport-Security"), "max-age=31536000; includeSubDomains");
+  const payload = await response.json() as { code?: string };
+  assert.equal(payload.code, "PERSONAL_AUTH_NOT_CONFIGURED");
 });

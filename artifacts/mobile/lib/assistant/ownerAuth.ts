@@ -2,6 +2,7 @@ const OWNER_TOKEN_KEY = 'badboy-owner-token-v1';
 const DEFAULT_NATIVE_API_DOMAIN = 'https://badboy-vs-versel-ai.shomratofficial007.workers.dev';
 
 let activeToken: string | null = null;
+const OWNER_AUTH_TIMEOUT_MS = 12_000;
 
 function isWebPlatform(): boolean {
   const expoOs = process.env.EXPO_OS;
@@ -59,21 +60,36 @@ export async function clearOwnerToken(): Promise<void> {
   }
 }
 
-export async function verifyOwnerToken(token: string): Promise<void> {
-  const response = await fetch(authApiUrl(), {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-  });
-  const payload = await response.json().catch(() => ({})) as {
-    authenticated?: boolean;
-    error?: string;
-  };
-  if (!response.ok || payload.authenticated !== true) {
-    const error = new Error(
-      payload.error ?? `Owner authentication failed (HTTP ${response.status}).`,
-    ) as Error & { status?: number };
-    error.status = response.status;
-    throw error;
+export async function verifyOwnerToken(
+  token: string,
+  timeoutMs = OWNER_AUTH_TIMEOUT_MS,
+): Promise<void> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(authApiUrl(), {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => ({})) as {
+      authenticated?: boolean;
+      error?: string;
+    };
+    if (!response.ok || payload.authenticated !== true) {
+      const error = new Error(
+        payload.error ?? 'Owner authentication failed (HTTP ' + response.status + ').',
+      ) as Error & { status?: number };
+      error.status = response.status;
+      throw error;
+    }
+  } catch (cause) {
+    if (controller.signal.aborted) {
+      throw new Error('Owner verification timed out. Check your connection and try again.');
+    }
+    throw cause;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -85,11 +101,37 @@ export function isOwnerLoginRequiredError(error: unknown): boolean {
   return /owner login is required|owner (?:token|authentication).*?(?:invalid|expired|required|401)|(?:401|403).*?(?:owner|auth)/i.test(message);
 }
 
+export function getOwnerRouteRedirect(
+  ready: boolean,
+  authenticated: boolean,
+  segments: readonly string[],
+): '/owner-login' | '/(tabs)' | null {
+  if (!ready) return null;
+  const isOwnerLoginRoute = segments[0] === 'owner-login';
+  if (!authenticated && !isOwnerLoginRoute) return '/owner-login';
+  if (authenticated && isOwnerLoginRoute) return '/(tabs)';
+  return null;
+}
+
 export async function restoreOwnerSession(): Promise<boolean> {
-  // Re-read native persistence at app startup instead of trusting this module's
-  // in-memory cache. This makes a fresh JS runtime restore test meaningful and
-  // detects a token that was cleared from SecureStore outside this module.
-  if (isWebPlatform()) return Boolean(activeToken);
-  activeToken = null;
-  return Boolean(await getOwnerToken());
+  // Always re-read native persistence; a cached token is not proof of a valid
+  // owner session. The Worker remains the authority for authentication.
+  if (!isWebPlatform()) activeToken = null;
+  const token = await getOwnerToken();
+  if (!token) return false;
+
+  try {
+    await verifyOwnerToken(token);
+    return true;
+  } catch (error) {
+    const status = error && typeof error === 'object' && 'status' in error
+      ? (error as { status?: number }).status
+      : undefined;
+    // Revoke credentials that the Worker explicitly rejects. Preserve them on
+    // network errors so a temporary outage does not destroy the owner's token.
+    if (status === 401 || status === 403) {
+      await clearOwnerToken();
+    }
+    return false;
+  }
 }

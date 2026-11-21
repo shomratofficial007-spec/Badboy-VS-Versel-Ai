@@ -6,6 +6,7 @@ set -euo pipefail
 : "${PR_HEAD_SHA:?PR_HEAD_SHA is required}"
 : "${PR_NUMBER:?PR_NUMBER is required}"
 : "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
+: "${APK_WORKFLOW_NAMES:?APK_WORKFLOW_NAMES is required}"
 
 api_url="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${PR_HEAD_SHA}&event=pull_request&per_page=100"
 files_url="https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files"
@@ -25,8 +26,7 @@ for page in $(seq 1 10); do
 done
 
 # Match the actual path filters of the mobile and APK workflows. A workflow
-# that GitHub will not trigger for this PR must not be treated as a required
-# upstream run, otherwise this gate waits until timeout.
+# that GitHub will not trigger for this PR must not be treated as required.
 mobile_scope=false
 android_scope=false
 if grep -Eq '^(artifacts/mobile/|functions/|wrangler\.json$|artifacts/mobile/wrangler\.json$|lib/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|\.github/workflows/(mobile-checks|android-apk|android-apk-free)\.yml$)' <<< "${changed_files}"; then
@@ -37,6 +37,7 @@ if grep -Eq '^(artifacts/mobile/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\
 fi
 
 IFS=';' read -r -a configured_workflows <<< "${WORKFLOW_NAMES}"
+IFS='|' read -r -a apk_workflows <<< "${APK_WORKFLOW_NAMES}"
 required_workflows=()
 for workflow_name in "${configured_workflows[@]}"; do
   case "${workflow_name}" in
@@ -46,22 +47,16 @@ for workflow_name in "${configured_workflows[@]}"; do
         continue
       fi
       ;;
-    "Android APK (automatic + manual)"|"Build Android APK (Free GitHub Runner)")
-      if [[ "${android_scope}" != true ]]; then
-        echo "Skipping ${workflow_name}: no APK-build-scoped files changed."
-        continue
-      fi
-      ;;
   esac
   required_workflows+=("${workflow_name}")
 done
 
-if [[ "${#required_workflows[@]}" -eq 0 ]]; then
+if [[ "${#required_workflows[@]}" -eq 0 && "${android_scope}" != true ]]; then
   echo "No applicable upstream workflows were selected."
   exit 0
 fi
 
-for attempt in $(seq 1 270); do
+for attempt in $(seq 1 360); do
   response="$(curl --silent --show-error --fail \
     -H "Authorization: Bearer ${GH_TOKEN}" \
     -H "Accept: application/vnd.github+json" \
@@ -94,15 +89,53 @@ for attempt in $(seq 1 270); do
     fi
   done
 
+  if [[ "${android_scope}" == true ]]; then
+    apk_found=0
+    apk_pending=0
+    apk_failed=0
+    for workflow_name in "${apk_workflows[@]}"; do
+      run="$(jq -c --arg name "${workflow_name}" \
+        '[.workflow_runs[] | select(.name == $name)] | sort_by(.created_at) | last // empty' \
+        <<< "${response}")"
+      if [[ -z "${run}" ]]; then
+        continue
+      fi
+
+      apk_found=$((apk_found + 1))
+      status="$(jq -r '.status' <<< "${run}")"
+      conclusion="$(jq -r '.conclusion // empty' <<< "${run}")"
+      run_url="$(jq -r '.html_url' <<< "${run}")"
+      echo "APK alternative ${workflow_name}: status=${status}, conclusion=${conclusion}, url=${run_url}"
+
+      if [[ "${status}" != "completed" ]]; then
+        apk_pending=$((apk_pending + 1))
+      elif [[ "${conclusion}" != "success" ]]; then
+        echo "::error::APK workflow '${workflow_name}' concluded '${conclusion}'."
+        apk_failed=$((apk_failed + 1))
+      fi
+    done
+
+    if [[ "${apk_found}" -eq 0 ]]; then
+      echo "Waiting for either APK workflow to be created for ${PR_HEAD_SHA}."
+      pending=$((pending + 1))
+    elif [[ "${apk_failed}" -gt 0 ]]; then
+      failed=$((failed + apk_failed))
+    elif [[ "${apk_pending}" -gt 0 ]]; then
+      pending=$((pending + apk_pending))
+    else
+      echo "At least one applicable APK workflow ran; all triggered APK workflows passed."
+    fi
+  fi
+
   if [[ "${failed}" -gt 0 ]]; then
     exit 1
   fi
   if [[ "${pending}" -eq 0 ]]; then
-    echo "All ${#required_workflows[@]} applicable upstream workflows passed for ${PR_HEAD_SHA}."
+    echo "All applicable upstream workflows passed for ${PR_HEAD_SHA}."
     exit 0
   fi
 
-  echo "Waiting for ${pending} applicable upstream workflow(s) (attempt ${attempt}/270)."
+  echo "Waiting for ${pending} applicable upstream workflow(s) (attempt ${attempt}/360)."
   sleep 10
 done
 

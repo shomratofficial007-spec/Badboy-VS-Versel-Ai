@@ -56,11 +56,16 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
         setMessagesState(state.messages);
         setMemories(state.memories);
         setSettings({ ...DEFAULT_SETTINGS, ...state.settings, roadmap: { ...DEFAULT_SETTINGS.roadmap, ...state.settings.roadmap } });
+        setStorageError(state.storageError ?? null);
         setReady(true);
       })
-      .catch(() => {
+      .catch((cause) => {
         if (!mounted) return;
-        setStorageError('Local storage could not be opened. Your data was not sent anywhere.');
+        setStorageError(
+          cause instanceof Error
+            ? cause.message
+            : 'Local storage could not be opened. Your data was not sent anywhere.',
+        );
         setReady(true);
       });
     return () => {
@@ -103,6 +108,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       const next = [note, ...memories];
       await storeMemoryNote(note, memories);
       setMemories(next);
+      setStorageError(null);
     },
     [memories],
   );
@@ -118,6 +124,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       };
       const next = await updateMemoryNote(updated, memories);
       setMemories(next);
+      setStorageError(null);
     },
     [memories],
   );
@@ -127,6 +134,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
       const next = memories.filter((note) => note.id !== id);
       await removeMemoryNote(id, next);
       setMemories(next);
+      setStorageError(null);
     },
     [memories],
   );

@@ -30,7 +30,7 @@ async function streamSseResponse(
     };
     throw new Error(
       body.error ??
-        `The assistant could not reply right now (HTTP ${response.status}).`,
+        'The assistant could not reply right now (HTTP ' + response.status + ').',
     );
   }
 
@@ -39,24 +39,45 @@ async function streamSseResponse(
   const decoder = new TextDecoder();
   let buffer = '';
   let complete = false;
-
-  while (!complete) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const payload = line.slice(6);
-      if (payload === '[DONE]') {
-        complete = true;
-        break;
-      }
-      const event = JSON.parse(payload) as { content?: string; error?: string };
-      if (event.error) throw new Error(event.error);
-      if (event.content) onChunk(event.content);
+  let emittedContent = false;
+  const processLine = (line: string) => {
+    if (!line.startsWith('data: ')) return;
+    const payload = line.slice(6).trim();
+    if (payload === '[DONE]') {
+      complete = true;
+      return;
     }
+    const event = JSON.parse(payload) as { content?: string; error?: string };
+    if (event.error) throw new Error(event.error);
+    if (event.content) { emittedContent = true; onChunk(event.content); }
+  };
+
+  try {
+    while (!complete) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        processLine(line);
+        if (complete) break;
+      }
+    }
+    buffer += decoder.decode();
+    if (!complete && buffer.trim()) {
+      for (const line of buffer.split('\n')) {
+        processLine(line);
+        if (complete) break;
+      }
+    }
+    if (!complete) throw new Error('The assistant stream ended before its completion marker.');
+    if (!emittedContent) throw new Error('The assistant returned an empty response.');
+  } catch (error) {
+    await reader.cancel(error).catch(() => undefined);
+    throw error;
+  } finally {
+    try { reader.releaseLock(); } catch { /* already released */ }
   }
 }
 
@@ -70,35 +91,57 @@ async function streamOpenAICompatibleResponse(response: Response, onChunk: (chun
   const decoder = new TextDecoder();
   let buffer = '';
   let complete = false;
+  let emittedContent = false;
   const emitLine = (line: string) => {
     if (!line.startsWith('data:')) return;
     const payload = line.slice(5).trim();
-    if (!payload || payload === '[DONE]') return;
+    if (!payload) return;
+    if (payload === '[DONE]') {
+      complete = true;
+      return;
+    }
     let event: { error?: unknown; choices?: Array<{ delta?: { content?: unknown } }> };
-    try { event = JSON.parse(payload) as typeof event; } catch { return; }
+    try {
+      event = JSON.parse(payload) as typeof event;
+    } catch {
+      throw new Error('AI Provider returned malformed stream data.');
+    }
     if (event.error) throw new Error('AI Provider stream error.');
     const content = event.choices?.[0]?.delta?.content;
-    if (typeof content === 'string' && content) onChunk(content);
+    if (typeof content === 'string' && content) { emittedContent = true; onChunk(content); }
   };
-  while (!complete) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-    for (const line of lines) {
-      if (line.trim() === 'data: [DONE]') { complete = true; break; }
-      emitLine(line);
+
+  try {
+    while (!complete) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        emitLine(line);
+        if (complete) break;
+      }
     }
-  }
-  buffer += decoder.decode();
-  if (!complete && buffer.trim()) {
-    for (const line of buffer.split('\n')) emitLine(line.trim());
+    buffer += decoder.decode();
+    if (!complete && buffer.trim()) {
+      for (const line of buffer.split('\n')) {
+        emitLine(line.trim());
+        if (complete) break;
+      }
+    }
+    if (!complete) throw new Error('AI Provider stream ended before its completion marker.');
+    if (!emittedContent) throw new Error('AI Provider returned an empty response.');
+  } catch (error) {
+    await reader.cancel(error).catch(() => undefined);
+    throw error;
+  } finally {
+    try { reader.releaseLock(); } catch { /* already released */ }
   }
 }
 async function streamConfiguredProviderReply(message: string, settings: AssistantSettings, onChunk: (chunk: string) => void, history: ChatHistoryItem[] = [], memoryContext = '', skillContext = ''): Promise<void> {
-  // Keep Owner Login mandatory; the Owner Token is never sent to a third-party provider.
-  await ownerAuthorizationHeader();
+  // All provider traffic is proxied by the authenticated Cloudflare Worker.
+  // The provider key is sent only to the Worker, which forwards it without storing it.
   const providerId = settings.aiProvider;
   if (providerId === 'server') throw new Error('External Provider selection is required for this request.');
   const preset = AI_PROVIDER_PRESETS.find((item) => item.id === providerId);
@@ -113,10 +156,20 @@ async function streamConfiguredProviderReply(message: string, settings: Assistan
   const attempt = async (id: Exclude<typeof providerId, 'server'>, endpoint: string, selectedModel: string, onText: (chunk: string) => void) => {
     const apiKey = await getProviderApiKey(id);
     if (!apiKey) throw new Error('Provider ' + id + ' এর API Key Secure Storage-এ নেই।');
-    const response = await expoFetch(endpoint + '/chat/completions', {
+    const response = await expoFetch(apiUrl('/assistant/provider-chat'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: 'Bearer ' + apiKey },
-      body: JSON.stringify({ model: selectedModel, stream: true, max_tokens: 4096, messages }),
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        Authorization: await ownerAuthorizationHeader(),
+        'X-Provider-Key': apiKey,
+      },
+      body: JSON.stringify({
+        providerId: id,
+        baseUrl: endpoint,
+        model: selectedModel,
+        messages,
+      }),
     });
     await streamOpenAICompatibleResponse(response, onText);
   };
@@ -208,64 +261,73 @@ export interface DeveloperAnalysisStreamResult {
 export async function streamDeveloperAnalysis(
   prompt: string,
   projectContext: string,
-  requestedEngine: DeveloperEngineRequest,
+  engine: string,
   onChunk: (chunk: string) => void,
-): Promise<DeveloperAnalysisStreamResult> {
-  const response = await expoFetch(apiUrl('/developer/analyze'), {
+): Promise<{ taskId: string; engine: string }> {
+  const response = await expoFetch(apiUrl('/api/developer/analyze'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
       Authorization: await ownerAuthorizationHeader(),
     },
-    body: JSON.stringify({ prompt, projectContext, requestedEngine }),
+    body: JSON.stringify({ prompt, projectContext, requestedEngine: engine }),
   });
-
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as {
-      error?: string;
-      code?: string;
-    };
-    throw new Error(
-      body.error ?? `Developer Agent request failed (HTTP ${response.status}).`,
-    );
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? 'Developer Agent request failed (HTTP ' + response.status + ').');
   }
 
   const reader = response.body?.getReader();
   if (!reader) throw new Error('Developer Agent response stream is unavailable.');
   const decoder = new TextDecoder();
   let buffer = '';
+  let taskId = '';
+  let actualEngine = engine;
   let complete = false;
-  let taskId: string | undefined;
-  let engine: string | undefined;
-
-  while (!complete) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const payload = line.slice(6);
-      if (payload === '[DONE]') {
-        complete = true;
-        break;
-      }
-      const event = JSON.parse(payload) as {
-        content?: string;
-        error?: string;
-        taskId?: string;
-        engine?: string;
-      };
-      if (event.taskId) taskId = event.taskId;
-      if (event.engine) engine = event.engine;
-      if (event.error) throw new Error(event.error);
-      if (event.content) onChunk(event.content);
+  let emittedContent = false;
+  const processLine = (line: string) => {
+    if (!line.startsWith('data: ')) return;
+    const payload = line.slice(6).trim();
+    if (payload === '[DONE]') {
+      complete = true;
+      return;
     }
-  }
+    const event = JSON.parse(payload) as { taskId?: string; engine?: string; content?: string; error?: string };
+    if (event.error) throw new Error(event.error);
+    if (event.taskId) taskId = event.taskId;
+    if (event.engine) actualEngine = event.engine;
+    if (event.content) { emittedContent = true; onChunk(event.content); }
+  };
 
-  return { taskId, engine };
+  try {
+    while (!complete) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        processLine(line);
+        if (complete) break;
+      }
+    }
+    buffer += decoder.decode();
+    if (!complete && buffer.trim()) {
+      for (const line of buffer.split('\n')) {
+        processLine(line);
+        if (complete) break;
+      }
+    }
+    if (!complete) throw new Error('Developer Agent stream ended before its completion marker.');
+    if (!emittedContent) throw new Error('Developer Agent returned an empty response.');
+    return { taskId, engine: actualEngine };
+  } catch (error) {
+    await reader.cancel(error).catch(() => undefined);
+    throw error;
+  } finally {
+    try { reader.releaseLock(); } catch { /* already released */ }
+  }
 }
 
 export interface AgentMemorySearchResult {

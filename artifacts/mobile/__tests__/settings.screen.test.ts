@@ -1,5 +1,15 @@
 import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const currentWorkingDirectory = process.cwd().endsWith('/')
+  ? process.cwd().slice(0, -1)
+  : process.cwd();
+const mobileRoot = currentWorkingDirectory.endsWith('/artifacts/mobile')
+  ? currentWorkingDirectory
+  : resolve(currentWorkingDirectory, 'artifacts/mobile');
+const mobileModule = (path: string) => pathToFileURL(resolve(mobileRoot, path)).href;
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -18,6 +28,7 @@ const developerAnalysisCalls: unknown[][] = [];
 const agentTaskCalls: unknown[][] = [];
 const githubCalls: Array<{ method: string; args: unknown[] }> = [];
 const openedUrls: string[] = [];
+let screenSettingsCalls = 0;
 let agentTaskHandler = async (_prompt: string, _online: boolean, _confirmed: boolean) => ({
   state: 'completed', prompt: 'Search YouTube', summary: 'Search complete',
   detectedLanguage: 'en', requiresInternet: true,
@@ -85,6 +96,7 @@ const roadmap = {
   automationHub: false, releaseRecovery: false, integrations: false, localMemoryControls: false,
 };
 const settings = {
+  aiProvider: 'server', aiModel: 'openrouter/free', aiBaseUrl: '', aiFallbackProvider: 'none', aiFallbackModel: '', floatingAssistantEnabled: false,
   personality: 'Helpful and concise', onlineAI: true, developerEngine: 'auto',
   theme: 'dark', autoImprove: false, developerMode: false,
   voiceProcessingConsent: false, voiceInputEnabled: true, voiceOutputEnabled: true,
@@ -94,10 +106,14 @@ const settings = {
 mock.module('../assets/images/badboy-settings-avatar.jpg', { defaultExport: {} });
 mock.module('expo-router', { namedExports: { useRouter: () => ({ back: () => {} }) } });
 
+mock.module(mobileModule('components/ProviderManagerSection'), { namedExports: { ProviderManagerSection: () => null } });
+mock.module(mobileModule('lib/assistant/jarvis'), { namedExports: { canDrawFloatingAssistant: () => false, openFloatingAssistantPermissionSettings: async () => {}, startFloatingAssistant: async () => {}, stopFloatingAssistant: async () => {}, isScreenAwarenessEnabled: () => false, openScreenAwarenessSettings: async () => { screenSettingsCalls += 1; } } });
+
 mock.module('react-native', {
   namedExports: {
     ActivityIndicator: () => React.createElement('span', null, 'loading'),
     Alert: { alert: (title: string, message: string, buttons: any[] = []) => alerts.push({ title, message, buttons }) },
+    AppState: { addEventListener: () => ({ remove: () => {} }) },
     Linking: { openURL: async (url: string) => { openedUrls.push(url); } },
     Image: host('img'),
     Platform: { OS: 'android' },
@@ -112,11 +128,11 @@ mock.module('react-native', {
   },
 });
 mock.module('@expo/vector-icons', { namedExports: { Feather: () => null } });
-mock.module('../components/ProviderManagerSection.tsx', { namedExports: { ProviderManagerSection: () => null } });
+
 mock.module('react-native-safe-area-context', {
   namedExports: { useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) },
 });
-mock.module('../context/AssistantContext.tsx', {
+mock.module(mobileModule('context/AssistantContext'), {
   namedExports: {
     useAssistant: () => ({
       settings, updateSettings: (value: unknown) => { settingsUpdates.push(value); }, clearChat: async () => { clearChatCalls.push('cleared'); },
@@ -124,11 +140,11 @@ mock.module('../context/AssistantContext.tsx', {
     }),
   },
 });
-mock.module('../context/OwnerAuthContext.tsx', {
-  namedExports: { useOwnerAuth: () => ({ signOut: async () => { signOutCalls.push('signed-out'); } }) },
+mock.module(mobileModule('context/OwnerAuthContext'), {
+  namedExports: { useOwnerAuth: () => ({ authenticated: true, signOut: async () => { signOutCalls.push('signed-out'); } }) },
 });
-mock.module('../hooks/useColors.ts', { namedExports: { useColors: () => colors } });
-mock.module('../lib/assistant/voice.ts', {
+mock.module(mobileModule('hooks/useColors'), { namedExports: { useColors: () => colors } });
+mock.module(mobileModule('lib/assistant/voice'), {
   namedExports: {
     VOICE_LANGUAGES: [
       { code: 'bn-BD', label: 'বাংলা (বাংলাদেশ)' },
@@ -156,7 +172,7 @@ mock.module('../lib/assistant/voice.ts', {
     stopSpeaking: async () => {},
   },
 });
-mock.module('../lib/assistant/api.ts', {
+mock.module(mobileModule('lib/assistant/api'), {
   namedExports: {
     streamDeveloperAnalysis: (...args: [string, string, string, (chunk: string) => void]) => {
       developerAnalysisCalls.push(args);
@@ -165,7 +181,7 @@ mock.module('../lib/assistant/api.ts', {
     streamReply: async () => {},
   },
 });
-mock.module('../lib/assistant/developerData.ts', {
+mock.module(mobileModule('lib/assistant/developerData'), {
   namedExports: {
     addDeveloperProjectMemory: (...args: [any]) => { developerDataCalls.push({ method: 'addDeveloperProjectMemory', args }); return developerDataHandlers.addDeveloperProjectMemory(...args); },
     deleteDeveloperProjectMemory: (...args: [string]) => { developerDataCalls.push({ method: 'deleteDeveloperProjectMemory', args }); return developerDataHandlers.deleteDeveloperProjectMemory(...args); },
@@ -178,10 +194,10 @@ mock.module('../lib/assistant/developerData.ts', {
     saveDeveloperProject: (...args: [any]) => { developerDataCalls.push({ method: 'saveDeveloperProject', args }); return developerDataHandlers.saveDeveloperProject(...args); },
   },
 });
-mock.module('../lib/assistant/expertReview.ts', {
+mock.module(mobileModule('lib/assistant/expertReview'), {
   namedExports: { buildExpertReviewPrompt: () => '', inspectBadboyRepository: async () => ({}) },
 });
-mock.module('../lib/assistant/telegram.ts', {
+mock.module(mobileModule('lib/assistant/telegram'), {
   namedExports: {
     getTelegramOwnerChatId: (...args: unknown[]) => { telegramCalls.push({ method: 'getTelegramOwnerChatId', args }); return telegramHandlers.getTelegramOwnerChatId(); },
     bindTelegramOwnerChat: (...args: [number]) => { telegramCalls.push({ method: 'bindTelegramOwnerChat', args }); return telegramHandlers.bindTelegramOwnerChat(...args); },
@@ -193,7 +209,7 @@ mock.module('../lib/assistant/telegram.ts', {
     sendTelegramMessage: (...args: [string]) => { telegramCalls.push({ method: 'sendTelegramMessage', args }); return telegramHandlers.sendTelegramMessage(...args); },
   },
 });
-mock.module('../lib/assistant/developer.ts', {
+mock.module(mobileModule('lib/assistant/developer'), {
   namedExports: {
     previewGitHubChanges: (...args: [any]) => { githubCalls.push({ method: 'previewGitHubChanges', args }); return githubHandlers.previewGitHubChanges(...args); },
     executeAgentTask: (...args: [string, boolean, boolean]) => { agentTaskCalls.push(args); return agentTaskHandler(...args); },
@@ -205,7 +221,7 @@ mock.module('../lib/assistant/developer.ts', {
     saveGitHubToken: (...args: [string]) => { githubCalls.push({ method: 'saveGitHubToken', args }); return githubHandlers.saveGitHubToken(...args); },
   },
 });
-mock.module('../lib/assistant/developerEngine.ts', {
+mock.module(mobileModule('lib/assistant/developerEngine'), {
   namedExports: { resolveDeveloperEngine: (engine: string) => engine === 'copilot' ? { status: 'unavailable', reason: 'Copilot runtime unavailable' } : { status: 'available', activeEngine: 'native' } },
 });
 
@@ -224,8 +240,9 @@ test('Settings screen renders existing voice, privacy, developer and account con
   assert.match(html, /Settings|সেটিংস|ব্যক্তিগত/);
   assert.match(html, /Customize your Badboy AI experience/);
   assert.match(html, /AI Provider/);
-  assert.match(html, /OpenRouter/);
-  assert.match(html, /Automatic free-model routing/);
+  assert.match(html, /Server AI/);
+  assert.match(html, /openrouter\/free/);
+  assert.match(html, /Multi-AI Fallback/);
   assert.match(html, /v1[.]0[.]0/);
   assert.match(html, /Online/);
   assert.match(html, /APPEARANCE/);
@@ -236,6 +253,17 @@ test('Settings screen renders existing voice, privacy, developer and account con
   assert.match(html, /ভয়েস|Voice/);
   assert.match(html, /Wake Word|ওয়েক|Hey Badboy/i);
   assert.match(html, /Owner Sign Out/);
+  assert.ok(pressables.some((item) => item.label === 'Open Owner Panel'), 'Owner Panel is interactive');
+  assert.ok(pressables.some((item) => item.label === 'Token Management'), 'Token Management is interactive');
+  assert.ok(pressables.some((item) => item.label === 'Login Security'), 'Login Security is interactive');
+  pressables.find((item) => item.label === 'Open Owner Panel')?.onPress();
+  assert.equal(alerts.at(-1)?.title, 'Owner Panel');
+  await alerts.at(-1)?.buttons.find((button) => button.text === 'Manage Owner Token')?.onPress();
+  assert.equal(alerts.at(-1)?.title, 'Owner Token Management');
+  pressables.find((item) => item.label === 'Login Security')?.onPress();
+  assert.equal(alerts.at(-1)?.title, 'Login Security');
+  pressables.find((item) => item.label === 'Token Management')?.onPress();
+  assert.equal(alerts.at(-1)?.title, 'Owner Token Management');
   assert.match(html, /চ্যাট ইতিহাস মুছুন/);
   switchHandlers.find((item) => item.label === 'Develop mode')?.onValueChange(true);
   assert.deepEqual(settingsUpdates, [{ developerMode: true }]);
@@ -461,9 +489,9 @@ function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {
   // Keep the historical test fixture indices stable while the Settings screen
   // adds new state for Telegram, voice search, reminders and device controls.
   const legacyStateIndexMap: Record<number, number> = {
-    9: 10, 10: 11, 12: 18, 14: 20, 15: 21, 16: 22, 17: 23, 18: 24,
-    24: 30, 25: 31, 26: 32, 27: 33, 28: 34, 29: 35, 32: 38,
-    40: 46, 41: 47, 42: 48, 43: 49,
+    9: 10, 10: 11, 12: 19, 14: 21, 15: 22, 16: 23, 17: 24, 18: 25,
+    24: 31, 25: 32, 26: 33, 27: 34, 28: 35, 29: 36, 32: 39,
+    40: 47, 41: 48, 42: 49, 43: 50,
   };
   const mappedOverrides: Record<number, unknown> = {};
   for (const [index, value] of Object.entries(initialOverrides)) {
@@ -1021,7 +1049,7 @@ test('Settings renders Project Brain, Auto QA, plugin, Android and web views wit
   assert.match(html, /npx eas-cli build --platform android --profile preview/);
 
   html = await createSettingsHookHarness({ 14: 'web' })();
-  assert.match(html, /Cloudflare Pages হোস্ট অ্যান্ড ডিপ্লয়/);
+  assert.match(html, /Cloudflare Worker Hosting & Deploy/);
   assert.match(html, /pnpm run build && pnpm run deploy/);
 });
 
@@ -1062,4 +1090,41 @@ test('Settings lists and previews an installed voice matching the selected langu
   pressables.find((item) => item.label.includes('নমুনা শুনুন: English TTS voice'))?.onPress();
   assert.deepEqual(settingsUpdates.at(-1), { voiceIdentifier: 'en-US-test' });
   settings.voiceLanguage = 'bn-BD';
+});
+
+test('Settings Jarvis controls request overlay permission and expose stop and screen-awareness actions', async () => {
+  resetTelegramState();
+  const { default: SettingsScreen } = await settingsScreenPromise;
+  pressables.length = 0;
+  alerts.length = 0;
+  settingsUpdates.length = 0;
+  screenSettingsCalls = 0;
+  settings.floatingAssistantEnabled = false;
+
+  renderToStaticMarkup(React.createElement(SettingsScreen));
+  const startBubble = pressables.find((item) => item.label.includes('Start Bubble'));
+  const stopBubble = pressables.find((item) => item.label.includes('Stop Bubble'));
+  const configureScreen = pressables.find((item) => item.label.includes('Configure Screen Awareness'));
+  assert.ok(startBubble, 'Start Bubble action is rendered');
+  assert.ok(stopBubble, 'Stop Bubble action is rendered');
+  assert.ok(configureScreen, 'Screen Awareness settings action is rendered');
+
+  startBubble.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(alerts.at(-1)?.title, 'Permission প্রয়োজন');
+  assert.match(alerts.at(-1)?.message ?? '', /Display over other apps/);
+
+  stopBubble.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(settingsUpdates.at(-1), { floatingAssistantEnabled: false });
+
+  configureScreen.onPress();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(alerts.at(-1)?.title, 'Screen Awareness permission');
+  assert.match(alerts.at(-1)?.message ?? '', /long-press/);
+  assert.match(alerts.at(-1)?.message ?? '', /best-effort/);
+  alerts.at(-1)?.buttons[0]?.onPress?.();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(screenSettingsCalls, 1);
+  assert.equal(alerts.some((item) => item.title === 'Accessibility Settings খোলা যায়নি'), false);
 });

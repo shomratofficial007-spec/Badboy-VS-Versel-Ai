@@ -2,9 +2,10 @@ name: Refresh pnpm lockfile
 
 on:
   push:
-    branches: [feat/vercel-ai-sdk-core, chore/eslint-vitest-typescript-ci]
+    branches: [feat/vercel-ai-sdk-core, chore/eslint-vitest-typescript-ci, docs/cloudflare-only-project-worklog]
     paths:
       - "artifacts/**/package.json"
+      - "lib/**/package.json"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"

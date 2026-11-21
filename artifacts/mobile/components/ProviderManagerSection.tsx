@@ -105,12 +105,13 @@ export function ProviderManagerSection() {
   };
 
   const loadModels = async () => {
+    if (providerId === 'server') return;
     setBusy(true);
     setError('');
     try {
       const key = await getProviderApiKey(providerId);
       if (!key) throw new Error('প্রথমে API Key সংরক্ষণ করুন।');
-      const found = await fetchProviderModels(baseUrl, key);
+      const found = await fetchProviderModels(baseUrl, key, providerId);
       setModels(found);
       if (found.length === 0) setError('এই Provider কোনো Model ফেরত দেয়নি। Model ID নিজে লিখতে পারো।');
     } catch (cause) {
@@ -162,13 +163,13 @@ export function ProviderManagerSection() {
         <>
           <Text style={{ color: colors.foreground, fontWeight: '700', fontSize: 13 }}>API Base URL / Proxy Endpoint</Text>
           <TextInput value={baseUrl} onChangeText={setBaseUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://api.example.com/v1" placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 11, color: colors.foreground, fontSize: 13 }} />
-          <Text style={{ color: colors.mutedForeground, fontSize: 11, lineHeight: 16 }}>OpenAI-compatible endpoint প্রয়োজন। Custom proxy-ও এখানে বসাতে পারবে; নিরাপত্তার জন্য HTTPS ব্যবহার করো।</Text>
+          <Text style={{ color: colors.mutedForeground, fontSize: 11, lineHeight: 16 }}>OpenAI-compatible HTTPS endpoint প্রয়োজন। Chat ও model-list request Cloudflare Worker-এর মাধ্যমে যাবে; Worker API Key সংরক্ষণ করে না। Custom proxy-তে localhost বা private IP ব্যবহার করা যাবে না।</Text>
           <Text style={{ color: colors.foreground, fontWeight: '700', fontSize: 13 }}>API Key</Text>
           <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, flexDirection: 'row', alignItems: 'center', paddingRight: 10 }}>
             <TextInput value={keyDraft} onChangeText={setKeyDraft} secureTextEntry autoCapitalize="none" autoCorrect={false} placeholder={keyConfigured ? 'Saved key আছে • নতুন Key দিলে replace হবে' : 'Paste your provider API key'} placeholderTextColor={colors.mutedForeground} style={{ flex: 1, padding: 11, color: colors.foreground, fontSize: 13 }} />
             <Feather name="lock" size={15} color={colors.primary} />
           </View>
-          {keyConfigured ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}><Feather name="check-circle" size={12} color={colors.primary} /><Text style={{ color: colors.primary, fontSize: 11 }}>API Key Secure Storage-এ সংরক্ষিত (সম্পূর্ণ Key দেখানো হয় না)।</Text></View> : null}
+          {keyConfigured ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}><Feather name="check-circle" size={12} color={colors.primary} /><Text style={{ color: colors.primary, fontSize: 11 }}>API Key ফোনের Secure Storage-এ থাকে; Worker-এ শুধু request-এর সময় পাঠানো হয় (সম্পূর্ণ Key দেখানো হয় না)।</Text></View> : null}
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Pressable onPress={() => void saveKey()} disabled={!keyDraft.trim() || busy} style={{ flex: 1, minHeight: 42, borderRadius: 11, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', opacity: !keyDraft.trim() || busy ? 0.5 : 1 }}>
               {busy ? <ActivityIndicator color={colors.primaryForeground} /> : <Text style={{ color: colors.primaryForeground, fontWeight: '800', fontSize: 12 }}>Save API Key</Text>}
@@ -206,7 +207,7 @@ export function ProviderManagerSection() {
       <Pressable onPress={saveSelection} disabled={(providerId !== 'server' && (!model.trim() || !baseUrl.trim() || !keyConfigured)) || (fallbackProvider !== 'none' && (providerId === 'server' || fallbackProvider === providerId || !fallbackModel.trim() || !fallbackKeyConfigured))} style={{ minHeight: 44, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', opacity: ((providerId !== 'server' && (!model.trim() || !baseUrl.trim() || !keyConfigured)) || (fallbackProvider !== 'none' && (fallbackProvider === providerId || !fallbackModel.trim() || !fallbackKeyConfigured))) ? 0.45 : 1 }}>
         <Text style={{ color: colors.primaryForeground, fontWeight: '800' }}>Save Provider & Model</Text>
       </Pressable>
-      <Text style={{ color: colors.mutedForeground, fontSize: 11, lineHeight: 16 }}>API Key শুধু এই Provider-এর জন্য Secure Storage-এ রাখা হয়। Chat request-এ Owner Login যাচাই করার পর Key সরাসরি নির্বাচিত HTTPS provider/proxy-তে পাঠানো হয়; Owner Token তৃতীয় পক্ষের কাছে পাঠানো হয় না। Server AI mode-এ Agent tools থাকে; custom provider mode-এ provider-এর OpenAI-compatible text chat ব্যবহৃত হয়।</Text>
+      <Text style={{ color: colors.mutedForeground, fontSize: 11, lineHeight: 16 }}>API Key শুধু এই Provider-এর জন্য ফোনের Secure Storage-এ রাখা হয়। Chat ও model-list request Owner Login যাচাইয়ের পর Cloudflare Worker-এর মাধ্যমে নির্বাচিত HTTPS provider/proxy-তে যায়; Worker Key persist বা application log করে না। Owner Token provider-এর কাছে পাঠানো হয় না। Server AI mode-এ Agent tools থাকে; custom provider mode-এ OpenAI-compatible text chat ব্যবহৃত হয়।</Text>
     </View>
   );
 }

@@ -46,6 +46,9 @@ jobs:
       - name: Typecheck and build
         run: pnpm run build
 
+      - name: Validate Cloudflare Worker bundle without deploying
+        run: pnpm exec wrangler deploy --dry-run --config wrangler.json
+
       - name: Run existing workspace tests
         run: pnpm -r --if-present run test
 

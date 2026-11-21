@@ -38,6 +38,7 @@ export interface AssistantSettings {
   voiceOutputEnabled: boolean;
   autoSpeakReplies: boolean;
   wakeWordEnabled: boolean;
+  floatingAssistantEnabled: boolean;
   autoSubmitVoice: boolean;
   voiceLanguage: string;
   /** Installed device/browser TTS voice; null uses the default/cloud voice. */
@@ -77,6 +78,7 @@ export const DEFAULT_SETTINGS: AssistantSettings = {
   voiceOutputEnabled: true,
   autoSpeakReplies: false,
   wakeWordEnabled: true,
+  floatingAssistantEnabled: false,
   autoSubmitVoice: true,
   voiceLanguage: 'bn-BD',
   voiceIdentifier: null,

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
-import { createProviderKeyStore, fetchProviderModels, normalizeProviderBaseUrl } from './providerSettingsCore';
+import { mock, test } from 'node:test';
+import { createProviderKeyStore } from './providerSettingsCore';
 
 let secureStoreAvailable = true;
 const secureValues = new Map<string, string>();
@@ -11,31 +11,111 @@ const keyStore = createProviderKeyStore({
   deleteItemAsync: async (key) => { secureValues.delete(key); },
 });
 
-test('normalizes HTTPS proxy URLs and removes trailing slashes', () => { assert.equal(normalizeProviderBaseUrl('https://proxy.example/v1///'), 'https://proxy.example/v1'); });
-test('rejects insecure remote URLs, embedded credentials, query strings, fragments and empty values', () => {
-  for (const value of ['', 'http://proxy.example/v1', 'https://user:pass@proxy.example/v1', 'https://proxy.example/v1?key=secret', 'https://proxy.example/v1#fragment', 'not-a-url']) assert.throws(() => normalizeProviderBaseUrl(value));
+let ownerToken: string | null = 'owner-token-test';
+let providerResponse: Response = new Response(JSON.stringify({
+  data: [{ id: 'model-z' }, { id: 'model-a' }, { id: 'model-a' }, { id: 'bad model' }, { id: 42 }],
+}), { status: 200, headers: { 'Content-Type': 'application/json' } });
+let providerRequest: { url: string; init?: RequestInit } | null = null;
+
+mock.module('expo-secure-store', {
+  namedExports: {
+    isAvailableAsync: async () => secureStoreAvailable,
+    setItemAsync: async (key: string, value: string) => { secureValues.set(key, value); },
+    getItemAsync: async (key: string) => secureValues.get(key) ?? null,
+    deleteItemAsync: async (key: string) => { secureValues.delete(key); },
+  },
 });
-test('allows HTTP only for local development proxy endpoints', () => { assert.equal(normalizeProviderBaseUrl('http://localhost:8080/v1'), 'http://localhost:8080/v1'); });
-test('saves, reloads and deletes provider keys through the secure storage adapter', async () => {
-  secureStoreAvailable = true; await keyStore.save('openai', '  secret-provider-key  ');
-  assert.equal(await keyStore.get('openai'), 'secret-provider-key'); await keyStore.delete('openai'); assert.equal(await keyStore.get('openai'), null);
+mock.module('expo/fetch', {
+  namedExports: {
+    fetch: async (input: string | URL, init?: RequestInit) => {
+      providerRequest = { url: String(input), init };
+      return providerResponse;
+    },
+  },
 });
-test('rejects empty, oversized and multiline keys', async () => {
-  await assert.rejects(() => keyStore.save('openai', '  ')); await assert.rejects(() => keyStore.save('openai', 'key\nwith-line-break')); await assert.rejects(() => keyStore.save('openai', 'x'.repeat(4097)));
+mock.module('./ownerJsonRequest', {
+  namedExports: { apiUrl: (path: string) => 'https://worker.example/api' + path },
 });
-test('refuses key writes and deletes when secure storage is unavailable', async () => {
-  secureStoreAvailable = false; await assert.rejects(() => keyStore.save('openai', 'secret')); assert.equal(await keyStore.get('openai'), null); await assert.rejects(() => keyStore.delete('openai')); secureStoreAvailable = true;
+mock.module('./ownerAuth', {
+  namedExports: { getOwnerToken: async () => ownerToken },
 });
-test('fetches, filters, deduplicates and sorts OpenAI-compatible model IDs', async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () => new Response(JSON.stringify({ data: [{ id: 'z-model' }, { id: 'a-model' }, { id: 'z-model' }, { id: 42 }, { id: 'bad id' }] }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;
-  try { assert.deepEqual(await fetchProviderModels('https://proxy.example/v1', 'test-key'), ['a-model', 'z-model']); } finally { globalThis.fetch = originalFetch; }
+
+const providerSettingsPromise = import('./providerSettings');
+
+test('stores provider API keys only through the secure storage adapter', async () => {
+  secureStoreAvailable = true;
+  await keyStore.save('openai', '  secret-provider-key  ');
+  assert.equal(await keyStore.get('openai'), 'secret-provider-key');
+  await keyStore.delete('openai');
+  assert.equal(await keyStore.get('openai'), null);
 });
-test('rejects model discovery for missing keys, HTTP failures and non-compatible payloads', async () => {
-  await assert.rejects(() => fetchProviderModels('https://proxy.example/v1', '  '));
-  const originalFetch = globalThis.fetch;
-  try {
-    globalThis.fetch = (async () => new Response('unauthorized', { status: 401 })) as typeof fetch; await assert.rejects(() => fetchProviderModels('https://proxy.example/v1', 'bad-key'));
-    globalThis.fetch = (async () => new Response(JSON.stringify({ models: [] }), { status: 200 })) as typeof fetch; await assert.rejects(() => fetchProviderModels('https://proxy.example/v1', 'valid-key'));
-  } finally { globalThis.fetch = originalFetch; }
+
+test('rejects empty, oversized and multiline provider keys', async () => {
+  await assert.rejects(() => keyStore.save('openai', '  '));
+  await assert.rejects(() => keyStore.save('openai', 'key\nwith-line-break'));
+  await assert.rejects(() => keyStore.save('openai', 'x'.repeat(4097)));
+});
+
+test('refuses provider key writes and deletes when secure storage is unavailable', async () => {
+  secureStoreAvailable = false;
+  await assert.rejects(() => keyStore.save('openai', 'secret'));
+  assert.equal(await keyStore.get('openai'), null);
+  await assert.rejects(() => keyStore.delete('openai'));
+  secureStoreAvailable = true;
+});
+
+test('fetchProviderModels sends owner auth and the selected provider key through the Worker', async () => {
+  const { fetchProviderModels } = await providerSettingsPromise;
+  ownerToken = 'owner-token-test';
+  providerRequest = null;
+  providerResponse = new Response(JSON.stringify({
+    data: [{ id: 'model-z' }, { id: 'model-a' }, { id: 'model-a' }, { id: 'bad model' }, { id: 42 }],
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+
+  const models = await fetchProviderModels('https://api.openai.com/v1', ' provider-key ', 'openai');
+  assert.deepEqual(models, ['model-a', 'model-z']);
+  assert.equal(providerRequest?.url, 'https://worker.example/api/assistant/provider-models');
+  const headers = new Headers(providerRequest?.init?.headers);
+  assert.equal(headers.get('Authorization'), 'Bearer owner-token-test');
+  assert.equal(headers.get('X-Provider-Key'), 'provider-key');
+  assert.equal(headers.get('Content-Type'), 'application/json');
+  assert.deepEqual(JSON.parse(String(providerRequest?.init?.body)), {
+    providerId: 'openai',
+    baseUrl: 'https://api.openai.com/v1',
+  });
+});
+
+test('fetchProviderModels rejects empty keys and missing owner sessions before network access', async () => {
+  const { fetchProviderModels } = await providerSettingsPromise;
+  providerRequest = null;
+  await assert.rejects(fetchProviderModels('https://api.openai.com/v1', '  ', 'openai'), /API Key/);
+  ownerToken = null;
+  await assert.rejects(fetchProviderModels('https://api.openai.com/v1', 'provider-key', 'openai'), /Owner login is required/);
+  assert.equal(providerRequest, null);
+});
+
+test('fetchProviderModels reports Worker errors and rejects invalid model payloads', async () => {
+  const { fetchProviderModels } = await providerSettingsPromise;
+  ownerToken = 'owner-token-test';
+  providerResponse = new Response(JSON.stringify({ error: 'Provider unavailable' }), {
+    status: 502,
+    headers: { 'Content-Type': 'application/json' },
+  });
+  await assert.rejects(fetchProviderModels('https://api.openai.com/v1', 'provider-key', 'openai'), /Provider unavailable/);
+
+  providerResponse = new Response(JSON.stringify({ models: [] }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+  await assert.rejects(fetchProviderModels('https://api.openai.com/v1', 'provider-key', 'openai'), /OpenAI-compatible \/models response/);
+});
+
+test('provider API key helpers persist and remove keys through SecureStore', async () => {
+  const { saveProviderApiKey, getProviderApiKey, deleteProviderApiKey } = await providerSettingsPromise;
+  secureStoreAvailable = true;
+  secureValues.clear();
+  await saveProviderApiKey('openai', '  persisted-provider-key  ');
+  assert.equal(await getProviderApiKey('openai'), 'persisted-provider-key');
+  await deleteProviderApiKey('openai');
+  assert.equal(await getProviderApiKey('openai'), null);
 });

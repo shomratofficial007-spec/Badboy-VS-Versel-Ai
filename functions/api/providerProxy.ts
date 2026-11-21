@@ -16,6 +16,8 @@ const PROVIDER_BASE_URLS: Record<Exclude<ProviderId, "custom">, string> = {
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, X-Provider-Key",
   "Cache-Control": "no-store",
 };
 

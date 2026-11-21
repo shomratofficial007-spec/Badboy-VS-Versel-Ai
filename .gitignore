@@ -47,3 +47,15 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Local environment secrets and Wrangler state
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+.wrangler/
+
+# Generated Android local configuration
+artifacts/mobile/android/local.properties
+artifacts/mobile/static-build/

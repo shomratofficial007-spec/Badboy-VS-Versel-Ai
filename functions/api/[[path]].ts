@@ -1,3 +1,5 @@
+import { createUpstreamAbortSignal } from "./upstreamAbort.ts";
+import { handleProviderChatProxy, handleProviderModelsProxy } from "./providerProxy.ts";
 import { buildDeveloperAnalysisMessages, resolveDeveloperAnalysisEngine, validateDeveloperAnalysisPayload } from "./developerAgent.ts";
 import { authenticatePersonalOwner } from "./personalAuth.ts";
 import { handleDeveloperDataRequest } from "./developerData.ts";
@@ -6,7 +8,7 @@ import { fetchGeminiChat, getGeminiModel } from "./geminiProvider.ts";
 import { handleAgenticAssistantRequest } from "./agenticAssistant.ts";
 import { handleAgentMemorySearchRequest } from "./agentMemory.ts";
 import { handleIntegrationRequest, type IntegrationEnv } from "./integrationHub.ts";
-// Cloudflare Pages Function: Native Developer Agent controls optional AI provider adapters.
+// Cloudflare Worker API: Native Developer Agent controls optional AI provider adapters.
 // Ordinary /api/assistant/chat remains on its existing OpenRouter route.
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
@@ -36,11 +38,32 @@ interface Env {
   GOOGLE_CALENDAR_ACCESS_TOKEN?: string;
 }
 
+const API_SECURITY_HEADERS = {
+  "Cache-Control": "no-store, no-transform",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+};
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, X-Provider-Key",
+  ...API_SECURITY_HEADERS,
 };
+
+function withApiSecurityHeaders(response: Response): Response {
+  const headers = new Headers(response.headers);
+  for (const [name, value] of Object.entries(API_SECURITY_HEADERS)) {
+    headers.set(name, value);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
 
 // Removes trailing slashes without a backtracking regex (SonarCloud S5852).
 function trimTrailingSlashes(value: string): string {
@@ -62,6 +85,7 @@ function logModelDiagnostic(event: string, model: string, statusCode?: number) {
 async function fetchChatWithFreeFallbacks(
   apiKey: string,
   messages: Array<{ role: "system" | "user"; content: string }>,
+  signal?: AbortSignal,
 ): Promise<{ response: Response; model: string }> {
   const models = [OPENROUTER_MODEL_ID, ...OPENROUTER_FREE_FALLBACKS];
   let lastError: unknown;
@@ -75,8 +99,9 @@ async function fetchChatWithFreeFallbacks(
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
-          "X-Title": "Badboy Voice Memory Assistant",
+          "X-Title": "Badboy AI",
         },
+        signal,
         body: JSON.stringify({
           model,
           max_tokens: 8192,
@@ -111,6 +136,7 @@ type DeveloperProvider = "gemini" | "openrouter";
 async function fetchDeveloperAnalysisWithProviders(
   env: Env,
   messages: Array<{ role: "system" | "user"; content: string }>,
+  signal?: AbortSignal,
 ): Promise<{ response: Response; provider: DeveloperProvider; model: string }> {
   const geminiApiKey = env.GEMINI_API_KEY?.trim() || "";
   const openrouterApiKey = env.OPENROUTER_API_KEY?.trim() || "";
@@ -121,7 +147,7 @@ async function fetchDeveloperAnalysisWithProviders(
     const model = getGeminiModel(env.GEMINI_MODEL);
     logModelDiagnostic("attempt", model);
     try {
-      const response = await fetchGeminiChat(geminiApiKey, messages, model);
+      const response = await fetchGeminiChat(geminiApiKey, messages, model, fetch, signal);
       if (response.ok && response.body) {
         logModelDiagnostic("selected", model, response.status);
         return { response, provider: "gemini", model };
@@ -138,7 +164,7 @@ async function fetchDeveloperAnalysisWithProviders(
   }
 
   if (openrouterApiKey) {
-    const routed = await fetchChatWithFreeFallbacks(openrouterApiKey, messages);
+    const routed = await fetchChatWithFreeFallbacks(openrouterApiKey, messages, signal);
     return { ...routed, provider: "openrouter" };
   }
   throw new Error("No Developer Agent AI provider is configured.");
@@ -149,13 +175,13 @@ function jsonResponse(data: unknown, status = 200) {
     status,
     headers: {
       "Content-Type": "application/json",
-      "Cache-Control": "no-store",
       ...CORS_HEADERS,
     },
   });
 }
 
 const MAX_CHAT_REQUEST_BYTES = 64 * 1024;
+const MAX_PROVIDER_REQUEST_BYTES = 160 * 1024;
 const MAX_DEVELOPER_REQUEST_BYTES = 16 * 1024;
 const MAX_SPEECH_REQUEST_BYTES = 64 * 1024;
 // Base64 expands audio by roughly 4/3. Keep the existing 6 MB encoded-audio
@@ -288,15 +314,18 @@ function extractDeltas(event: string): { texts: string[]; done: boolean } {
       continue;
     }
     if (!data) continue;
+    let parsed: {
+      error?: unknown;
+      choices?: Array<{ delta?: { content?: unknown } }>;
+    };
     try {
-      const parsed = JSON.parse(data) as {
-        choices?: Array<{ delta?: { content?: unknown } }>;
-      };
-      const delta = parsed.choices?.[0]?.delta?.content;
-      if (typeof delta === "string" && delta.length > 0) texts.push(delta);
+      parsed = JSON.parse(data) as typeof parsed;
     } catch {
-      // Ignore malformed chunks
+      throw new Error("AI provider returned malformed stream data.");
     }
+    if (parsed.error) throw new Error("AI provider returned an upstream stream error.");
+    const delta = parsed.choices?.[0]?.delta?.content;
+    if (typeof delta === "string" && delta.length > 0) texts.push(delta);
   }
   return { texts, done };
 }
@@ -311,23 +340,6 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
-function createUpstreamAbortSignal(request: Request, timeoutMs = 12_000): {
-  signal: AbortSignal;
-  cleanup: () => void;
-} {
-  const controller = new AbortController();
-  const abortFromClient = () => controller.abort(request.signal.reason);
-  if (request.signal.aborted) abortFromClient();
-  else request.signal.addEventListener("abort", abortFromClient, { once: true });
-  const timeout = setTimeout(() => controller.abort(new Error("Upstream request timed out")), timeoutMs);
-  return {
-    signal: controller.signal,
-    cleanup: () => {
-      clearTimeout(timeout);
-      request.signal.removeEventListener("abort", abortFromClient);
-    },
-  };
-}
 
 async function handleTranscriptionRequest(request: Request, env: Env): Promise<Response> {
   const groqApiKey = env.GROQ_API_KEY?.trim() || "";
@@ -697,7 +709,6 @@ async function handleSpeechRequest(request: Request, env: Env): Promise<Response
         status: 200,
         headers: {
           "Content-Type": "audio/mpeg",
-          "Cache-Control": "no-store",
           "X-TTS-Voice": selectedVoice,
           "X-TTS-Engine": "microsoft-edge",
           ...CORS_HEADERS,
@@ -711,7 +722,7 @@ async function handleSpeechRequest(request: Request, env: Env): Promise<Response
   // 2. Secondary fallback: OpenRouter audio/speech (if configured)
   const openrouterApiKey = env.OPENROUTER_API_KEY?.trim();
   if (openrouterApiKey) {
-    const upstreamAbort = createUpstreamAbortSignal(request, 12_000);
+    const upstreamAbort = createUpstreamAbortSignal(request, 30_000);
     try {
       const upstream = await fetch(`${OPENROUTER_BASE_URL}/audio/speech`, {
         method: "POST",
@@ -736,7 +747,6 @@ async function handleSpeechRequest(request: Request, env: Env): Promise<Response
             status: 200,
             headers: {
               "Content-Type": upstream.headers.get("content-type") || "audio/mpeg",
-              "Cache-Control": "no-store",
               "X-TTS-Voice": selectedVoice,
               "X-TTS-Engine": "openrouter-fish-audio",
               ...CORS_HEADERS,
@@ -839,6 +849,7 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
     requestedEngine: validation.value.requestedEngine,
   }));
 
+  const upstreamAbort = createUpstreamAbortSignal(request, 90_000);
   let upstream: Response;
   let selectedProvider: DeveloperProvider = "openrouter";
   let selectedModel = OPENROUTER_MODEL_ID;
@@ -846,34 +857,37 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
     const routed = await fetchDeveloperAnalysisWithProviders(
       env,
       buildDeveloperAnalysisMessages(validation.value),
+      upstreamAbort.signal,
     );
     upstream = routed.response;
     selectedProvider = routed.provider;
     selectedModel = routed.model;
   } catch {
-    await storage.updateTaskStatus({ taskId, ownerId, status: "failed" }).catch(() => false);
+    const wasCancelled = request.signal.aborted;
+    upstreamAbort.cleanup();
+    await storage.updateTaskStatus({
+      taskId, ownerId, status: wasCancelled ? "cancelled" : "failed",
+    }).catch(() => false);
     await storage.appendTaskEvent({
       eventId: crypto.randomUUID(), taskId, ownerId,
-      eventType: "task_failed", payload: { reason: "upstream_network_error" },
+      eventType: wasCancelled ? "task_cancelled" : "task_failed",
+      payload: { reason: wasCancelled ? "client_disconnected" : upstreamAbort.wasTimedOut() ? "upstream_timeout" : "upstream_network_error" },
     }).catch(() => false);
-    console.info(JSON.stringify({
-      component: "badboy-developer-agent",
-      event: "task_failed",
-      taskId,
-      engine,
-      reason: "upstream_network_error",
-    }));
+    if (wasCancelled) return new Response(null, { status: 499, headers: CORS_HEADERS });
     return jsonResponse(
       {
-        code: "DEVELOPER_AGENT_UPSTREAM_FAILED",
-        error: "Developer Agent could not reach an available AI provider.",
+        code: upstreamAbort.wasTimedOut() ? "DEVELOPER_AGENT_UPSTREAM_TIMEOUT" : "DEVELOPER_AGENT_UPSTREAM_FAILED",
+        error: upstreamAbort.wasTimedOut()
+          ? "Developer Agent provider timed out. Please retry."
+          : "Developer Agent could not reach an available AI provider.",
         taskId,
       },
-      502,
+      upstreamAbort.wasTimedOut() ? 504 : 502,
     );
   }
 
   if (!upstream.ok || !upstream.body) {
+    upstreamAbort.cleanup();
     const status = upstream.status === 429 ? 429 : 502;
     await storage.updateTaskStatus({ taskId, ownerId, status: "failed" }).catch(() => false);
     await storage.appendTaskEvent({
@@ -906,27 +920,96 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
   const encoder = new TextEncoder();
   const reader = upstream.body.getReader();
   const decoder = new TextDecoder();
+  let taskFinalized = false;
+  let finalizationPromise: Promise<void> | null = null;
+  let downstreamCancelled = false;
+  let accumulatedOutput = "";
+
+  const finalizeTask = async (status: "completed" | "failed" | "cancelled", reason?: string) => {
+    if (taskFinalized) return;
+    if (finalizationPromise) return finalizationPromise;
+    finalizationPromise = (async () => {
+      const updated = await storage.updateTaskStatus({
+        taskId,
+        ownerId,
+        status,
+        ...(status === "completed" ? { summary: accumulatedOutput.slice(0, 4000) } : {}),
+      });
+      if (!updated) throw new Error("Task record could not be finalized.");
+      await storage.appendTaskEvent({
+        eventId: crypto.randomUUID(),
+        taskId,
+        ownerId,
+        eventType: status === "completed" ? "task_completed" : status === "cancelled" ? "task_cancelled" : "task_failed",
+        payload: status === "completed"
+          ? { outputLength: accumulatedOutput.length }
+          : { reason: reason ?? status },
+      });
+      taskFinalized = true;
+    })();
+    try {
+      await finalizationPromise;
+    } finally {
+      finalizationPromise = null;
+    }
+  };
+
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (payload: string) =>
-        controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
-      send(JSON.stringify({ taskId, engine, provider: selectedProvider, model: selectedModel, status: "started" }));
-      let accumulatedOutput = "";
-      const completeTask = async () => {
-        const updated = await storage.updateTaskStatus({
-          taskId, ownerId, status: "completed", summary: accumulatedOutput.slice(0, 4000),
-        });
-        if (!updated) throw new Error("Task record could not be finalized.");
-        await storage.appendTaskEvent({
-          eventId: crypto.randomUUID(), taskId, ownerId,
-          eventType: "task_completed", payload: { outputLength: accumulatedOutput.length },
-        });
+      let streamClosed = false;
+      const send = (payload: string) => {
+        if (downstreamCancelled || streamClosed) return;
+        try {
+          controller.enqueue(encoder.encode("data: " + payload + "\n\n"));
+        } catch {
+          streamClosed = true;
+        }
       };
+      const close = () => {
+        if (streamClosed) return;
+        streamClosed = true;
+        try { controller.close(); } catch { /* downstream may already be closed */ }
+      };
+
+      send(JSON.stringify({ taskId, engine, provider: selectedProvider, model: selectedModel, status: "started" }));
+      const completeTask = async () => {
+        if (!accumulatedOutput.trim()) {
+          await finalizeTask("failed", "empty_output");
+          send(JSON.stringify({ error: "Developer Agent returned an empty response.", taskId, engine }));
+          close();
+          return;
+        }
+        await finalizeTask("completed");
+        send(JSON.stringify({ taskId, engine, status: "completed" }));
+        send("[DONE]");
+        console.info(JSON.stringify({
+          component: "badboy-developer-agent",
+          event: "task_completed",
+          taskId,
+          engine,
+        }));
+        close();
+      };
+
       try {
         let pending = "";
+        let receivedDone = false;
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done) {
+            if (downstreamCancelled || (upstreamAbort.signal.aborted && !upstreamAbort.wasTimedOut())) {
+              await finalizeTask("cancelled", "client_disconnected");
+              close();
+              return;
+            }
+            if (upstreamAbort.wasTimedOut()) {
+              await finalizeTask("failed", "upstream_timeout");
+              send(JSON.stringify({ error: "Developer Agent provider timed out.", taskId, engine }));
+              close();
+              return;
+            }
+            break;
+          }
           pending += decoder.decode(value, { stream: true });
           pending = pending.replace(/\r\n/g, "\n");
           let boundary = pending.indexOf("\n\n");
@@ -939,15 +1022,25 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
               send(JSON.stringify({ content, taskId, engine, provider: selectedProvider }));
             }
             if (parsed.done) {
+              receivedDone = true;
+              if (downstreamCancelled || (upstreamAbort.signal.aborted && !upstreamAbort.wasTimedOut())) {
+                await finalizeTask("cancelled", "client_disconnected");
+                close();
+                return;
+              }
+              if (upstreamAbort.wasTimedOut()) {
+                await finalizeTask("failed", "upstream_timeout");
+                send(JSON.stringify({ error: "Developer Agent provider timed out.", taskId, engine }));
+                close();
+                return;
+              }
               await completeTask();
-              send(JSON.stringify({ taskId, engine, status: "completed" }));
-              send("[DONE]");
-              controller.close();
               return;
             }
             boundary = pending.indexOf("\n\n");
           }
         }
+
         pending += decoder.decode();
         if (pending.trim()) {
           const parsed = extractDeltas(pending);
@@ -955,50 +1048,57 @@ async function handleDeveloperAnalysisRequest(request: Request, env: Env, ownerI
             accumulatedOutput = (accumulatedOutput + content).slice(0, 4000);
             send(JSON.stringify({ content, taskId, engine, provider: selectedProvider }));
           }
+          receivedDone = parsed.done;
         }
+        if (downstreamCancelled || (upstreamAbort.signal.aborted && !upstreamAbort.wasTimedOut())) {
+          await finalizeTask("cancelled", "client_disconnected");
+          close();
+          return;
+        }
+        if (upstreamAbort.wasTimedOut()) {
+          await finalizeTask("failed", "upstream_timeout");
+          send(JSON.stringify({ error: "Developer Agent provider timed out.", taskId, engine }));
+          close();
+          return;
+        }
+        if (!receivedDone) throw new Error("Developer Agent stream ended before the completion marker.");
         await completeTask();
-        send(JSON.stringify({ taskId, engine, status: "completed" }));
-        send("[DONE]");
-        console.info(JSON.stringify({
-          component: "badboy-developer-agent",
-          event: "task_completed",
-          taskId,
-          engine,
-        }));
-        controller.close();
       } catch {
-        await storage.updateTaskStatus({ taskId, ownerId, status: "failed" }).catch(() => false);
-        await storage.appendTaskEvent({
-          eventId: crypto.randomUUID(), taskId, ownerId,
-          eventType: "task_failed", payload: { reason: "stream_interrupted" },
-        }).catch(() => false);
+        const wasCancelled = downstreamCancelled || request.signal.aborted;
+        const timedOut = upstreamAbort.wasTimedOut();
+        await finalizeTask(wasCancelled ? "cancelled" : "failed", wasCancelled ? "client_disconnected" : timedOut ? "upstream_timeout" : "stream_interrupted").catch(() => undefined);
+        if (!wasCancelled) {
+          send(JSON.stringify({
+            error: timedOut ? "Developer Agent provider timed out." : "Developer Agent stream was interrupted.",
+            taskId,
+            engine,
+          }));
+        }
         console.info(JSON.stringify({
           component: "badboy-developer-agent",
-          event: "task_failed",
+          event: wasCancelled ? "task_cancelled" : "task_failed",
           taskId,
           engine,
-          reason: "stream_interrupted",
+          reason: wasCancelled ? "client_disconnected" : timedOut ? "upstream_timeout" : "stream_interrupted",
         }));
-        send(JSON.stringify({
-          error: "Developer Agent stream was interrupted.",
-          taskId,
-          engine,
-        }));
-        controller.close();
+        close();
       } finally {
-        try {
-          reader.releaseLock();
-        } catch {
-          // The stream reader may already be released.
-        }
+        upstreamAbort.cleanup();
+        try { reader.releaseLock(); } catch { /* reader may already be released */ }
       }
+    },
+    async cancel(reason) {
+      downstreamCancelled = true;
+      upstreamAbort.abort(reason);
+      await reader.cancel(reason).catch(() => undefined);
+      await finalizeTask("cancelled", "downstream_cancelled").catch(() => undefined);
+      upstreamAbort.cleanup();
     },
   });
 
   return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
       "X-Badboy-Task-Id": taskId,
       "X-Badboy-Engine": engine,
       "X-Badboy-Provider": selectedProvider,
@@ -1143,6 +1243,26 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     return handleSpeechRequest(request, env);
   }
 
+  if (request.method === "POST" && (
+    pathname === "/api/assistant/provider-chat" ||
+    pathname === "/api/assistant/provider-models"
+  )) {
+    const parsedBody = await readJsonBody(request, MAX_PROVIDER_REQUEST_BYTES);
+    if ("response" in parsedBody) return parsedBody.response;
+    return pathname === "/api/assistant/provider-chat"
+      ? handleProviderChatProxy(request, parsedBody.body)
+      : handleProviderModelsProxy(request, parsedBody.body);
+  }
+
+  // Preserve the legacy Netlify/Express voice route while keeping the
+  // current text-only model capability contract explicit on the Worker.
+  if (request.method === "POST" && pathname === "/api/assistant/voice") {
+    return jsonResponse({
+      code: "MODEL_AUDIO_UNSUPPORTED",
+      error: "The selected free chat model accepts text input and returns text only. Voice synthesis is handled by the supported /api/assistant/speech route or client-side TTS.",
+    }, 501);
+  }
+
   if (request.method !== "POST" || pathname !== "/api/assistant/chat") {
     return jsonResponse({ error: "Endpoint not found." }, 404);
   }
@@ -1179,6 +1299,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     );
   }
 
+  const upstreamAbort = createUpstreamAbortSignal(request, 90_000);
   let upstream: Response;
   try {
     const routed = await fetchChatWithFreeFallbacks(apiKey, [
@@ -1187,20 +1308,27 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
         content: systemInstruction(personality, developerMode),
       },
       { role: "user", content: message.trim() },
-    ]);
+    ], upstreamAbort.signal);
     upstream = routed.response;
   } catch (err) {
+    const wasCancelled = request.signal.aborted;
+    const timedOut = upstreamAbort.wasTimedOut();
+    upstreamAbort.cleanup();
+    if (wasCancelled) return new Response(null, { status: 499, headers: CORS_HEADERS });
     console.error("[CF Function Error] OpenRouter fetch failed:", err instanceof Error ? err.message : String(err));
     return jsonResponse(
       {
-        code: "OPENROUTER_REQUEST_FAILED",
-        error: "OpenRouter service could not be reached. Check network connection.",
+        code: timedOut ? "OPENROUTER_REQUEST_TIMEOUT" : "OPENROUTER_REQUEST_FAILED",
+        error: timedOut
+          ? "OpenRouter request timed out. Please try again."
+          : "OpenRouter service could not be reached. Check network connection.",
       },
-      502
+      timedOut ? 504 : 502
     );
   }
 
   if (upstream.status === 429) {
+    upstreamAbort.cleanup();
     console.error("[CF Function Error] All configured free models are rate limited or unavailable (429).");
     return jsonResponse(
       {
@@ -1212,12 +1340,13 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   }
 
   if (!upstream.ok || !upstream.body) {
+    upstreamAbort.cleanup();
     // Avoid logging provider response bodies; keep diagnostics sanitized.
-    console.error(`[CF Function Error] OpenRouter upstream returned status ${upstream.status}.`);
+    console.error("[CF Function Error] OpenRouter upstream returned status " + upstream.status + ".");
     return jsonResponse(
       {
         code: "OPENROUTER_REQUEST_FAILED",
-        error: `OpenRouter error (${upstream.status}). Please try again later.`,
+        error: "OpenRouter error (" + upstream.status + "). Please try again later.",
       },
       502
     );
@@ -1226,13 +1355,28 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   const encoder = new TextEncoder();
   const reader = upstream.body.getReader();
   const decoder = new TextDecoder();
-
+  let downstreamCancelled = false;
+  let emittedContent = false;
   const stream = new ReadableStream({
     async start(controller) {
       let pending = "";
-      const send = (payload: string) =>
-        controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+      let streamClosed = false;
+      const send = (payload: string) => {
+        if (downstreamCancelled || streamClosed) return;
+        try {
+          controller.enqueue(encoder.encode("data: " + payload + "\n\n"));
+        } catch {
+          streamClosed = true;
+        }
+      };
+      const close = () => {
+        if (streamClosed) return;
+        streamClosed = true;
+        try { controller.close(); } catch { /* downstream may already be closed */ }
+      };
+
       try {
+        let receivedDone = false;
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -1243,11 +1387,23 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
             const event = pending.slice(0, boundary);
             pending = pending.slice(boundary + 2);
             const { texts, done: streamDone } = extractDeltas(event);
-            for (const content of texts) send(JSON.stringify({ content }));
+            for (const content of texts) {
+              emittedContent = true;
+              send(JSON.stringify({ content }));
+            }
             if (streamDone) {
+              receivedDone = true;
+              if (downstreamCancelled || request.signal.aborted) {
+                close();
+                return;
+              }
+              if (!emittedContent) {
+                send(JSON.stringify({ error: "OpenRouter returned an empty response." }));
+                close();
+                return;
+              }
               send("[DONE]");
-              controller.close();
-              reader.releaseLock();
+              close();
               return;
             }
             boundary = pending.indexOf("\n\n");
@@ -1255,57 +1411,54 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
         }
         pending += decoder.decode();
         if (pending.trim()) {
-          const { texts } = extractDeltas(pending);
-          for (const content of texts) send(JSON.stringify({ content }));
+          const parsed = extractDeltas(pending);
+          for (const content of parsed.texts) send(JSON.stringify({ content }));
+          receivedDone = parsed.done;
         }
-        send("[DONE]");
-        controller.close();
+        if (downstreamCancelled || request.signal.aborted) {
+          close();
+          return;
+        }
+        if (upstreamAbort.wasTimedOut()) {
+          send(JSON.stringify({ error: "OpenRouter request timed out." }));
+        } else if (!receivedDone) {
+          send(JSON.stringify({ error: "OpenRouter stream ended before the completion marker." }));
+        } else if (!emittedContent) {
+          send(JSON.stringify({ error: "OpenRouter returned an empty response." }));
+        } else {
+          send("[DONE]");
+        }
+        close();
       } catch (streamErr) {
+        const wasCancelled = downstreamCancelled || request.signal.aborted;
+        const timedOut = upstreamAbort.wasTimedOut();
         console.error("[CF Function Error] Stream reading interrupted:", streamErr instanceof Error ? streamErr.message : String(streamErr));
-        try {
-          send(
-            JSON.stringify({
-              error: "OpenRouter stream interrupted.",
-            })
-          );
-          controller.close();
-        } catch {
-          // Closed
+        if (!wasCancelled) {
+          send(JSON.stringify({
+            error: timedOut ? "OpenRouter request timed out." : "OpenRouter stream interrupted.",
+          }));
         }
+        close();
       } finally {
-        try {
-          reader.releaseLock();
-        } catch {
-          // Released
-        }
+        upstreamAbort.cleanup();
+        try { reader.releaseLock(); } catch { /* reader may already be released */ }
       }
+    },
+    async cancel(reason) {
+      downstreamCancelled = true;
+      upstreamAbort.abort(reason);
+      await reader.cancel(reason).catch(() => undefined);
+      upstreamAbort.cleanup();
     },
   });
 
   return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
       ...CORS_HEADERS,
     },
   });
 }
-
-export const onRequestOptions: PagesFunction<Env> = async (context) => {
-  return handleApiRequest(context.request, context.env);
-};
-
-export const onRequestGet: PagesFunction<Env> = async (context) => {
-  return handleApiRequest(context.request, context.env);
-};
-
-export const onRequestPost: PagesFunction<Env> = async (context) => {
-  return handleApiRequest(context.request, context.env);
-};
-
-export const onRequestDelete: PagesFunction<Env> = async (context) => {
-  return handleApiRequest(context.request, context.env);
-};
 
 export default {
   async fetch(request: Request, env: Env, ctx: { waitUntil: (promise: Promise<unknown>) => void }): Promise<Response> {
@@ -1317,7 +1470,7 @@ export default {
       url.pathname === "/healthz" ||
       url.pathname === "/health"
     ) {
-      return handleApiRequest(request, env);
+      return withApiSecurityHeaders(await handleApiRequest(request, env));
     }
     const assets = (env as { ASSETS?: { fetch: (req: Request) => Promise<Response> } }).ASSETS;
     if (assets) {

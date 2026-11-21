@@ -1,33 +1,38 @@
 import assert from 'node:assert';
-import test from 'node:test';
-import {
-  generateDevelopmentPlan,
-  getProjectBrainSummary,
-  runAutoQASuite,
-  getPluginRegistryStatus,
-  executeAgentTask,
-  detectMessageLanguage,
-  performLiveWebResearch,
-  buildStructuredReasoning,
-  DEFAULT_REPO_CONFIG,
-  createGitHubPullRequest,
-  previewGitHubChanges,
-} from './developer';
+import { before, mock, test } from 'node:test';
 
-test('detectMessageLanguage - identifies Bengali, Banglish, English, and mixed script', () => {
-  assert.strictEqual(detectMessageLanguage('আজকের খবর কী?'), 'bn');
-  assert.strictEqual(detectMessageLanguage('Kemon acho bhai, ki korcho?'), 'banglish');
-  assert.strictEqual(detectMessageLanguage('What is the weather today?'), 'en');
-  assert.strictEqual(detectMessageLanguage('Hello ভাই কেমন আছেন?'), 'mixed');
+const legacyStorage = new Map<string, string>();
+const asyncStorage = {
+  getItem: async (key: string) => legacyStorage.get(key) ?? null,
+  setItem: async (key: string, value: string) => { legacyStorage.set(key, value); },
+  removeItem: async (key: string) => { legacyStorage.delete(key); },
+};
+mock.module('@react-native-async-storage/async-storage', { defaultExport: asyncStorage });
+mock.module('./storage', {
+  namedExports: {
+    readLocalState: async () => ({ messages: [], settings: {}, memories: [] }),
+    storeMemoryNote: async () => undefined,
+  },
+});
+let developerModule!: typeof import('./developer');
+before(async () => {
+  developerModule = await import('./developer');
 });
 
-test('buildStructuredReasoning - generates 5-point structured reasoning response', () => {
-  const res = buildStructuredReasoning({
+test('developerModule.detectMessageLanguage - identifies Bengali, Banglish, English, and mixed script', () => {
+  assert.strictEqual(developerModule.detectMessageLanguage('আজকের খবর কী?'), 'bn');
+  assert.strictEqual(developerModule.detectMessageLanguage('Kemon acho bhai, ki korcho?'), 'banglish');
+  assert.strictEqual(developerModule.detectMessageLanguage('What is the weather today?'), 'en');
+  assert.strictEqual(developerModule.detectMessageLanguage('Hello ভাই কেমন আছেন?'), 'mixed');
+});
+
+test('developerModule.buildStructuredReasoning - generates 5-point structured reasoning response', () => {
+  const res = developerModule.buildStructuredReasoning({
     prompt: 'How to deploy Expo app?',
     lang: 'bn',
     answerText: 'Expo web export pnpm run build দিয়ে প্রস্তুত করুন।',
-    explanationText: 'Cloudflare Pages wrangler pages deploy ডিরেক্টরি ব্যবহার করে।',
-    sources: ['[Cloudflare Pages Doc](https://pages.cloudflare.com)'],
+    explanationText: 'Cloudflare Workers static assets একই Worker থেকে API-এর সঙ্গে serve করা হয়।',
+    sources: ['[Cloudflare Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/)'],
   });
 
   assert.ok(res.rawFormattedText.includes('১. মূল উত্তর'));
@@ -36,7 +41,7 @@ test('buildStructuredReasoning - generates 5-point structured reasoning response
   assert.ok(res.rawFormattedText.includes('৪. সীমাবদ্ধতা'));
 });
 
-test('performLiveWebResearch - deterministic mock test for successful search result', async () => {
+test('developerModule.performLiveWebResearch - deterministic mock test for successful search result', async () => {
   const originalFetch = globalThis.fetch;
   const mockHtml = `
     <html><body>
@@ -48,7 +53,7 @@ test('performLiveWebResearch - deterministic mock test for successful search res
   globalThis.fetch = async () => new Response(mockHtml, { status: 200 });
 
   try {
-    const research = await performLiveWebResearch('Expo React Native 52');
+    const research = await developerModule.performLiveWebResearch('Expo React Native 52');
     assert.strictEqual(research.query, 'Expo React Native 52');
     assert.strictEqual(research.isFallbackLinkOnly, false);
     assert.strictEqual(research.results.length, 1);
@@ -59,7 +64,7 @@ test('performLiveWebResearch - deterministic mock test for successful search res
   }
 });
 
-test('performLiveWebResearch - removes nested tag delimiters from result text', async () => {
+test('developerModule.performLiveWebResearch - removes nested tag delimiters from result text', async () => {
   const originalFetch = globalThis.fetch;
   const mockHtml = `
     <html><body>
@@ -70,7 +75,7 @@ test('performLiveWebResearch - removes nested tag delimiters from result text', 
   globalThis.fetch = async () => new Response(mockHtml, { status: 200 });
 
   try {
-    const research = await performLiveWebResearch('Nested tag test');
+    const research = await developerModule.performLiveWebResearch('Nested tag test');
     assert.strictEqual(research.results.length, 1);
     assert.ok(!/[<>]/.test(research.results[0].title));
     assert.ok(!/[<>]/.test(research.results[0].snippet));
@@ -79,12 +84,12 @@ test('performLiveWebResearch - removes nested tag delimiters from result text', 
   }
 });
 
-test('performLiveWebResearch - deterministic mock test for empty search results fallback link', async () => {
+test('developerModule.performLiveWebResearch - deterministic mock test for empty search results fallback link', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response('<html><body>No results</body></html>', { status: 200 });
 
   try {
-    const research = await performLiveWebResearch('Empty Search Query');
+    const research = await developerModule.performLiveWebResearch('Empty Search Query');
     assert.strictEqual(research.isFallbackLinkOnly, true);
     assert.strictEqual(research.results.length, 1);
     assert.strictEqual(new URL(research.results[0].url).hostname, 'duckduckgo.com');
@@ -93,7 +98,7 @@ test('performLiveWebResearch - deterministic mock test for empty search results 
   }
 });
 
-test('performLiveWebResearch - deterministic mock test for malformed HTML and invalid URLs', async () => {
+test('developerModule.performLiveWebResearch - deterministic mock test for malformed HTML and invalid URLs', async () => {
   const originalFetch = globalThis.fetch;
   const mockHtml = `
     <html><body>
@@ -106,7 +111,7 @@ test('performLiveWebResearch - deterministic mock test for malformed HTML and in
   globalThis.fetch = async () => new Response(mockHtml, { status: 200 });
 
   try {
-    const research = await performLiveWebResearch('Malformed HTML test');
+    const research = await developerModule.performLiveWebResearch('Malformed HTML test');
     assert.strictEqual(research.isFallbackLinkOnly, false);
     assert.strictEqual(research.results.length, 1);
     assert.strictEqual(research.results[0].title, 'Valid Domain');
@@ -116,12 +121,12 @@ test('performLiveWebResearch - deterministic mock test for malformed HTML and in
   }
 });
 
-test('performLiveWebResearch - deterministic mock test for HTTP error failure', async () => {
+test('developerModule.performLiveWebResearch - deterministic mock test for HTTP error failure', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response('Server Error', { status: 500 });
 
   try {
-    const research = await performLiveWebResearch('Search HTTP Fail');
+    const research = await developerModule.performLiveWebResearch('Search HTTP Fail');
     assert.strictEqual(research.isFallbackLinkOnly, true);
     assert.strictEqual(research.error, 'Search HTTP error 500');
   } finally {
@@ -129,14 +134,14 @@ test('performLiveWebResearch - deterministic mock test for HTTP error failure', 
   }
 });
 
-test('performLiveWebResearch - deterministic mock test for network rejection', async () => {
+test('developerModule.performLiveWebResearch - deterministic mock test for network rejection', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => {
     throw new Error('Network Connection Refused');
   };
 
   try {
-    const research = await performLiveWebResearch('Network Failure');
+    const research = await developerModule.performLiveWebResearch('Network Failure');
     assert.strictEqual(research.isFallbackLinkOnly, true);
     assert.strictEqual(research.error, 'Network Connection Refused');
   } finally {
@@ -144,7 +149,7 @@ test('performLiveWebResearch - deterministic mock test for network rejection', a
   }
 });
 
-test('performLiveWebResearch - deterministic mock test for timeout/abort error', async () => {
+test('developerModule.performLiveWebResearch - deterministic mock test for timeout/abort error', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => {
     const err = new Error('The operation was aborted');
@@ -153,7 +158,7 @@ test('performLiveWebResearch - deterministic mock test for timeout/abort error',
   };
 
   try {
-    const research = await performLiveWebResearch('Timeout test');
+    const research = await developerModule.performLiveWebResearch('Timeout test');
     assert.strictEqual(research.isFallbackLinkOnly, true);
     assert.strictEqual(research.error, 'Search request timed out');
   } finally {
@@ -161,18 +166,18 @@ test('performLiveWebResearch - deterministic mock test for timeout/abort error',
   }
 });
 
-test('executeAgentTask - executes live web search when research prompt is detected', async () => {
+test('developerModule.executeAgentTask - executes live web search when research prompt is detected', async () => {
   const originalFetch = globalThis.fetch;
   const mockHtml = `
     <html><body>
-      <a class="result__url" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fdevelopers.cloudflare.com%2Fpages%2F">Cloudflare Pages</a>
-      <a class="result__snippet">Deploy full-stack applications with Cloudflare Pages Functions.</a>
+      <a class="result__url" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fdevelopers.cloudflare.com%2Fworkers%2F">Cloudflare Workers</a>
+      <a class="result__snippet">Build serverless applications with Cloudflare Workers.</a>
     </body></html>
   `;
   globalThis.fetch = async () => new Response(mockHtml, { status: 200 });
 
   try {
-    const result = await executeAgentTask(' Search Cloudflare Pages docs', true);
+    const result = await developerModule.executeAgentTask(' Search Cloudflare Workers docs', true);
     assert.strictEqual(result.state, 'completed');
     assert.ok(result.structuredAnswer);
     assert.ok(result.searchResults);
@@ -182,54 +187,54 @@ test('executeAgentTask - executes live web search when research prompt is detect
   }
 });
 
-test('executeAgentTask - Android app launch requires explicit owner confirmation', async () => {
-  const pending = await executeAgentTask('Open YouTube app', false, false);
+test('developerModule.executeAgentTask - Android app launch requires explicit owner confirmation', async () => {
+  const pending = await developerModule.executeAgentTask('Open YouTube app', false, false);
   assert.equal(pending.state, 'permission_pending');
   assert.equal(pending.requiresConfirmation, true);
-  const approved = await executeAgentTask('Open YouTube app', false, true);
+  const approved = await developerModule.executeAgentTask('Open YouTube app', false, true);
   assert.equal(approved.state, 'completed');
   assert.deepEqual(approved.outputData, { action: 'open_allowed_app', appId: 'youtube' });
 });
 
-test('executeAgentTask - Android Settings shortcuts require confirmation and use an allowlist', async () => {
-  const pending = await executeAgentTask('Open Wi-Fi settings', false, false);
+test('developerModule.executeAgentTask - Android Settings shortcuts require confirmation and use an allowlist', async () => {
+  const pending = await developerModule.executeAgentTask('Open Wi-Fi settings', false, false);
   assert.equal(pending.state, 'permission_pending');
-  const approved = await executeAgentTask('Open Wi-Fi settings', false, true);
+  const approved = await developerModule.executeAgentTask('Open Wi-Fi settings', false, true);
   assert.deepEqual(approved.outputData, { action: 'open_device_settings', settingId: 'wifi' });
-  const unsupported = await executeAgentTask('Open developer options settings', false, true);
+  const unsupported = await developerModule.executeAgentTask('Open developer options settings', false, true);
   assert.equal(unsupported.outputData, undefined);
 });
 
-test('executeAgentTask - YouTube command distinguishes search opening vs in-app playback', async () => {
-  const result = await executeAgentTask('Play a song on YouTube', true);
+test('developerModule.executeAgentTask - YouTube command distinguishes search opening vs in-app playback', async () => {
+  const result = await developerModule.executeAgentTask('Play a song on YouTube', true);
   assert.strictEqual(result.state, 'completed');
   assert.strictEqual(result.requiresInternet, true);
   assert.strictEqual(result.outputData?.action, 'open_youtube_search');
   assert.ok(result.summary.includes('YouTube অনুসন্ধান লিঙ্ক'));
 });
 
-test('executeAgentTask - queues YouTube command when offline', async () => {
-  const result = await executeAgentTask('Play a song on YouTube', false);
+test('developerModule.executeAgentTask - queues YouTube command when offline', async () => {
+  const result = await developerModule.executeAgentTask('Play a song on YouTube', false);
   assert.strictEqual(result.state, 'offline_queued');
   assert.strictEqual(result.requiresInternet, true);
 });
 
-test('executeAgentTask - Gmail task returns not_connected when OAuth token is missing', async () => {
-  const result = await executeAgentTask('Send an email via Gmail', true, false, undefined);
+test('developerModule.executeAgentTask - Gmail task returns not_connected when OAuth token is missing', async () => {
+  const result = await developerModule.executeAgentTask('Send an email via Gmail', true, false, undefined);
   assert.strictEqual(result.state, 'not_connected');
   assert.strictEqual(result.requiresInternet, true);
   assert.ok(result.summary.includes('Gmail API সংযুক্ত নয়'));
 });
 
-test('executeAgentTask - Gmail task asks for permission when OAuth token is present', async () => {
-  const result = await executeAgentTask('Send an email via Gmail', true, false, 'mock-oauth-token');
-  assert.strictEqual(result.state, 'permission_pending');
-  assert.strictEqual(result.requiresConfirmation, true);
-  assert.ok(result.confirmationMessage?.includes('ইমেইল বার্তাটি পাঠাতে চান'));
+test('developerModule.executeAgentTask - Gmail does not claim it can send without a structured message', async () => {
+  const result = await developerModule.executeAgentTask('Send an email via Gmail', true, false, 'mock-oauth-token');
+  assert.strictEqual(result.state, 'failed');
+  assert.strictEqual(result.requiresConfirmation, false);
+  assert.match(result.summary, /কোনো email পাঠানো হয়নি/);
 });
 
-test('executeAgentTask - never claims a reminder was saved when local persistence fails', async () => {
-  const result = await executeAgentTask('একটাই রিমাইন্ডার সেট করো', false);
+test('developerModule.executeAgentTask - never claims a reminder was saved when local persistence fails', async () => {
+  const result = await developerModule.executeAgentTask('একটাই রিমাইন্ডার সেট করো', false);
   assert.strictEqual(result.requiresInternet, false);
 
   if (result.state === 'completed') {
@@ -243,45 +248,49 @@ test('executeAgentTask - never claims a reminder was saved when local persistenc
   }
 });
 
-test('generateDevelopmentPlan - parses Web Development request', () => {
-  const plan = generateDevelopmentPlan('Build a website for my Telegram channel.');
+test('developerModule.generateDevelopmentPlan - parses Web Development request', () => {
+  const plan = developerModule.generateDevelopmentPlan('Build a website for my Telegram channel.');
   assert.strictEqual(plan.category, 'web');
   assert.strictEqual(plan.title, 'Telegram চ্যানল ও ওয়েব ল্যান্ডিং পেজ ওয়েবসাইট');
   assert.ok(plan.filesToModify.includes('artifacts/mobile/server/templates/landing-page.html'));
 });
 
-test('generateDevelopmentPlan - parses Android App & APK Builder request', () => {
-  const plan = generateDevelopmentPlan('Create an Android app and prepare an APK.');
+test('developerModule.generateDevelopmentPlan - parses Android App & APK Builder request', () => {
+  const plan = developerModule.generateDevelopmentPlan('Create an Android app and prepare an APK.');
   assert.strictEqual(plan.category, 'android');
   assert.strictEqual(plan.title, 'Android অ্যাপ ও APK/AAB বিল্ড কনফিগারেশন');
   assert.ok(plan.filesToModify.includes('artifacts/mobile/app.json'));
 });
 
-test('generateDevelopmentPlan - parses Auto QA request', () => {
-  const plan = generateDevelopmentPlan('Inspect this project, find bugs, and fix them.');
+test('developerModule.generateDevelopmentPlan - parses Auto QA request', () => {
+  const plan = developerModule.generateDevelopmentPlan('Inspect this project, find bugs, and fix them.');
   assert.strictEqual(plan.category, 'qa');
   assert.strictEqual(plan.title, 'Auto QA & টেস্ট সুইট অটোমেশন');
 });
 
-test('generateDevelopmentPlan - initializes an empty dependency list for default and QA plans', () => {
-  const defaultPlan = generateDevelopmentPlan('Prepare a personal assistant improvement');
+test('developerModule.generateDevelopmentPlan - initializes an empty dependency list for default and QA plans', () => {
+  const defaultPlan = developerModule.generateDevelopmentPlan('Prepare a personal assistant improvement');
   assert.strictEqual(defaultPlan.category, 'self');
   assert.deepStrictEqual(defaultPlan.dependencies, []);
 
-  const qaPlan = generateDevelopmentPlan('Inspect and fix a broken test');
+  const qaPlan = developerModule.generateDevelopmentPlan('Inspect and fix a broken test');
   assert.strictEqual(qaPlan.category, 'qa');
   assert.deepStrictEqual(qaPlan.dependencies, []);
 });
 
-test('getProjectBrainSummary - returns non-secret project knowledge', () => {
-  const brain = getProjectBrainSummary();
-  assert.strictEqual(brain.name, 'Voice-Memory-Assistant-net (Badboy AI)');
+test('developerModule.getProjectBrainSummary - records the Cloudflare-only architecture', () => {
+  const brain = developerModule.getProjectBrainSummary();
+  assert.strictEqual(brain.name, 'Badboy AI');
+  assert.ok(brain.architecture.includes('one Cloudflare Worker'));
   assert.ok(brain.frameworks.includes('TypeScript'));
   assert.ok(brain.apiEndpoints.includes('/api/assistant/chat'));
+  assert.match(brain.deploymentTarget, /badboy-vs-versel-ai/);
+  assert.ok(brain.knownLimitations.some((item) => item.includes('Private Device Memory') && item.includes('Cloudflare D1 Project Memory')));
+  assert.doesNotMatch(brain.architecture + brain.deploymentTarget, /Netlify|Express|Cloudflare Pages/i);
 });
 
-test('runAutoQASuite - does not claim checks passed when it has not executed them', () => {
-  const qa = runAutoQASuite();
+test('developerModule.runAutoQASuite - does not claim checks passed when it has not executed them', () => {
+  const qa = developerModule.runAutoQASuite();
   assert.strictEqual(qa.typecheckStatus, 'not_run');
   assert.strictEqual(qa.unitTestsStatus, 'not_run');
   assert.strictEqual(qa.buildStatus, 'not_run');
@@ -291,21 +300,29 @@ test('runAutoQASuite - does not claim checks passed when it has not executed the
   assert.ok(!qa.details.some((detail) => /passing|verified|tested/i.test(detail)));
 });
 
-test('getPluginRegistryStatus - lists active and not_connected tool adapters', () => {
-  const plugins = getPluginRegistryStatus();
-  assert.ok(plugins.some((p) => p.id === 'github-adapter'));
-  assert.ok(plugins.some((p) => p.id === 'web-research-adapter'));
-  const gmailPlugin = plugins.find((p) => p.id === 'gmail-adapter');
-  assert.strictEqual(gmailPlugin?.status, 'not_connected');
+test('developerModule.getPluginRegistryStatus - reports real setup state and Worker-only backend', () => {
+  const plugins = developerModule.getPluginRegistryStatus();
+  assert.equal(plugins.find((p) => p.id === 'cloudflare-worker-api')?.status, 'active');
+  assert.equal(plugins.find((p) => p.id === 'memory-adapter')?.status, 'active');
+  assert.equal(plugins.find((p) => p.id === 'developer-analysis')?.status, 'active');
+  assert.equal(plugins.find((p) => p.id === 'github-adapter')?.status, 'pending');
+  assert.equal(plugins.find((p) => p.id === 'tavily-research-adapter')?.status, 'pending');
+  assert.equal(plugins.find((p) => p.id === 'home-assistant-adapter')?.status, 'pending');
+  assert.equal(plugins.find((p) => p.id === 'slack-adapter')?.status, 'pending');
+  assert.equal(plugins.find((p) => p.id === 'discord-adapter')?.status, 'pending');
+  assert.equal(plugins.find((p) => p.id === 'google-calendar-adapter')?.status, 'pending');
+  assert.equal(plugins.find((p) => p.id === 'telegram-adapter')?.status, 'pending');
+  assert.equal(plugins.find((p) => p.id === 'gmail-adapter')?.status, 'not_connected');
+  assert.doesNotMatch(plugins.map((p) => p.name + ' ' + p.description).join(' '), /Cloudflare Pages Adapter|Netlify|Express API/i);
 });
 
-test('DEFAULT_REPO_CONFIG has target repository details', () => {
-  assert.strictEqual(DEFAULT_REPO_CONFIG.owner, 'shomratofficial007-spec');
-  assert.strictEqual(DEFAULT_REPO_CONFIG.repo, 'Badboy-VS-Versel-Ai');
-  assert.strictEqual(DEFAULT_REPO_CONFIG.baseBranch, 'main');
+test('developerModule.DEFAULT_REPO_CONFIG has target repository details', () => {
+  assert.strictEqual(developerModule.DEFAULT_REPO_CONFIG.owner, 'shomratofficial007-spec');
+  assert.strictEqual(developerModule.DEFAULT_REPO_CONFIG.repo, 'Badboy-VS-Versel-Ai');
+  assert.strictEqual(developerModule.DEFAULT_REPO_CONFIG.baseBranch, 'main');
 });
 
-test('previewGitHubChanges is read-only and returns the exact base SHA and file contents', async () => {
+test('developerModule.previewGitHubChanges is read-only and returns the exact base SHA and file contents', async () => {
   const originalFetch = globalThis.fetch;
   const calls: Array<{ url: string; method: string }> = [];
   globalThis.fetch = async (input, init) => {
@@ -319,7 +336,7 @@ test('previewGitHubChanges is read-only and returns the exact base SHA and file 
     throw new Error(`Unexpected preview request: ${method} ${url}`);
   };
   try {
-    const result = await previewGitHubChanges({ githubToken: 'read-token', paths: ['src/app.ts'] });
+    const result = await developerModule.previewGitHubChanges({ githubToken: 'read-token', paths: ['src/app.ts'] });
     assert.equal(result.success, true);
     assert.equal(result.baseSha, 'preview-sha');
     assert.equal(result.files[0].content, 'export const ok = true;');
@@ -329,12 +346,12 @@ test('previewGitHubChanges is read-only and returns the exact base SHA and file 
   }
 });
 
-test('previewGitHubChanges rejects secret paths without reading them', async () => {
+test('developerModule.previewGitHubChanges rejects secret paths without reading them', async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
   globalThis.fetch = async () => { calls += 1; return Response.json({ object: { sha: 'sha' } }); };
   try {
-    const result = await previewGitHubChanges({ githubToken: 'read-token', paths: ['.env.production'] });
+    const result = await developerModule.previewGitHubChanges({ githubToken: 'read-token', paths: ['.env.production'] });
     assert.equal(result.success, false);
     assert.equal(calls, 0);
   } finally {
@@ -343,8 +360,8 @@ test('previewGitHubChanges rejects secret paths without reading them', async () 
 });
 
 test('GitHub default repository targets the current Badboy project', () => {
-  assert.equal(DEFAULT_REPO_CONFIG.owner, 'shomratofficial007-spec');
-  assert.equal(DEFAULT_REPO_CONFIG.repo, 'Badboy-VS-Versel-Ai');
+  assert.equal(developerModule.DEFAULT_REPO_CONFIG.owner, 'shomratofficial007-spec');
+  assert.equal(developerModule.DEFAULT_REPO_CONFIG.repo, 'Badboy-VS-Versel-Ai');
 });
 
 test('GitHub write validation rejects traversal and secret paths before network access', async () => {
@@ -353,9 +370,9 @@ test('GitHub write validation rejects traversal and secret paths before network 
   globalThis.fetch = async () => { calls += 1; throw new Error('must not fetch'); };
   try {
     for (const path of ['../outside.ts', '.env.production', 'keys/signing.keystore']) {
-      const result = await createGitHubPullRequest({
+      const result = await developerModule.createGitHubPullRequest({
         githubToken: 'write-token',
-        plan: generateDevelopmentPlan('Add a feature'),
+        plan: developerModule.generateDevelopmentPlan('Add a feature'),
         changes: [{ path, content: 'unsafe' }],
         approved: true,
         expectedBaseSha: 'preview-sha',
@@ -374,9 +391,9 @@ test('GitHub writes stop unless owner approval is explicit', async () => {
   let calls = 0;
   globalThis.fetch = async () => { calls += 1; throw new Error('must not fetch'); };
   try {
-    const result = await createGitHubPullRequest({
+    const result = await developerModule.createGitHubPullRequest({
       githubToken: 'write-token',
-      plan: generateDevelopmentPlan('Add a feature'),
+      plan: developerModule.generateDevelopmentPlan('Add a feature'),
       changes: [{ path: 'src/feature.ts', content: 'export {};' }],
       approved: false,
       expectedBaseSha: 'preview-sha',
@@ -397,9 +414,9 @@ test('GitHub writes stop when the base branch changed after preview', async () =
     return Response.json({ object: { sha: 'newer-base-sha' } });
   };
   try {
-    const plan = generateDevelopmentPlan('Add a feature');
+    const plan = developerModule.generateDevelopmentPlan('Add a feature');
     plan.branchName = 'feature/badboy-stale-preview';
-    const result = await createGitHubPullRequest({
+    const result = await developerModule.createGitHubPullRequest({
       githubToken: 'write-token',
       plan,
       changes: [{ path: 'src/feature.ts', content: 'export {};' }],
@@ -414,9 +431,9 @@ test('GitHub writes stop when the base branch changed after preview', async () =
   }
 });
 
-test('createGitHubPullRequest - handles missing token gracefully', async () => {
-  const plan = generateDevelopmentPlan('Add reminder');
-  const result = await createGitHubPullRequest({
+test('developerModule.createGitHubPullRequest - handles missing token gracefully', async () => {
+  const plan = developerModule.generateDevelopmentPlan('Add reminder');
+  const result = await developerModule.createGitHubPullRequest({
     githubToken: '',
     plan,
     changes: [{ path: 'test.txt', content: 'hello' }],
@@ -428,66 +445,39 @@ test('createGitHubPullRequest - handles missing token gracefully', async () => {
 });
 
 
-test('executeAgentTask - Gmail sends only after confirmation and reports HTTP/network failures', async (t) => {
+test('developerModule.executeAgentTask - never sends an empty Gmail payload even with an OAuth token', async () => {
   const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    return Response.json({ id: 'should-not-send' });
+  };
   try {
-    await t.test('confirmed request succeeds with bearer authorization', async () => {
-      let request: { url: string; init?: RequestInit } | undefined;
-      globalThis.fetch = async (input, init) => {
-        request = { url: String(input), init };
-        return Response.json({ id: 'sent-message' });
-      };
-      const result = await executeAgentTask('Send an email via Gmail', true, true, 'oauth-token');
-      assert.equal(result.state, 'completed');
-      assert.equal(result.requiresConfirmation, true);
-      assert.equal(request?.url, 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send');
-      assert.equal(request?.init?.method, 'POST');
-      assert.equal(new Headers(request?.init?.headers).get('Authorization'), 'Bearer oauth-token');
-      assert.deepEqual(JSON.parse(String(request?.init?.body)), { raw: '' });
-    });
-
-    await t.test('HTTP error does not claim the email was sent', async () => {
-      globalThis.fetch = async () => new Response('permission denied', { status: 403 });
-      const result = await executeAgentTask('Send an email via Gmail', true, true, 'oauth-token');
-      assert.equal(result.state, 'failed');
-      assert.match(result.summary, /HTTP 403/);
-      assert.equal(result.requiresConfirmation, true);
-    });
-
-    await t.test('network error is returned as a failed task', async () => {
-      globalThis.fetch = async () => { throw new Error('network unavailable'); };
-      const result = await executeAgentTask('Send an email via Gmail', true, true, 'oauth-token');
-      assert.equal(result.state, 'failed');
-      assert.match(result.summary, /network unavailable/);
-      assert.ok(result.logs.some((entry) => entry.includes('Gmail সার্ভিস ত্রুটি')));
-    });
-
-    await t.test('offline email request is queued and still requires confirmation', async () => {
-      globalThis.fetch = async () => { throw new Error('must not fetch while offline'); };
-      const result = await executeAgentTask('Send an email via Gmail', false, true, 'oauth-token');
-      assert.equal(result.state, 'offline_queued');
-      assert.equal(result.requiresInternet, true);
-      assert.equal(result.requiresConfirmation, true);
-    });
+    const result = await developerModule.executeAgentTask('Send an email via Gmail', true, true, 'oauth-token');
+    assert.equal(result.state, 'failed');
+    assert.equal(result.requiresConfirmation, false);
+    assert.match(result.summary, /কোনো Gmail API call করা হয়নি/);
+    assert.equal(fetchCalls, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('executeAgentTask - generic request returns structured answer and empty input is safe', async () => {
-  const empty = await executeAgentTask('   ');
-  assert.equal(empty.state, 'completed');
+test('developerModule.executeAgentTask - unsupported and empty commands never report fake completion', async () => {
+  const empty = await developerModule.executeAgentTask('   ');
+  assert.equal(empty.state, 'failed');
   assert.equal(empty.prompt, '');
   assert.equal(empty.detectedLanguage, 'en');
+  assert.match(empty.summary, /কোনো কাজ সম্পন্ন/);
 
-  const result = await executeAgentTask('আমার প্রজেক্টের অবস্থা ব্যাখ্যা করো', false);
-  assert.equal(result.state, 'completed');
+  const result = await developerModule.executeAgentTask('আমার প্রজেক্টের অবস্থা ব্যাখ্যা করো', false);
+  assert.equal(result.state, 'failed');
   assert.equal(result.requiresInternet, false);
-  assert.equal(result.structuredAnswer?.directAnswer.includes('সফলভাবে'), true);
-  assert.ok(result.summary.includes('১. মূল উত্তর'));
+  assert.equal(result.structuredAnswer, undefined);
+  assert.match(result.summary, /কোনো কাজ করা হয়নি/);
 });
 
-test('createGitHubPullRequest - completes a mocked safe branch, file commit and PR flow', async () => {
+test('developerModule.createGitHubPullRequest - completes a mocked safe branch, file commit and PR flow', async () => {
   const originalFetch = globalThis.fetch;
   const calls: Array<{ url: string; method: string; body?: any; authorization: string | null }> = [];
   globalThis.fetch = async (input, init) => {
@@ -516,9 +506,9 @@ test('createGitHubPullRequest - completes a mocked safe branch, file commit and 
   };
 
   try {
-    const plan = generateDevelopmentPlan('Add a private project note');
+    const plan = developerModule.generateDevelopmentPlan('Add a private project note');
     plan.branchName = 'feature/badboy-test-branch';
-    const result = await createGitHubPullRequest({
+    const result = await developerModule.createGitHubPullRequest({
       githubToken: '  test-github-token  ',
       plan,
       changes: [{ path: 'notes.md', content: 'Preserve existing project notes.' }],
@@ -542,9 +532,9 @@ test('createGitHubPullRequest - completes a mocked safe branch, file commit and 
   }
 });
 
-test('createGitHubPullRequest - handles invalid credentials and missing base SHA without continuing', async (t) => {
+test('developerModule.createGitHubPullRequest - handles invalid credentials and missing base SHA without continuing', async (t) => {
   const originalFetch = globalThis.fetch;
-  const plan = generateDevelopmentPlan('Add a private project note');
+  const plan = developerModule.generateDevelopmentPlan('Add a private project note');
   try {
     await t.test('401 credentials return a clear authentication error', async () => {
       let calls = 0;
@@ -552,7 +542,7 @@ test('createGitHubPullRequest - handles invalid credentials and missing base SHA
         calls += 1;
         return new Response('bad token', { status: 401 });
       };
-      const result = await createGitHubPullRequest({
+      const result = await developerModule.createGitHubPullRequest({
         githubToken: 'invalid-token',
         plan,
         changes: [{ path: 'notes.md', content: 'note' }],
@@ -570,7 +560,7 @@ test('createGitHubPullRequest - handles invalid credentials and missing base SHA
         calls += 1;
         return Response.json({ object: {} });
       };
-      const result = await createGitHubPullRequest({
+      const result = await developerModule.createGitHubPullRequest({
         githubToken: 'valid-token',
         plan,
         changes: [{ path: 'notes.md', content: 'note' }],
@@ -586,7 +576,7 @@ test('createGitHubPullRequest - handles invalid credentials and missing base SHA
   }
 });
 
-test('createGitHubPullRequest - reports commit failures and does not create a PR', async () => {
+test('developerModule.createGitHubPullRequest - reports commit failures and does not create a PR', async () => {
   const originalFetch = globalThis.fetch;
   let pullRequests = 0;
   globalThis.fetch = async (input, init) => {
@@ -602,8 +592,8 @@ test('createGitHubPullRequest - reports commit failures and does not create a PR
   };
 
   try {
-    const plan = generateDevelopmentPlan('Add a private project note');
-    const result = await createGitHubPullRequest({
+    const plan = developerModule.generateDevelopmentPlan('Add a private project note');
+    const result = await developerModule.createGitHubPullRequest({
       githubToken: 'valid-token',
       plan,
       changes: [{ path: 'notes.md', content: 'note' }],

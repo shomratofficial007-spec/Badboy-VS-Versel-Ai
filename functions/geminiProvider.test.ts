@@ -32,6 +32,22 @@ describe("Gemini Developer Agent provider adapter (Node coverage suite)", () => 
     assert.equal(response.status, 200);
   });
 
+  it("forwards the caller abort signal to the Gemini upstream request", async () => {
+    const controller = new AbortController();
+    let capturedSignal: AbortSignal | null | undefined;
+    await fetchGeminiChat(
+      "secret",
+      [{ role: "user", content: "test" }],
+      undefined,
+      async (_input, init) => {
+        capturedSignal = init?.signal;
+        return new Response(null, { status: 503 });
+      },
+      controller.signal,
+    );
+    assert.equal(capturedSignal, controller.signal);
+  });
+
   it("uses the default model when the configured value is blank", async () => {
     let requested = "";
     await fetchGeminiChat("secret", [{ role: "user", content: "test" }], "  ", async (url) => {
