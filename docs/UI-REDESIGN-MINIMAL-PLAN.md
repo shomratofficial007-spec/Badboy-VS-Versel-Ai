@@ -127,3 +127,7 @@ No feature may be silently removed, disabled, hidden without an equivalent disco
 - No OmniRoute/Termux/VPS deployment in this UI PR.
 - No API key rotation or secret changes.
 - No data migration, destructive cleanup, feature removal, merge, production deploy, or APK release.
+
+## Jarvis preservation — explicit user requirement
+
+Jarvis is a protected, non-removable capability in this redesign. Keep its existing entry points, identity, settings, permissions, wake-word / hands-free behavior, floating-assistant controls, screen-awareness controls, and related lifecycle handling intact. Reorganize or restyle its controls only; do not rename Jarvis into a generic feature, remove it, hide it behind an undiscoverable path, or replace working behavior with placeholder controls. Any change touching Jarvis must include regression coverage for the affected permission and lifecycle paths.
