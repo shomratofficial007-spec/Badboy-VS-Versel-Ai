@@ -268,7 +268,7 @@ test('Settings screen renders existing voice, privacy, developer and account con
   pressables.find((item) => item.label === 'Token Management')?.onPress();
   assert.equal(alerts.at(-1)?.title, 'Owner Token Management');
   assert.match(html, /চ্যাট ইতিহাস মুছুন/);
-  switchHandlers.find((item) => item.label === 'Develop mode')?.onValueChange(true);
+  switchHandlers.find((item) => item.label === 'Developer Mode')?.onValueChange(true);
   assert.deepEqual(settingsUpdates, [{ developerMode: true }]);
 
   pressables.find((item) => item.label.includes('Owner Sign Out'))?.onPress();
