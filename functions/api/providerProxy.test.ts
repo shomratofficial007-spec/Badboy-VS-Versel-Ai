@@ -67,7 +67,7 @@ test('additional providers accept OpenAI-compatible chat completion requests', a
       url: String(input),
       authorization: new Headers(init?.headers).get('Authorization'),
     });
-    return new Response('data: [DONE]\\n\\n', {
+    return new Response('data: [DONE]\n\n', {
       status: 200,
       headers: { 'Content-Type': 'text/event-stream' },
     });
