@@ -7,7 +7,6 @@ import {
   Alert,
   AppState,
   Linking,
-  Image,
   Platform,
   Pressable,
   ScrollView,
@@ -28,11 +27,9 @@ import {
   getAnalysisProjectNotes,
   listDeveloperProjectMemory,
   listDeveloperProjects,
-  listDeveloperTasks,
   saveDeveloperProject,
   type DeveloperProjectMemoryRecord,
   type DeveloperProjectRecord,
-  type DeveloperTaskRecord,
 } from '@/lib/assistant/developerData';
 import { buildExpertReviewPrompt, inspectBadboyRepository, type RepositoryEvidence } from '@/lib/assistant/expertReview';
 import { useColors } from '@/hooks/useColors';
@@ -133,10 +130,8 @@ export default function SettingsScreen() {
   const [featureRequestInput, setFeatureRequestInput] = useState('');
   const [currentPlan, setCurrentPlan] = useState<DevPlan | null>(null);
   const [devBusy, setDevBusy] = useState(false);
-  const [devStatusLog, setDevStatusLog] = useState<string[]>([]);
   const [prResult, setPrResult] = useState<PRResult | null>(null);
   const [devError, setDevError] = useState<string | null>(null);
-  const [devHistory, setDevHistory] = useState<Array<{ plan: DevPlan; prUrl?: string; date: string }>>([]);
 
   // Brain & QA Inspection
   const [projectBrain, setProjectBrain] = useState<ProjectBrain | null>(null);
@@ -153,22 +148,12 @@ export default function SettingsScreen() {
   const [developerAnalysisBusy, setDeveloperAnalysisBusy] = useState(false);
   const [developerAnalysisEngine, setDeveloperAnalysisEngine] = useState('');
   const [developerAnalysisFallback, setDeveloperAnalysisFallback] = useState('');
-  const [developerAnalysisTaskId, setDeveloperAnalysisTaskId] = useState('');
-  const [developerTasks, setDeveloperTasks] = useState<DeveloperTaskRecord[]>([]);
   const [developerProjects, setDeveloperProjects] = useState<DeveloperProjectRecord[]>([]);
   const [selectedDeveloperProjectId, setSelectedDeveloperProjectId] = useState('');
   const [developerMemories, setDeveloperMemories] = useState<DeveloperProjectMemoryRecord[]>([]);
   const [developerMemoryDraft, setDeveloperMemoryDraft] = useState('');
   const [developerDataBusy, setDeveloperDataBusy] = useState(false);
   const [developerDataError, setDeveloperDataError] = useState<string | null>(null);
-
-  const refreshDeveloperTasks = async () => {
-    try {
-      setDeveloperTasks(await listDeveloperTasks());
-    } catch (cause) {
-      setDeveloperDataError(cause instanceof Error ? cause.message : 'Developer task history লোড করা যায়নি।');
-    }
-  };
 
   const refreshDeveloperProjects = async () => {
     try {
@@ -273,7 +258,6 @@ export default function SettingsScreen() {
     setProjectBrain(getProjectBrainSummary());
     setQaResult(runAutoQASuite());
     setPlugins(getPluginRegistryStatus());
-    void listDeveloperTasks().then((tasks) => { if (active) setDeveloperTasks(tasks); }).catch(() => {});
     void listDeveloperProjects().then((projects) => {
       if (active) {
         setDeveloperProjects(projects);
@@ -335,7 +319,6 @@ export default function SettingsScreen() {
     const resolution = resolveDeveloperEngine(requestedEngine, false);
     setDeveloperAnalysisError(null);
     setDeveloperAnalysisReport('');
-    setDeveloperAnalysisTaskId('');
     setDeveloperAnalysisFallback(resolution.reason ?? '');
     setDeveloperAnalysisEngine(
       resolution.status === 'unavailable'
@@ -362,7 +345,7 @@ export default function SettingsScreen() {
         privateProjectNotes: getAnalysisProjectNotes(projectMemories),
       };
       let report = '';
-      const result = await streamDeveloperAnalysis(
+      await streamDeveloperAnalysis(
         prompt,
         JSON.stringify(analysisContext, null, 2),
         requestedEngine,
@@ -371,7 +354,6 @@ export default function SettingsScreen() {
           setDeveloperAnalysisReport(report);
         },
       );
-      setDeveloperAnalysisTaskId(result.taskId ?? '');
       if (!report.trim()) throw new Error('বিশ্লেষণ থেকে কোনো রিপোর্ট পাওয়া যায়নি।');
     } catch (cause) {
       setDeveloperAnalysisError(
@@ -379,7 +361,6 @@ export default function SettingsScreen() {
       );
     } finally {
       setDeveloperAnalysisBusy(false);
-      void refreshDeveloperTasks();
     }
   };
 
@@ -483,7 +464,6 @@ export default function SettingsScreen() {
     const plan = generateDevelopmentPlan(prompt);
     setCurrentPlan(plan);
     setActiveDevTab(plan.category);
-    setDevStatusLog([`[${new Date().toISOString().slice(11, 19)}] পরিকল্পনা প্রস্তুত (${plan.category.toUpperCase()}): "${plan.title}"`]);
   };
 
   const handleExecutePlanAndPR = async () => {
@@ -504,7 +484,6 @@ export default function SettingsScreen() {
             setDevBusy(true);
             setDevError(null);
             setPrResult(null);
-            setDevStatusLog((prev) => [...prev, `[${new Date().toISOString().slice(11, 19)}] GitHub read-only preview চলছে...`]);
             try {
               const preview = await previewGitHubChanges({
                 githubToken,
@@ -521,7 +500,6 @@ export default function SettingsScreen() {
                 ...summary,
                 'No repository writes were performed.',
               ];
-              setDevStatusLog((prev) => [...prev, ...previewLog]);
               setPrResult({
                 success: false,
                 summary: 'Read-only preview সম্পন্ন; কোনো PR বা file write করা হয়নি।',
@@ -856,29 +834,6 @@ export default function SettingsScreen() {
         <View style={styles.brandCopy}>
           <Text style={[styles.title, { color: colors.foreground }]}>Settings</Text>
           <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>Customize your Badboy AI experience</Text>
-        </View>
-      </View>
-
-      <View style={[styles.profileCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
-        <View style={styles.profileAvatarFrame}>
-          <Image
-            source={require('../../assets/images/badboy-settings-avatar.jpg')}
-            resizeMode="cover"
-            style={styles.profileAvatar}
-            accessibilityLabel="Badboy AI hooded avatar"
-          />
-        </View>
-        <View style={styles.profileDetails}>
-          <View style={styles.profileNameRow}>
-            <Text style={[styles.profileName, { color: colors.foreground }]}>Badboy AI</Text>
-            <Feather name="award" size={19} color="#ffbd35" />
-          </View>
-          <Text style={[styles.versionPill, { color: colors.secondaryForeground, backgroundColor: colors.secondary }]}>v1.0.0</Text>
-          <Text style={[styles.brandCaption, { color: colors.mutedForeground }]}>Smart · Secure · Powerful</Text>
-          <View style={styles.onlineStatus}>
-            <View style={styles.onlineDot} />
-            <Text style={[styles.brandCaption, { color: colors.foreground }]}>Online</Text>
-          </View>
         </View>
       </View>
 
@@ -1228,7 +1183,6 @@ export default function SettingsScreen() {
               </Pressable>
               {!settings.onlineAI ? <Text style={[styles.smallNote, { color: colors.destructive }]}>Analysis চালাতে Online AI চালু করতে হবে।</Text> : null}
               {developerAnalysisEngine ? <Text style={[styles.smallNote, { color: colors.primary }]}>Selected execution: {developerAnalysisEngine}</Text> : null}
-              {developerAnalysisTaskId ? <Text selectable style={[styles.smallNote, { color: colors.mutedForeground }]}>Task ID: {developerAnalysisTaskId}</Text> : null}
               {developerAnalysisFallback ? <Text style={[styles.smallNote, { color: colors.mutedForeground }]}>{developerAnalysisFallback}</Text> : null}
               {developerAnalysisError ? (
                 <View style={{ gap: 7 }}>
@@ -1260,24 +1214,7 @@ export default function SettingsScreen() {
                   </Pressable>
                 </View>
               ) : null}
-              <View style={[styles.infoCard, { borderColor: colors.border, backgroundColor: colors.card, marginTop: 10 }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <Text style={[styles.label, { color: colors.foreground }]}>Private D1 Task History</Text>
-                  <Pressable onPress={() => void refreshDeveloperTasks()} style={[styles.secondaryButton, { backgroundColor: colors.secondary, paddingVertical: 7, paddingHorizontal: 10 }]}>
-                    <Feather name="refresh-cw" size={13} color={colors.secondaryForeground} />
-                    <Text style={{ color: colors.secondaryForeground, fontSize: 11, fontWeight: '700' }}>Refresh</Text>
-                  </Pressable>
-                </View>
-                {developerTasks.length === 0 ? (
-                  <Text style={[styles.smallNote, { color: colors.mutedForeground, marginTop: 7 }]}>এখনো কোনো Developer Agent task সংরক্ষিত নেই। Analysis চালালে task স্বয়ংক্রিয়ভাবে এখানে আসবে।</Text>
-                ) : developerTasks.slice(0, 5).map((task) => (
-                  <View key={task.task_id} style={{ borderTopWidth: 1, borderColor: colors.border, paddingTop: 7, marginTop: 7 }}>
-                    <Text style={[styles.body, { color: colors.foreground, fontWeight: '700' }]}>{task.title}</Text>
-                    <Text style={[styles.smallNote, { color: colors.mutedForeground }]}>{task.status.toUpperCase()} · {task.engine} · {new Date(task.updated_at).toLocaleString()}</Text>
-                  </View>
-                ))}
-                {developerDataError ? <Text style={[styles.smallNote, { color: colors.destructive, marginTop: 7 }]}>{developerDataError}</Text> : null}
-              </View>
+              
             </View>
 
             {/* Navigation Modules Tabs */}
@@ -1575,30 +1512,9 @@ export default function SettingsScreen() {
               </View>
             ) : null}
 
-            {devStatusLog.length > 0 ? (
-              <View style={[styles.logBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
-                <Text style={[styles.label, { color: colors.mutedForeground, fontSize: 11 }]}>টেকনিক্যাল লবস (Technical Logs):</Text>
-                {devStatusLog.map((log, idx) => (
-                  <Text key={idx} style={[styles.logText, { color: colors.mutedForeground }]}>{log}</Text>
-                ))}
-              </View>
-            ) : null}
 
-            {devHistory.length > 0 ? (
-              <View style={{ marginTop: 10 }}>
-                <Text style={[styles.label, { color: colors.foreground }]}>পূর্ববর্তী ডেভেলপমেন্ট হিস্ট্রি:</Text>
-                {devHistory.map((item, idx) => (
-                  <View key={idx} style={[styles.historyItem, { borderColor: colors.border }]}>
-                    <Text style={[styles.body, { color: colors.foreground, fontWeight: '600' }]}>{item.plan.title} ({item.date})</Text>
-                    {item.prUrl ? (
-                      <Pressable onPress={() => void Linking.openURL(item.prUrl!)}>
-                        <Text style={{ color: colors.primary, fontSize: 12, textDecorationLine: 'underline' }}>PR লিঙ্ক খুলুন</Text>
-                      </Pressable>
-                    ) : null}
-                  </View>
-                ))}
-              </View>
-            ) : null}
+
+
           </View>
         ) : (
           <Text style={[styles.smallNote, { color: colors.mutedForeground }]}>
@@ -1930,42 +1846,33 @@ function SettingSwitch({
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 13, gap: 13, width: '100%', maxWidth: 620, alignSelf: 'center' },
+  content: { paddingHorizontal: 16, gap: 12, width: '100%', maxWidth: 640, alignSelf: 'center' },
   footerBrand: { alignItems: 'center', paddingVertical: 14, gap: 2 },
   footerTitle: { fontSize: 14, fontWeight: '900', letterSpacing: 0.4 },
-  settingsHeading: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 3, marginBottom: 2 },
-  backButton: { width: 42, height: 42, borderWidth: 1.2, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  crownMark: { width: 54, height: 54, borderWidth: 1.5, borderRadius: 18, alignItems: 'center', justifyContent: 'center', shadowColor: '#c026ff', shadowOpacity: 0.35, shadowRadius: 10, elevation: 4 },
-  profileCard: { minHeight: 164, borderWidth: 1.5, borderRadius: 22, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 14, shadowColor: '#ff315e', shadowOpacity: 0.22, shadowRadius: 13, elevation: 5 },
-  profileAvatarFrame: { width: 108, height: 108, borderRadius: 54, padding: 3, borderWidth: 2, borderColor: '#c026ff', overflow: 'hidden', backgroundColor: '#100718' },
-  profileAvatar: { width: '100%', height: '100%', borderRadius: 52 },
+  settingsHeading: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 0, marginBottom: 2 },
+  backButton: { width: 36, height: 36, borderWidth: 1, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  crownMark: { width: 36, height: 36, borderWidth: 1, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   accountInfoRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 12, borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: 9, marginTop: 10 },
-  profileDetails: { flex: 1, minWidth: 0, gap: 7 },
-  profileNameRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
-  profileName: { fontSize: 21, fontWeight: '900' },
-  versionPill: { alignSelf: 'flex-start', overflow: 'hidden', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 14, fontSize: 13, fontWeight: '700' },
-  onlineStatus: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 },
-  onlineDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: '#00e676' },
   brandHeader: { minHeight: 82, borderWidth: 1.5, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 5, shadowColor: '#c026ff', shadowOpacity: 0.22, shadowRadius: 12, elevation: 5 },
   brandMark: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   brandCopy: { flex: 1, gap: 3 },
   brandName: { fontSize: 18, fontWeight: '900', letterSpacing: 0.1 },
   brandCaption: { fontSize: 11, letterSpacing: 0.4 },
   settingsPill: { width: 34, height: 34, borderWidth: 1, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  eyebrow: { fontSize: 12, fontWeight: '900', letterSpacing: 1.1, marginTop: 3, paddingLeft: 3, textShadowColor: '#c026ff', textShadowRadius: 8 },
-  title: { fontSize: 25, fontWeight: '900', letterSpacing: -0.4 },
-  subtitle: { fontSize: 11, lineHeight: 16, marginTop: 1 },
-  section: { borderWidth: 1.4, borderRadius: 18, padding: 13, shadowColor: '#d946ef', shadowOpacity: 0.2, shadowRadius: 9, elevation: 3 },
-  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 14 },
-  sectionTitle: { fontSize: 16, fontWeight: '700' },
+  eyebrow: { fontSize: 10, fontWeight: '700', letterSpacing: 0.6, marginTop: 3, paddingLeft: 2 },
+  title: { fontSize: 20, fontWeight: '700', letterSpacing: -0.2 },
+  subtitle: { fontSize: 12, lineHeight: 16, marginTop: 1 },
+  section: { borderWidth: 1, borderRadius: 14, padding: 14 },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  sectionTitle: { fontSize: 14, fontWeight: '700' },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 5 },
   switchCopy: { flex: 1, gap: 4 },
-  label: { fontSize: 14, fontWeight: '700' },
-  body: { fontSize: 13, lineHeight: 19 },
+  label: { fontSize: 13, fontWeight: '700' },
+  body: { fontSize: 12, lineHeight: 18 },
   rule: { height: 1, marginVertical: 12 },
   personalityInput: { borderWidth: 1, borderRadius: 15, minHeight: 90, marginTop: 9, padding: 11, textAlignVertical: 'top', fontSize: 14, lineHeight: 20 },
   secondaryButton: { minHeight: 43, borderRadius: 13, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10 },
-  smallNote: { fontSize: 12, lineHeight: 18, marginTop: 10 },
+  smallNote: { fontSize: 11, lineHeight: 16, marginTop: 8 },
   wakeCard: { flexDirection: 'row', gap: 9, borderRadius: 13, padding: 11, marginTop: 13 },
   wakeText: { flex: 1, fontSize: 12, lineHeight: 18 },
   connectedPill: { flexDirection: 'row', alignSelf: 'flex-start', alignItems: 'center', gap: 8, paddingHorizontal: 11, paddingVertical: 8, borderRadius: 20 },
@@ -1976,7 +1883,7 @@ const styles = StyleSheet.create({
   telegramItem: { borderBottomWidth: 1, paddingVertical: 10 },
   messageSender: { fontSize: 13, fontWeight: '700', marginBottom: 4 },
   errorText: { fontSize: 12, lineHeight: 18, marginTop: 9 },
-  dangerButton: { borderWidth: 1, borderRadius: 15, minHeight: 46, justifyContent: 'center', alignItems: 'center', flexDirection: 'row', gap: 8 },
+  dangerButton: { borderWidth: 1, borderRadius: 12, minHeight: 42, justifyContent: 'center', alignItems: 'center', flexDirection: 'row', gap: 8 },
   tabButtonHorizontal: { paddingHorizontal: 12, height: 34, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 6 },
   tabText: { fontSize: 12, fontWeight: '700' },
   categoryPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
