@@ -245,6 +245,9 @@ test('Settings screen renders existing voice, privacy, developer and account con
   assert.match(html, /Multi-AI Fallback/);
   assert.doesNotMatch(html, /v1[.]0[.]0|Smart · Secure · Powerful/);
   assert.match(html, /Jarvis Assistant/);
+  for (const category of ['Account', 'AI', 'Appearance', 'Privacy', 'Developer', 'Jarvis', 'Voice', 'More']) {
+    assert.ok(pressables.some((item) => item.label === `Go to ${category} settings`), `missing Settings category: ${category}`);
+  }
   assert.match(html, /APPEARANCE/);
   assert.match(html, /AI &amp; FEATURES|AI & FEATURES/);
   assert.match(html, /APP MANAGEMENT/);
