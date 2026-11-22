@@ -242,13 +242,27 @@ test('Settings opens with a searchable, compact category index', async () => {
   search.onChangeText('jarvis');
   const filtered = await render();
   assert.match(filtered, /Jarvis Assistant/);
-  assert.doesNotMatch(filtered, /Account &amp; Security|AI &amp; Models|Voice &amp; Device/);
+  assert.doesNotMatch(filtered, /Account & Security|AI & Models|Voice & Device/);
   assert.ok(pressables.some((item) => item.label === 'Go to Jarvis settings'));
+
+  const refreshedSearch = inputHandlers.find((item) => item.label === 'Search settings');
+  assert.ok(refreshedSearch);
+  refreshedSearch.onChangeText('wake word');
+  const voiceMatches = await render();
+  assert.ok(voiceMatches.includes('Voice & Device'));
+  assert.ok(pressables.some((item) => item.label === 'Go to Voice settings'));
+
+  const voiceSearch = inputHandlers.find((item) => item.label === 'Search settings');
+  assert.ok(voiceSearch);
+  voiceSearch.onChangeText('github');
+  const developerMatches = await render();
+  assert.ok(developerMatches.includes('Developer Mode'));
+  assert.ok(pressables.some((item) => item.label === 'Go to Developer settings'));
 });
 
 test('Settings reveals Developer Agent and Project Brain controls when developer mode is enabled', async () => {
   settings.developerMode = true;
-  const html = await createSettingsHookHarness({ 55: 'all' })();
+  const html = await createSettingsHookHarness({ 55: 'developer' })();
   assert.match(html, /Developer Agent|Developer Analysis|বিশ্লেষণ/);
   assert.match(html, /Project Brain|প্রজেক্ট ব্রেইন/);
   assert.match(html, /Auto QA|স্বয়ংক্রিয় পরীক্ষা/);
@@ -1063,7 +1077,7 @@ test('Settings Jarvis controls request overlay permission and expose stop and sc
   screenSettingsCalls = 0;
   settings.floatingAssistantEnabled = false;
 
-  await createSettingsHookHarness({ 55: 'all' })();
+  await createSettingsHookHarness({ 55: 'jarvis' })();
   const startBubble = pressables.find((item) => item.label.includes('Start Bubble'));
   const stopBubble = pressables.find((item) => item.label.includes('Stop Bubble'));
   const configureScreen = pressables.find((item) => item.label.includes('Configure Screen Awareness'));
