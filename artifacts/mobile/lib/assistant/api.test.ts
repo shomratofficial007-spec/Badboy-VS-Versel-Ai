@@ -182,10 +182,14 @@ test('streamAgenticReply sends only validated owner attachment references to the
     sent = JSON.parse(String(init.body));
     return streamResponse(['data: {"content":"attached"}\\n\\n', 'data: [DONE]\\n\\n']);
   };
-  await streamAgenticReply('describe this', { personality: 'helpful', voiceLanguage: 'en-US', developerMode: false } as any, [], () => {}, '', '', [], ['123e4567-e89b-12d3-a456-426614174000']);
+  const attachment = {
+    reference: { id: '123e4567-e89b-12d3-a456-426614174000', name: 'photo.png', mimeType: 'image/png', size: 9 },
+    base64: 'iVBORw0KGgo=',
+  };
+  await streamAgenticReply('describe this', { personality: 'helpful', voiceLanguage: 'en-US', developerMode: false } as any, [], () => {}, '', '', [], [attachment]);
   assert.deepEqual(sent.attachments, ['123e4567-e89b-12d3-a456-426614174000']);
   await assert.rejects(
-    streamAgenticReply('describe this', { personality: 'helpful', voiceLanguage: 'en-US', developerMode: false } as any, [], () => {}, '', '', [], ['not-an-id']),
+    streamAgenticReply('describe this', { personality: 'helpful', voiceLanguage: 'en-US', developerMode: false } as any, [], () => {}, '', '', [], [{ ...attachment, reference: { ...attachment.reference, id: 'not-an-id' } }]),
     /বৈধ attachment/,
   );
 });
