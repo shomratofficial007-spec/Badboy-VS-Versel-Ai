@@ -511,14 +511,14 @@ test('Settings category rows open isolated mobile subpages and preserve every ex
   const render = createSettingsHookHarness({ 55: null });
   let html = await render();
   const categories = [
-    { label: 'Account', visible: 'ACCOUNT &amp; ACCESS', hidden: 'AI Provider &amp; Model' },
-    { label: 'AI', visible: 'AI Provider &amp; Model', hidden: 'Jarvis Assistant &amp; Quick Access' },
+    { label: 'Account', visible: 'ACCOUNT', hidden: 'AI Provider' },
+    { label: 'AI', visible: 'AI Provider', hidden: 'Jarvis Assistant' },
     { label: 'Appearance', visible: 'APPEARANCE', hidden: 'Owner Panel' },
-    { label: 'Privacy', visible: 'PRIVACY &amp; PERSONALIZATION', hidden: 'Jarvis Assistant &amp; Quick Access' },
-    { label: 'Developer', visible: 'DEVELOPER TOOLS', hidden: 'VOICE &amp; DEVICE' },
-    { label: 'Jarvis', visible: 'Jarvis Assistant &amp; Quick Access', hidden: 'VOICE &amp; DEVICE' },
-    { label: 'Voice', visible: 'VOICE &amp; DEVICE', hidden: 'APP MANAGEMENT' },
-    { label: 'More', visible: 'APP MANAGEMENT', hidden: 'Jarvis Assistant &amp; Quick Access' },
+    { label: 'Privacy', visible: 'PRIVACY', hidden: 'Jarvis Assistant' },
+    { label: 'Developer', visible: 'DEVELOPER TOOLS', hidden: 'VOICE' },
+    { label: 'Jarvis', visible: 'Jarvis Assistant', hidden: 'VOICE' },
+    { label: 'Voice', visible: 'VOICE', hidden: 'APP MANAGEMENT' },
+    { label: 'More', visible: 'APP MANAGEMENT', hidden: 'Jarvis Assistant' },
   ];
   for (const category of categories) {
     const row = pressables.find((item) => item.label === `Go to ${category.label} settings`);
