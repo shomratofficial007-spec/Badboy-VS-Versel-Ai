@@ -49,6 +49,23 @@ test('private attachment upload stores only verified-owner scoped image bytes', 
   assert.equal(db.calls.at(-1)?.values[1], 'verified-owner');
 });
 
+test('private attachment upload accepts bounded UTF-8 text documents only after content validation', async () => {
+  const db = new AttachmentD1();
+  const markdown = new File(['# Project Notes\\nSafe text content'], 'notes.md', { type: 'text/markdown' });
+  const response = await handleAttachmentRequest(uploadRequest(markdown), '/api/attachments', db, 'verified-owner');
+  assert.equal(response.status, 201);
+  assert.equal(db.calls.at(-1)?.values[3], 'text/markdown');
+  const stored = db.calls.at(-1)?.values[5];
+  assert.ok(stored instanceof Uint8Array);
+  assert.equal(new TextDecoder().decode(stored), '# Project Notes\\nSafe text content');
+
+  const invalidJson = await handleAttachmentRequest(
+    uploadRequest(new File(['{broken'], 'data.json', { type: 'application/json' })),
+    '/api/attachments', new AttachmentD1(), 'owner-a',
+  );
+  assert.equal(invalidJson.status, 415);
+});
+
 test('private attachment upload rejects unsupported MIME, spoofed images and oversized files', async () => {
   const db = new AttachmentD1();
   const unsupported = await handleAttachmentRequest(
