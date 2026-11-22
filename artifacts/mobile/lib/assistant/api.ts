@@ -323,7 +323,7 @@ async function executeLocalAgentTool(name: string, rawArguments: string): Promis
     }
     if (name === 'discord_history') {
       requireExactKeys(args, ['channel']);
-      if (typeof args.channel !== 'string' || !/^\\d{17,20}$/.test(args.channel)) throw new Error('discord_history requires a valid channel ID.');
+      if (typeof args.channel !== 'string' || !/^\d{17,20}$/.test(args.channel)) throw new Error('discord_history requires a valid channel ID.');
       return { ok: true, result: await getDiscordMessages(args.channel) };
     }
     if (name === 'google_calendar_events') {
