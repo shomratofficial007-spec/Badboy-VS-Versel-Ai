@@ -151,7 +151,7 @@ export function ProviderManagerSection() {
   const saveLocalConfiguration = () => {
     try {
       const normalized = normalizeLocalOmniRouteBaseUrl(localUrl);
-      if (!localModel.trim() || !/^[\\w./:-]{1,200}$/.test(localModel.trim())) throw new Error('Local OmniRoute Model ID সঠিক নয়।');
+      if (!localModel.trim() || !/^[\w./:-]{1,200}$/.test(localModel.trim())) throw new Error('Local OmniRoute Model ID সঠিক নয়।');
       if (settings.localOmniRouteFallbackEnabled && (!isFreeOpenRouterModel(localFallbackModel) || !freeBackupKeyConfigured)) {
         throw new Error('Backup-এর জন্য OpenRouter SecureStore-এ Key এবং openrouter/free বা :free Model প্রয়োজন।');
       }
