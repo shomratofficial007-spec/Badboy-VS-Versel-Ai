@@ -455,7 +455,7 @@ export async function streamAgenticReply(
   if (!Array.isArray(attachments) || attachments.length > 4) {
     throw new Error('সর্বোচ্চ ৪টি বৈধ attachment নির্বাচন করুন।');
   }
-  const attachmentIds = attachments.map((item) => typeof item === 'string' ? item : 'reference' in item ? item.reference.id : item.id);
+  const attachmentIds = attachments.map((item) => item.reference.id);
   if (attachmentIds.some((id) => typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id)) || new Set(attachmentIds).size !== attachmentIds.length) {
     throw new Error('সর্বোচ্চ ৪টি বৈধ attachment নির্বাচন করুন।');
   }
