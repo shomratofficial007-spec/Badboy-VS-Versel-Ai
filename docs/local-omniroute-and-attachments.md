@@ -4,9 +4,9 @@
 
 Open Badboy AI **Settings → Provider Manager → Local OmniRoute** and configure:
 
-- **Base URL:** for OmniRoute running in Termux on the same Android phone, use `http://127.0.0.1:<PORT>/v1`. Replace `<PORT>` with the port configured in OmniRoute; this repository does not assume a default port.
+- **Base URL:** for OmniRoute running in Termux on the same Android phone, use `http://127.0.0.1:20128/v1` (OmniRoute's documented default port; replace `20128` if your instance uses another port).
 - **Model ID:** use the exact model ID exposed by the router's OpenAI-compatible `/models` endpoint.
-- **Local API key:** optional; stored only in Android Secure Storage and sent directly to the local endpoint in the Authorization header.
+- **Local API key:** required by OmniRoute; store its Bearer key in Android Secure Storage. It is sent directly to the local endpoint in the Authorization header.
 - **Free API backup:** save an OpenRouter API key in Provider Manager and keep the backup model as `openrouter/free` or a model ID ending in `:free`. The backup stays enabled in the UI; paid model IDs are rejected for this route.
 
 The local route sends Planner, Tool Calling, Executor, Reviewer, and Synthesizer requests directly from the phone to `/chat/completions`. Read-only integration tools are initiated by the on-device orchestrator through the existing owner-authenticated Worker adapters.
