@@ -74,6 +74,7 @@ jobs:
           functions/personalAuth.test.ts
           functions/developerData.test.ts
           functions/api/agenticAssistant.test.ts
+          functions/api/attachments.test.ts
           functions/api/agentMemory.test.ts
           functions/api/integrationHub.test.ts
           &&
