@@ -67,6 +67,14 @@ function authFrom(init: any) {
   return new Headers(init?.headers).get('Authorization');
 }
 
+function isWorkerRequestUrl(value: string): boolean {
+  try {
+    return new URL(value).origin === 'https://worker.example';
+  } catch {
+    return false;
+  }
+}
+
 test('streamReply sends owner-authenticated request and parses split SSE frames', async () => {
   const { streamReply } = await apiPromise;
   let url = '';
@@ -370,7 +378,7 @@ test('Local OmniRoute never switches to Free API after final text has started st
   fetchHandler = async (input, init) => {
     const url = String(input);
     urls.push(url);
-    if (url.startsWith('https://worker.example')) return streamResponse(['data: {"content":"must not switch"}\n\n', 'data: [DONE]\n\n']);
+    if (isWorkerRequestUrl(url)) return streamResponse(['data: {"content":"must not switch"}\n\n', 'data: [DONE]\n\n']);
     const body = JSON.parse(String(init?.body));
     if (body.stream) {
       let sentPartial = false;
@@ -419,7 +427,7 @@ test('Local OmniRoute does not replay the cloud workflow after a tool has execut
   fetchHandler = async (input, init) => {
     const url = String(input);
     urls.push(url);
-    if (url.startsWith('https://worker.example')) return streamResponse(['data: {"content":"must not replay"}\n\n', 'data: [DONE]\n\n']);
+    if (isWorkerRequestUrl(url)) return streamResponse(['data: {"content":"must not replay"}\n\n', 'data: [DONE]\n\n']);
     const body = JSON.parse(String(init?.body));
     const system = String(body.messages[0]?.content ?? '');
     if (system.includes('Badboy Planner')) {
@@ -447,7 +455,7 @@ test('Local OmniRoute does not replay the cloud workflow after a tool has execut
     } as any, [], () => undefined, '', '', [], [], () => undefined),
     /not replayed on a cloud provider/,
   );
-  assert.equal(urls.some((url) => url.startsWith('https://worker.example')), false);
+  assert.equal(urls.some((url) => isWorkerRequestUrl(url)), false);
 });
 
 test('streamAgenticReply sends owner-authenticated bounded history and consumes agentic SSE', async () => {
