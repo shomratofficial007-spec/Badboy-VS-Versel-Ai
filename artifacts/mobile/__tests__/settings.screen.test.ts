@@ -492,7 +492,8 @@ function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {
     const previous = internals.H;
     internals.H = dispatcher;
     try {
-          const html = visit(SettingsScreen());
+      const { default: SettingsScreen } = await settingsScreenPromise;
+      const html = visit(SettingsScreen());
       if (options.runEffects && !effectsExecuted) {
         effectsExecuted = true;
         for (const effect of effects) effect();
@@ -524,8 +525,8 @@ test('Settings category rows open isolated mobile subpages and preserve every ex
     assert.ok(row, `category row missing: ${category.label}`);
     row.onPress();
     html = await render();
-    assert.match(html, new RegExp(category.visible.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-    assert.doesNotMatch(html, new RegExp(category.hidden.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.ok(html.includes(category.visible), `expected ${category.label} content`);
+    assert.ok(!html.includes(category.hidden), `unexpected content from another category: ${category.label}`);
     assert.ok(pressables.some((item) => item.label === 'Back to Settings categories'));
     pressables.find((item) => item.label === 'Back to Settings categories')?.onPress();
     html = await render();
