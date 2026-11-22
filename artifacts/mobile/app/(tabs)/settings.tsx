@@ -817,10 +817,24 @@ export default function SettingsScreen() {
   const recordSettingsSection = (key: string) => (event: { nativeEvent: { layout: { y: number } } }) => {
     settingsSectionOffsets.current[key] = event.nativeEvent.layout.y;
   };
-  const scrollToSettingsSection = (key: string) => () => {
-    const y = settingsSectionOffsets.current[key];
-    if (typeof y === 'number') settingsScrollRef.current?.scrollTo({ y, animated: true });
-  };
+  const [activeSettingsCategory, setActiveSettingsCategory] = useState<string | null>(null);
+  const [settingsSearchQuery, setSettingsSearchQuery] = useState('');
+
+  const settingsCategories = [
+    { id: 'account', label: 'Account & Security', description: 'Owner login, token access and chat history', keywords: 'owner login token security access sign out history', icon: 'user' },
+    { id: 'ai', label: 'AI & Models', description: 'AI provider, model, fallback and agent tools', keywords: 'provider model api fallback smart agent online ai', icon: 'cpu' },
+    { id: 'appearance', label: 'Appearance', description: 'Theme, colors and visual preferences', keywords: 'theme color dark light appearance', icon: 'sliders' },
+    { id: 'privacy', label: 'Privacy & Personalization', description: 'Online AI, memory, personality and data controls', keywords: 'privacy data memory personality online ai consent', icon: 'shield' },
+    { id: 'developer', label: 'Developer Mode', description: 'Agent, repository, project brain, QA and integrations', keywords: 'developer github repository agent project brain qa code review', icon: 'code' },
+    { id: 'jarvis', label: 'Jarvis Assistant', description: 'Floating Bubble and Screen Awareness permissions', keywords: 'jarvis bubble floating assistant screen awareness accessibility', icon: 'aperture' },
+    { id: 'voice', label: 'Voice & Device', description: 'Voice input/output, wake word and Android actions', keywords: 'voice microphone speech wake word device reminder calendar', icon: 'mic' },
+    { id: 'management', label: 'More Settings', description: 'Roadmap, Telegram and app integrations', keywords: 'more roadmap telegram integrations bot automation', icon: 'layers' },
+  ] as const;
+  const activeSettingsCategoryDetails = settingsCategories.find((item) => item.id === activeSettingsCategory);
+  const filteredSettingsCategories = settingsCategories.filter((item) => {
+    const query = settingsSearchQuery.trim().toLocaleLowerCase();
+    return !query || `${item.label} ${item.description} ${item.keywords}`.toLocaleLowerCase().includes(query);
+  });
 
   return (
     <ScrollView
@@ -847,29 +861,63 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.settingsCategoryNav}>
-        {([
-          ['account', 'Account'],
-          ['ai', 'AI'],
-          ['appearance', 'Appearance'],
-          ['privacy', 'Privacy'],
-          ['developer', 'Developer'],
-          ['jarvis', 'Jarvis'],
-          ['voice', 'Voice'],
-          ['management', 'More'],
-        ] as const).map(([id, label]) => (
+      {activeSettingsCategory === null ? (
+        <View style={{ gap: 12 }}>
+          <TextInput
+            value={settingsSearchQuery}
+            onChangeText={setSettingsSearchQuery}
+            placeholder="Search settings"
+            placeholderTextColor={colors.mutedForeground}
+            accessibilityLabel="Search settings"
+            returnKeyType="search"
+            style={[styles.telegramInput, { color: colors.foreground, borderColor: colors.input, marginTop: 0 }]}
+          />
+          <View style={[styles.section, sectionCard, { paddingVertical: 4 }]}>
+            {filteredSettingsCategories.map((category, index) => (
+              <Pressable
+                key={category.id}
+                accessibilityRole="button"
+                accessibilityLabel={`Go to ${category.id === 'management' ? 'More' : category.id === 'developer' ? 'Developer' : category.id === 'jarvis' ? 'Jarvis' : category.id === 'voice' ? 'Voice' : category.id === 'appearance' ? 'Appearance' : category.id === 'privacy' ? 'Privacy' : category.id === 'ai' ? 'AI' : 'Account'} settings`}
+                onPress={() => {
+                  setActiveSettingsCategory(category.id);
+                  setSettingsSearchQuery('');
+                  settingsScrollRef.current?.scrollTo({ y: 0, animated: true });
+                }}
+                style={{ minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: index === filteredSettingsCategories.length - 1 ? 0 : StyleSheet.hairlineWidth, borderColor: colors.border }}
+              >
+                <View style={{ width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.secondary }}>
+                  <Feather name={category.icon} size={17} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1, gap: 3 }}>
+                  <Text style={[styles.label, { color: colors.foreground }]}>{category.label}</Text>
+                  <Text style={[styles.body, { color: colors.mutedForeground }]}>{category.description}</Text>
+                </View>
+                <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+              </Pressable>
+            ))}
+            {filteredSettingsCategories.length === 0 ? (
+              <Text style={[styles.body, { color: colors.mutedForeground, padding: 14 }]}>No matching settings categories</Text>
+            ) : null}
+          </View>
+        </View>
+      ) : (
+        <View style={{ gap: 8 }}>
           <Pressable
-            key={id}
             accessibilityRole="button"
-            accessibilityLabel={`Go to ${label} settings`}
-            onPress={scrollToSettingsSection(id)}
-            style={[styles.settingsCategoryChip, { backgroundColor: colors.card, borderColor: colors.border }]}
+            accessibilityLabel="Back to Settings categories"
+            onPress={() => setActiveSettingsCategory(null)}
+            style={{ minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 7 }}
           >
-            <Text style={[styles.settingsCategoryText, { color: colors.foreground }]}>{label}</Text>
+            <Feather name="arrow-left" size={17} color={colors.primary} />
+            <Text style={[styles.label, { color: colors.primary }]}>All settings</Text>
           </Pressable>
-        ))}
-      </ScrollView>
+          <Text style={[styles.title, { color: colors.foreground }]}>{activeSettingsCategoryDetails?.label}</Text>
+          <Text style={[styles.body, { color: colors.mutedForeground }]}>{activeSettingsCategoryDetails?.description}</Text>
+        </View>
+      )}
 
+{activeSettingsCategory === 'all' || activeSettingsCategory === 'account' ? (
+        <>
       <Text onLayout={recordSettingsSection('account')} style={[styles.eyebrow, { color: colors.primary }]}>ACCOUNT &amp; ACCESS</Text>
       <View style={[styles.section, sectionCard]}>
         <Pressable accessibilityRole="button" accessibilityLabel="Open Owner Panel" onPress={openOwnerPanel} style={styles.sectionTitleRow}>
@@ -917,6 +965,12 @@ export default function SettingsScreen() {
         <Text style={{ color: colors.destructive, fontWeight: '700' }}>Owner Sign Out</Text>
       </Pressable>
 
+
+        </>
+      ) : null}
+
+{activeSettingsCategory === 'all' || activeSettingsCategory === 'ai' ? (
+        <>
             <Text onLayout={recordSettingsSection('ai')} style={[styles.eyebrow, { color: colors.primary }]}>AI &amp; FEATURES</Text>
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
@@ -1022,6 +1076,12 @@ export default function SettingsScreen() {
         ) : null}
       </View>
 
+
+        </>
+      ) : null}
+
+{activeSettingsCategory === 'all' || activeSettingsCategory === 'appearance' ? (
+        <>
       <Text onLayout={recordSettingsSection('appearance')} style={[styles.eyebrow, { color: colors.primary }]}>APPEARANCE</Text>
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}><Feather name="droplet" size={17} color={colors.primary} /><Text style={[styles.sectionTitle,{color:colors.foreground}]}>অ্যাপ থিম</Text></View>
@@ -1033,6 +1093,12 @@ export default function SettingsScreen() {
         </View>
       </View>
 
+
+        </>
+      ) : null}
+
+{activeSettingsCategory === 'all' || activeSettingsCategory === 'privacy' ? (
+        <>
       <Text onLayout={recordSettingsSection('privacy')} style={[styles.eyebrow, { color: colors.primary }]}>PRIVACY &amp; PERSONALIZATION</Text>
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
@@ -1135,6 +1201,12 @@ export default function SettingsScreen() {
         ) : null}
       </View>
 
+
+        </>
+      ) : null}
+
+{activeSettingsCategory === 'all' || activeSettingsCategory === 'developer' ? (
+        <>
       <Text onLayout={recordSettingsSection('developer')} style={[styles.eyebrow, { color: colors.primary }]}>DEVELOPER TOOLS</Text>
       {/* Developer Control Center */}
       <View style={[styles.section, sectionCard]}>
@@ -1555,8 +1627,20 @@ export default function SettingsScreen() {
         )}
       </View>
 
+
+        </>
+      ) : null}
+
+{activeSettingsCategory === 'all' || activeSettingsCategory === 'ai' ? (
+        <>
       <ProviderManagerSection />
 
+
+        </>
+      ) : null}
+
+{activeSettingsCategory === 'all' || activeSettingsCategory === 'jarvis' ? (
+        <>
       <View onLayout={recordSettingsSection('jarvis')} style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
           <Feather name="aperture" size={17} color={colors.primary} />
@@ -1582,6 +1666,12 @@ export default function SettingsScreen() {
         <Text style={[styles.smallNote, { color: colors.mutedForeground }]}>Floating bubble: {settings.floatingAssistantEnabled ? 'On' : 'Off'}. পরিচিত sensitive pattern best-effort redacted হয়, সবকিছু ধরা নিশ্চিত নয়—Send করার আগে draft নিজে যাচাই করবে।</Text>
       </View>
 
+
+        </>
+      ) : null}
+
+{activeSettingsCategory === 'all' || activeSettingsCategory === 'voice' ? (
+        <>
       <Text onLayout={recordSettingsSection('voice')} style={[styles.eyebrow, { color: colors.primary }]}>VOICE &amp; DEVICE</Text>
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
@@ -1712,6 +1802,12 @@ export default function SettingsScreen() {
         {deviceActionError ? <Text style={[styles.errorText, { color: colors.destructive }]}>{deviceActionError}</Text> : null}
       </View>
 
+
+        </>
+      ) : null}
+
+{activeSettingsCategory === 'all' || activeSettingsCategory === 'management' ? (
+        <>
       <Text onLayout={recordSettingsSection('management')} style={[styles.eyebrow, { color: colors.primary }]}>APP MANAGEMENT</Text>
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
@@ -1838,6 +1934,10 @@ export default function SettingsScreen() {
         )}
         {telegramError ? <Text style={[styles.errorText, { color: colors.destructive }]}>{telegramError}</Text> : null}
       </View>
+
+
+        </>
+      ) : null}
 
       <View style={styles.footerBrand}>
         <Text style={[styles.footerTitle, { color: colors.primary }]}>♛  Badboy AI Manager  ♛</Text>
