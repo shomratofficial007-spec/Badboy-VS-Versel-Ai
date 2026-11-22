@@ -17,7 +17,7 @@ The Free OpenRouter backup is used only when the local route fails before a tool
 
 - HTTP is accepted only for loopback or private LAN addresses; public endpoints must use HTTPS.
 - Android cleartext traffic is enabled for the native app because a Termux service on the same phone normally uses loopback HTTP. The Local OmniRoute URL validator blocks public HTTP URLs, credentials, query strings, and fragments.
-- If OmniRoute runs on another LAN device, use HTTPS where possible. The phone and server must be on the same reachable network.
+- If another phone on the same Wi-Fi must reach the router phone, use the router phone's private LAN IP and configure OmniRoute to listen on that LAN interface. Keep the port private; never port-forward it to the public internet. HTTPS is preferred for LAN access.
 - Keep the Termux OmniRoute process running while using Local OmniRoute. The app cannot keep a stopped Termux process alive.
 
 ## Attachment support
