@@ -78,7 +78,16 @@ export async function downloadAgentAttachment(reference: ChatAttachmentReference
   const mimeType = response.headers.get('content-type') || (typeof reference === 'string' ? '' : reference.mimeType);
   const disposition = response.headers.get('content-disposition') ?? '';
   const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
-  const name = typeof reference === 'string' ? (encodedName ? decodeURIComponent(encodedName) : 'attachment') : reference.name;
+  let decodedName = 'attachment';
+  if (encodedName) {
+    try {
+      decodedName = decodeURIComponent(encodedName);
+    } catch {
+      // A malformed filename header must not prevent otherwise valid file content from loading.
+      decodedName = 'attachment';
+    }
+  }
+  const name = typeof reference === 'string' ? decodedName : reference.name;
   const metadata: ChatAttachmentReference = { id, name, mimeType, size: typeof reference === 'string' ? bytes.byteLength : reference.size };
   if (mimeType.startsWith('image/')) return { reference: metadata, base64: encodeAttachmentBase64(bytes) };
   if (mimeType === 'text/plain' || mimeType === 'text/markdown' || mimeType === 'text/csv' || mimeType === 'application/json') {
