@@ -35,6 +35,7 @@ import { isOwnerLoginRequiredError } from '@/lib/assistant/ownerAuth';
 import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
 import { searchAgentMemory, streamAgenticReply, streamReply, transcribeRecordedAudio, uploadAgentAttachment } from '@/lib/assistant/api';
+import { streamLocalOmniRouteReply } from '@/lib/assistant/localOmniRouteClient';
 import { listDeveloperProjects } from '@/lib/assistant/developerData';
 import {
   dictateOnce,
@@ -415,22 +416,37 @@ export default function ChatScreen() {
       } catch {
         // Corrupt or unavailable plugin settings fail closed: no integration tools are enabled.
       }
-      await streamAgenticReply(
-        text,
-        settings,
-        messages.slice(-8).map(({ role, content }) => ({ role, content })),
-        (chunk) => {
+      const history = messages.slice(-8).map(({ role, content }) => ({ role, content }));
+      const onChunk = (chunk: string) => {
         answer = { ...answer, content: answer.content + chunk };
         working = working.map((message) =>
           message.id === answer.id ? answer : message,
         );
         setMessages(working);
-      },
-      memoryContext,
-      skillContext,
-      enabledPluginIds,
-      attachmentsToSend.map((attachment) => attachment.id),
-      );
+      };
+      if (settings.localOmniRouteEnabled) {
+        await streamLocalOmniRouteReply(
+          text,
+          settings,
+          history,
+          onChunk,
+          memoryContext,
+          skillContext,
+          enabledPluginIds,
+          attachmentsToSend,
+        );
+      } else {
+        await streamAgenticReply(
+          text,
+          settings,
+          history,
+          onChunk,
+          memoryContext,
+          skillContext,
+          enabledPluginIds,
+          attachmentsToSend.map((attachment) => attachment.id),
+        );
+      }
     } catch (cause) {
       if (attachmentsToSend.length) setPendingAttachments((current) => [...attachmentsToSend, ...(current ?? [])].slice(0, 4));
       working = working.filter((message) => message.id !== answer.id);
