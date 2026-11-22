@@ -64,7 +64,7 @@ test('Local OmniRoute executes Planner, Tool Calling, Executor, Reviewer and Syn
       if (system.includes('Badboy Planner')) {
         return { content: JSON.stringify({ goal: 'হিসাব', steps: [{ id: '1', task: 'হিসাব', success_criteria: 'ফল পাওয়া' }], risks: [] }), toolCalls: [] };
       }
-      if (system.includes('Badboy Executor')) {
+      if (system.includes('Badboy Tool Calling Agent')) {
         executorRequests += 1;
         if (executorRequests === 1) {
           return { content: '', toolCalls: [{ id: 'call-1', type: 'function', function: { name: 'calculator', arguments: '{"expression":"2 + 2"}' } }] };
@@ -106,7 +106,7 @@ test('Local OmniRoute exposes executed-tool count so a failed workflow is never 
         if (system.includes('Badboy Planner')) {
           return { content: JSON.stringify({ goal: 'হিসাব', steps: [{ id: '1', task: 'হিসাব', success_criteria: 'ফল' }], risks: [] }), toolCalls: [] };
         }
-        if (system.includes('Badboy Executor')) {
+        if (system.includes('Badboy Tool Calling Agent')) {
           executorRequests += 1;
           if (executorRequests === 1) {
             return { content: '', toolCalls: [{ id: 'call-1', type: 'function', function: { name: 'calculator', arguments: '{"expression":"2+2"}' } }] };
