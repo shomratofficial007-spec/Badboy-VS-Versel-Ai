@@ -152,13 +152,14 @@ export function ProviderManagerSection() {
     try {
       const normalized = normalizeLocalOmniRouteBaseUrl(localUrl);
       if (!localModel.trim() || !/^[\w./:-]{1,200}$/.test(localModel.trim())) throw new Error('Local OmniRoute Model ID সঠিক নয়।');
-      if (settings.localOmniRouteFallbackEnabled && (!isFreeOpenRouterModel(localFallbackModel) || !freeBackupKeyConfigured)) {
+      if (!isFreeOpenRouterModel(localFallbackModel) || !freeBackupKeyConfigured) {
         throw new Error('Backup-এর জন্য OpenRouter SecureStore-এ Key এবং openrouter/free বা :free Model প্রয়োজন।');
       }
       updateSettings({
         localOmniRouteBaseUrl: normalized,
         localOmniRouteModel: localModel.trim(),
         localOmniRouteFallbackModel: localFallbackModel.trim(),
+        localOmniRouteFallbackEnabled: true,
       });
       Alert.alert('Local OmniRoute সংরক্ষিত', 'লোকাল Router configuration এই ফোনে সংরক্ষণ হয়েছে।');
     } catch (cause) {
@@ -216,9 +217,9 @@ export function ProviderManagerSection() {
             <Text style={{ color: colors.foreground, fontWeight: '800', fontSize: 13 }}>On-device Local OmniRoute</Text>
             <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>ফোন থেকে সরাসরি local router-এ request যাবে; Worker-এ localhost পাঠানো হবে না।</Text>
           </View>
-          <Switch value={settings.localOmniRouteEnabled} onValueChange={(value) => updateSettings({ localOmniRouteEnabled: value })} />
+          <Switch value={settings.localOmniRouteEnabled} onValueChange={(value) => updateSettings({ localOmniRouteEnabled: value, localOmniRouteFallbackEnabled: true })} />
         </View>
-        <TextInput value={localUrl} onChangeText={setLocalUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="http://192.168.1.10:8080/v1" placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 11, padding: 10, color: colors.foreground, fontSize: 12 }} />
+        <TextInput value={localUrl} onChangeText={setLocalUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="http://127.0.0.1:8080/v1" placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 11, padding: 10, color: colors.foreground, fontSize: 12 }} />
         <TextInput value={localModel} onChangeText={setLocalModel} autoCapitalize="none" autoCorrect={false} placeholder="Local model ID" placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 11, padding: 10, color: colors.foreground, fontSize: 12 }} />
         <TextInput value={localKeyDraft} onChangeText={setLocalKeyDraft} secureTextEntry autoCapitalize="none" autoCorrect={false} placeholder={localKeyConfigured ? 'Local API Key saved · replace if needed' : 'Optional Local OmniRoute API Key'} placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 11, padding: 10, color: colors.foreground, fontSize: 12 }} />
         <View style={{ flexDirection: 'row', gap: 7 }}>
@@ -229,7 +230,7 @@ export function ProviderManagerSection() {
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '600' }}>Free-only API backup</Text>
-          <Switch value={settings.localOmniRouteFallbackEnabled} onValueChange={(value) => updateSettings({ localOmniRouteFallbackEnabled: value })} />
+          <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '800' }}>ALWAYS ON</Text>
         </View>
         <TextInput value={localFallbackModel} onChangeText={setLocalFallbackModel} autoCapitalize="none" autoCorrect={false} placeholder="openrouter/free" placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 11, padding: 10, color: colors.foreground, fontSize: 12 }} />
         <Text style={{ color: freeBackupKeyConfigured ? colors.primary : colors.mutedForeground, fontSize: 10 }}>{freeBackupKeyConfigured ? 'OpenRouter backup key SecureStore-এ আছে।' : 'Backup ব্যবহারের জন্য Provider Manager-এ OpenRouter key সংরক্ষণ করুন।'}</Text>
