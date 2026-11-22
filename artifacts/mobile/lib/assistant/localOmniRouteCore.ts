@@ -93,7 +93,7 @@ export function evaluateSafeExpression(input: string): number {
   const source = input.trim();
   if (!source || source.length > 120) throw new Error('Expression must contain 1–120 characters.');
   const tokens: string[] = [];
-  const pattern = /\\s*(\\d+(?:\\.\\d*)?|\\.\\d+|[()+\\-*/%])/y;
+  const pattern = /\s*(\d+(?:\.\d*)?|\.\d+|[()+\-*/%])/y;
   let offset = 0;
   while (offset < source.length) {
     pattern.lastIndex = offset;
@@ -118,7 +118,7 @@ export function evaluateSafeExpression(input: string): number {
       return value;
     }
     const token = take();
-    if (!token || !/^\\d+(?:\\.\\d*)?$|^\\.\\d+$/.test(token)) throw new Error('Expected a number.');
+    if (!token || !/^\d+(?:\.\d*)?$|^\.\d+$/.test(token)) throw new Error('Expected a number.');
     return Number(token);
   };
   const multiplication = (): number => {
