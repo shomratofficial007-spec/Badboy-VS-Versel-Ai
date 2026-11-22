@@ -8,6 +8,7 @@ import { fetchGeminiChat, getGeminiModel } from "./geminiProvider.ts";
 import { handleAgenticAssistantRequest } from "./agenticAssistant.ts";
 import { handleAgentMemorySearchRequest } from "./agentMemory.ts";
 import { handleIntegrationRequest, type IntegrationEnv } from "./integrationHub.ts";
+import { handleAttachmentRequest } from "./attachments.ts";
 // Cloudflare Worker API: Native Developer Agent controls optional AI provider adapters.
 // Ordinary /api/assistant/chat remains on its existing OpenRouter route.
 
@@ -1141,6 +1142,10 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     if (dataResponse) return dataResponse;
   }
 
+  if (pathname === "/api/attachments" || pathname.startsWith("/api/attachments/")) {
+    return handleAttachmentRequest(request, pathname, env.AGENT_DB, verifiedOwnerId ?? "");
+  }
+
   if (request.method === "GET") {
     if (pathname === "/api/developer/health") {
       const geminiAvailable = Boolean(env.GEMINI_API_KEY?.trim());
@@ -1232,7 +1237,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   }
 
   if (request.method === "POST" && pathname === "/api/assistant/agent") {
-    return handleAgenticAssistantRequest(request, env);
+    return handleAgenticAssistantRequest(request, env, verifiedOwnerId ?? "");
   }
 
   if (request.method === "POST" && pathname === "/api/assistant/transcribe") {
