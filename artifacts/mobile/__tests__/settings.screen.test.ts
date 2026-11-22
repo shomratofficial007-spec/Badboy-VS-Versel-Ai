@@ -227,7 +227,7 @@ mock.module(mobileModule('lib/assistant/developerEngine'), {
 const settingsScreenPromise = import('../app/(tabs)/settings');
 
 test('Settings opens with a searchable, compact category index', async () => {
-  const render = createSettingsHookHarness({ 51: null });
+  const render = createSettingsHookHarness({ 52: null });
   const html = await render();
   assert.match(html, /BADBOY|Badboy/);
   assert.match(html, /Settings|সেটিংস/);
@@ -262,7 +262,7 @@ test('Settings opens with a searchable, compact category index', async () => {
 
 test('Settings reveals Developer Agent and Project Brain controls when developer mode is enabled', async () => {
   settings.developerMode = true;
-  const html = await createSettingsHookHarness({ 51: 'developer' })();
+  const html = await createSettingsHookHarness({ 52: 'developer' })();
   assert.match(html, /Developer Agent|Developer Analysis|বিশ্লেষণ/);
   assert.match(html, /Project Brain|প্রজেক্ট ব্রেইন/);
   assert.match(html, /Auto QA|স্বয়ংক্রিয় পরীক্ষা/);
@@ -273,7 +273,7 @@ test('Settings exposes voice consent, input/output, auto-speak, auto-submit and 
   pressables.length = 0;
   switchHandlers.length = 0;
   settingsUpdates.length = 0;
-  await createSettingsHookHarness({ 51: 'all' })();
+  await createSettingsHookHarness({ 52: 'all' })();
 
   const enabledControls = [
     'Voice Processing Consent',
@@ -311,7 +311,7 @@ test('Settings preserves every roadmap preference and all selectable theme choic
   pressables.length = 0;
   switchHandlers.length = 0;
   settingsUpdates.length = 0;
-  await createSettingsHookHarness({ 51: 'all' })();
+  await createSettingsHookHarness({ 52: 'all' })();
 
   const roadmapControls = [
     'Web Development', 'App Development', 'Self Development',
@@ -350,14 +350,14 @@ test('Settings saves the configured personality draft and uses the safe fallback
   pressables.length = 0;
   settingsUpdates.length = 0;
   settings.personality = '  Speak naturally in Bangla  ';
-  await createSettingsHookHarness({ 51: 'all' })();
+  await createSettingsHookHarness({ 52: 'all' })();
   pressables.find((item) => item.label.includes('ব্যক্তিত্ব সংরক্ষণ'))?.onPress();
   assert.deepEqual(settingsUpdates.at(-1), { personality: 'Speak naturally in Bangla' });
 
   pressables.length = 0;
   settingsUpdates.length = 0;
   settings.personality = '   ';
-  await createSettingsHookHarness({ 51: 'all' })();
+  await createSettingsHookHarness({ 52: 'all' })();
   pressables.find((item) => item.label.includes('ব্যক্তিত্ব সংরক্ষণ'))?.onPress();
   assert.deepEqual(settingsUpdates.at(-1), { personality: 'Warm, clear, and practical.' });
 });
@@ -365,7 +365,7 @@ test('Settings saves the configured personality draft and uses the safe fallback
 test('Settings updates online AI and auto-improve independently in both directions', async () => {
   switchHandlers.length = 0;
   settingsUpdates.length = 0;
-  await createSettingsHookHarness({ 51: 'all' })();
+  await createSettingsHookHarness({ 52: 'all' })();
 
   const onlineAI = switchHandlers.find((item) => item.label === 'অনলাইন AI');
   const autoImprove = switchHandlers.find((item) => item.label === 'পরামর্শ দেখান');
@@ -386,7 +386,7 @@ test('Settings updates online AI and auto-improve independently in both directio
 test('Settings supports every theme choice and the default cloud voice reset', async () => {
   pressables.length = 0;
   settingsUpdates.length = 0;
-  await createSettingsHookHarness({ 51: 'all' })();
+  await createSettingsHookHarness({ 52: 'all' })();
 
   const themes = [
     ['Badboy Neon Blue', 'badboy'], ['Badboy Violet', 'neon'], ['Ocean Blue', 'ocean'],
@@ -412,7 +412,7 @@ test('Settings can switch every Developer Agent engine option without starting a
   settings.developerMode = true;
   pressables.length = 0;
   settingsUpdates.length = 0;
-  await createSettingsHookHarness({ 51: 'all' })();
+  await createSettingsHookHarness({ 52: 'all' })();
 
   for (const [label, engine] of [['Badboy Native', 'native'], ['Copilot SDK', 'copilot'], ['Auto / Hybrid', 'auto']] as const) {
     const option = pressables.find((item) => item.label.includes(label));
@@ -428,7 +428,7 @@ test('Settings blank-input actions fail closed without calling services or chang
   pressables.length = 0;
   settingsUpdates.length = 0;
   alerts.length = 0;
-  await createSettingsHookHarness({ 51: 'all' })();
+  await createSettingsHookHarness({ 52: 'all' })();
 
   const guardedActions = [
     'টাস্ক রান করুন',
@@ -471,7 +471,7 @@ function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {
   for (const [index, value] of Object.entries(initialOverrides)) {
     mappedOverrides[legacyStateIndexMap[Number(index)] ?? Number(index)] = value;
   }
-  if (!('51' in mappedOverrides)) mappedOverrides[51] = 'all';
+  if (!('52' in mappedOverrides)) mappedOverrides[52] = 'all';
   const slots: unknown[] = [];
   let cursor = 0;
   let effectsExecuted = false;
@@ -522,7 +522,7 @@ function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {
 }
 
 test('Settings category rows open isolated mobile subpages and preserve every existing section', async () => {
-  const render = createSettingsHookHarness({ 51: null });
+  const render = createSettingsHookHarness({ 52: null });
   let html = await render();
   const categories = [
     { label: 'Account', visible: 'ACCOUNT', hidden: 'AI Provider' },
@@ -1077,7 +1077,7 @@ test('Settings Jarvis controls request overlay permission and expose stop and sc
   screenSettingsCalls = 0;
   settings.floatingAssistantEnabled = false;
 
-  await createSettingsHookHarness({ 51: 'jarvis' })();
+  await createSettingsHookHarness({ 52: 'jarvis' })();
   const startBubble = pressables.find((item) => item.label.includes('Start Bubble'));
   const stopBubble = pressables.find((item) => item.label.includes('Stop Bubble'));
   const configureScreen = pressables.find((item) => item.label.includes('Configure Screen Awareness'));

@@ -1,6 +1,8 @@
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -32,8 +34,7 @@ import { useAssistant } from '@/context/AssistantContext';
 import { useOwnerAuth } from '@/context/OwnerAuthContext';
 import { isOwnerLoginRequiredError } from '@/lib/assistant/ownerAuth';
 import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
-import * as FileSystem from 'expo-file-system/legacy';
-import { searchAgentMemory, streamAgenticReply, streamReply, transcribeRecordedAudio } from '@/lib/assistant/api';
+import { deleteAttachment, searchAgentMemory, streamAgenticReply, streamReply, transcribeRecordedAudio, uploadAgentAttachment, type AgenticAttachmentInput, type AgentRouteStatus, type AgentStageStatus } from '@/lib/assistant/api';
 import { listDeveloperProjects } from '@/lib/assistant/developerData';
 import {
   dictateOnce,
@@ -108,6 +109,10 @@ export default function ChatScreen() {
   const [wakeDetected, setWakeDetected] = useState(false);
   const [selectedLang, setSelectedLang] = useState<string>(settings.voiceLanguage);
   const [error, setError] = useState<string | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<AgenticAttachmentInput[]>([]);
+  const [attachmentBusy, setAttachmentBusy] = useState(false);
+  const [agentRouteStatus, setAgentRouteStatus] = useState<AgentRouteStatus | null>(null);
+  const [agentStageStatus, setAgentStageStatus] = useState<AgentStageStatus | null>(null);
   const [awaitingSongName, setAwaitingSongName] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const stopDictationRef = useRef<(() => void) | null>(null);
@@ -265,14 +270,68 @@ export default function ChatScreen() {
     }
   }, []);
 
+  const pickChatAttachment = useCallback(async () => {
+    if (attachmentBusy || (pendingAttachments?.length ?? 0) >= 4) return;
+    setAttachmentBusy(true);
+    setError(null);
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({
+        multiple: true,
+        copyToCacheDirectory: true,
+        type: ['image/*', 'text/plain', 'text/markdown', 'text/csv', 'application/json'],
+      });
+      if (picked.canceled) return;
+      const available = Math.max(0, 4 - (pendingAttachments?.length ?? 0));
+      if (picked.assets.length > available) setError('একবারে সর্বোচ্চ ৪টি attachment রাখা যাবে।');
+      const extensionMime: Record<string, string> = {
+        png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp',
+        txt: 'text/plain', md: 'text/markdown', markdown: 'text/markdown',
+        csv: 'text/csv', json: 'application/json',
+      };
+      for (const file of picked.assets.slice(0, available)) {
+        let fileSize: number | undefined = file.size;
+        if (typeof fileSize !== 'number' || fileSize <= 0) {
+          const fileInfo = await FileSystem.getInfoAsync(file.uri);
+          fileSize = 'size' in fileInfo && typeof fileInfo.size === 'number' ? fileInfo.size : undefined;
+        }
+        if (typeof fileSize !== 'number' || fileSize <= 0 || fileSize > 1_000_000) {
+          setError(file.name + ': ফাইলের আকার ১ MB-এর মধ্যে হতে হবে।');
+          continue;
+        }
+        const extension = file.name.toLowerCase().split('.').pop() ?? '';
+        const mimeType = file.mimeType && file.mimeType !== 'application/octet-stream'
+          ? file.mimeType
+          : extensionMime[extension] ?? '';
+        const isImage = ['image/png', 'image/jpeg', 'image/webp'].includes(mimeType);
+        const isText = ['text/plain', 'text/markdown', 'text/csv', 'application/json'].includes(mimeType);
+        if (!isImage && !isText) {
+          setError(file.name + ': PNG, JPEG, WebP, TXT, Markdown, CSV বা JSON ফাইল ব্যবহার করুন।');
+          continue;
+        }
+        const base64 = isImage
+          ? await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 })
+          : undefined;
+        const text = isText ? (await FileSystem.readAsStringAsync(file.uri)).slice(0, 20_000) : undefined;
+        const uploaded = await uploadAgentAttachment(file.uri, file.name, mimeType);
+        setPendingAttachments((current) => [...(current ?? []), { reference: uploaded, ...(base64 ? { base64 } : {}), ...(text !== undefined ? { text } : {}) }].slice(0, 4));
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'ফাইল সংযুক্ত করা যায়নি।');
+    } finally {
+      setAttachmentBusy(false);
+    }
+  }, [attachmentBusy, pendingAttachments?.length]);
+
   const sendMessage = useCallback(async (rawText: string) => {
     const text = rawText.trim();
-    if (!text || busy) return;
+    if ((!text && !(pendingAttachments?.length ?? 0)) || busy || attachmentBusy) return;
     Keyboard.dismiss();
     setDraft('');
     setError(null);
+    setAgentRouteStatus(null);
+    setAgentStageStatus(null);
 
-    const userMessage = newMessage('user', text);
+    const userMessage = newMessage('user', text || 'এই সংযুক্তিগুলো বিশ্লেষণ করো।');
     let answer = newMessage('assistant');
     let working = [...messages, userMessage, answer];
     setMessages(working);
@@ -340,6 +399,14 @@ export default function ChatScreen() {
       return;
     }
 
+    const attachmentsToSend = pendingAttachments ?? [];
+    if (attachmentsToSend.length) {
+      userMessage.attachments = attachmentsToSend.map((item) => item.reference);
+      working = [...messages, userMessage, answer];
+      setMessages(working);
+      setPendingAttachments([]);
+    }
+
     try {
       // Pull only owner-scoped, non-sensitive project notes. Memory lookup is
       // best-effort: an unavailable D1/API must never prevent ordinary chat.
@@ -374,22 +441,31 @@ export default function ChatScreen() {
       } catch {
         // Corrupt or unavailable plugin settings fail closed: no integration tools are enabled.
       }
-      await streamAgenticReply(
-        text,
-        settings,
-        messages.slice(-8).map(({ role, content }) => ({ role, content })),
-        (chunk) => {
+      const history = messages.slice(-8).map(({ role, content }) => ({ role, content }));
+      const onChunk = (chunk: string) => {
         answer = { ...answer, content: answer.content + chunk };
         working = working.map((message) =>
           message.id === answer.id ? answer : message,
         );
         setMessages(working);
-      },
-      memoryContext,
-      skillContext,
-      enabledPluginIds,
+      };
+      await streamAgenticReply(
+        text,
+        settings,
+        history,
+        onChunk,
+        memoryContext,
+        skillContext,
+        enabledPluginIds,
+        attachmentsToSend,
+        (status) => {
+          setAgentRouteStatus(status);
+          if (status.route !== 'local') setAgentStageStatus(null);
+        },
+        setAgentStageStatus,
       );
     } catch (cause) {
+      if (attachmentsToSend.length) setPendingAttachments((current) => [...attachmentsToSend, ...(current ?? [])].slice(0, 4));
       working = working.filter((message) => message.id !== answer.id);
       setMessages(working);
       setError(
@@ -417,7 +493,7 @@ export default function ChatScreen() {
         });
       }
     }
-  }, [awaitingSongName, busy, messages, resumeWakeWord, selectedLang, setError, setMessages, settings, speakVoiceReply, voiceMode]);
+  }, [attachmentBusy, awaitingSongName, busy, messages, pendingAttachments, resumeWakeWord, selectedLang, setError, setMessages, settings, speakVoiceReply, voiceMode]);
 
   const requestImprovement = useCallback(async () => {
     const lastUserMessage = [...messages].reverse().find((item) => item.role === 'user');
@@ -757,6 +833,8 @@ export default function ChatScreen() {
     setMessages(working);
     setBusy(true);
     setError(null);
+    setAgentRouteStatus(null);
+    setAgentStageStatus(null);
     try {
       await streamAgenticReply(
         previousUser.content,
@@ -770,6 +848,12 @@ export default function ChatScreen() {
         '',
         settings.developerMode ? getDeveloperModeSkillContext() : '',
         await loadEnabledPluginIds().catch(() => []),
+        previousUser.attachments ?? [],
+        (status) => {
+          setAgentRouteStatus(status);
+          if (status.route !== 'local') setAgentStageStatus(null);
+        },
+        setAgentStageStatus,
       );
     } catch (cause) {
       setMessages(messages);
@@ -869,6 +953,16 @@ export default function ChatScreen() {
           <Text selectable style={{ color: isUser ? colors.primaryForeground : colors.foreground, fontSize: 15, lineHeight: 22 }}>
             {item.content || (busy && item.role === 'assistant' ? 'Badboy ভাবছে…' : '')}
           </Text>
+          {item.attachments?.length ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+              {item.attachments.map((attachment) => (
+                <View key={attachment.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5, backgroundColor: isUser ? 'rgba(255,255,255,0.16)' : colors.secondary }}>
+                  <Feather name="paperclip" size={12} color={isUser ? colors.primaryForeground : colors.mutedForeground} />
+                  <Text numberOfLines={1} style={{ maxWidth: 150, color: isUser ? colors.primaryForeground : colors.foreground, fontSize: 11 }}>{attachment.name}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
           {ytIntent ? (
             <Pressable
               onPress={() => void openYouTubeUrl(ytIntent.url, ytIntent.appUrl)}
@@ -1000,7 +1094,7 @@ export default function ChatScreen() {
           <Feather name="hexagon" size={18} color={colors.primary} />
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={[styles.providerLabel, { color: colors.mutedForeground }]}>PROVIDER</Text>
-            <Text numberOfLines={1} style={[styles.providerValue, { color: colors.foreground }]}>OpenRouter</Text>
+            <Text numberOfLines={1} style={[styles.providerValue, { color: colors.foreground }]}>{settings.localOmniRouteEnabled ? 'Local OmniRoute' : settings.aiProvider && settings.aiProvider !== 'server' ? settings.aiProvider : 'Server AI'}</Text>
           </View>
           <Feather name="chevron-down" size={13} color={colors.primary} />
         </Pressable>
@@ -1009,7 +1103,7 @@ export default function ChatScreen() {
           <Feather name="cpu" size={18} color={colors.primary} />
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={[styles.providerLabel, { color: colors.mutedForeground }]}>MODEL</Text>
-            <Text numberOfLines={1} style={[styles.providerValue, { color: colors.foreground }]}>Auto Free Model</Text>
+            <Text numberOfLines={1} style={[styles.providerValue, { color: colors.foreground }]}>{settings.localOmniRouteEnabled ? settings.localOmniRouteModel || 'Model not set' : settings.aiModel || 'Auto Free Model'}</Text>
           </View>
           <Feather name="chevron-down" size={13} color={colors.primary} />
         </Pressable>
@@ -1255,6 +1349,23 @@ export default function ChatScreen() {
         />
       )}
 
+      {agentStageStatus ? (
+        <View style={{ paddingHorizontal: 14, paddingBottom: 5 }}>
+          <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>
+            {agentStageStatus.stage === 'tool-calling' ? 'Tool Calling' : agentStageStatus.stage.charAt(0).toUpperCase() + agentStageStatus.stage.slice(1)} · {agentStageStatus.status === 'started' ? 'চলছে' : agentStageStatus.status === 'completed' ? 'সম্পন্ন' : 'ব্যর্থ'}
+          </Text>
+        </View>
+      ) : null}
+
+      {agentRouteStatus ? (
+        <View style={{ paddingHorizontal: 14, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+          <Feather name={agentRouteStatus.route === 'local' ? 'smartphone' : agentRouteStatus.route === 'free-fallback' ? 'cloud' : 'server'} size={13} color={agentRouteStatus.route === 'free-fallback' ? '#d97706' : colors.mutedForeground} />
+          <Text numberOfLines={2} style={{ flex: 1, color: colors.mutedForeground, fontSize: 11 }}>
+            {agentRouteStatus.route === 'local' ? 'Local OmniRoute · on-device' : agentRouteStatus.route === 'free-fallback' ? 'Free API backup · ' + (agentRouteStatus.reason ?? 'Local router unavailable') : (agentRouteStatus.provider ?? 'Server AI')}
+          </Text>
+        </View>
+      ) : null}
+
       {error ? (
         <View style={[styles.errorBox, { backgroundColor: colors.destructive }]}>
           <Feather name="alert-triangle" size={16} color={colors.destructiveForeground} />
@@ -1289,6 +1400,30 @@ export default function ChatScreen() {
           },
         ]}
       >
+        <Pressable
+          onPress={() => void pickChatAttachment()}
+          disabled={attachmentBusy || (pendingAttachments?.length ?? 0) >= 4 || busy}
+          accessibilityRole="button"
+          accessibilityLabel="ছবি বা ফাইল সংযুক্ত করুন"
+          style={[styles.roundButton, { backgroundColor: colors.secondary, opacity: attachmentBusy || busy ? 0.5 : 1 }]}
+        >
+          {attachmentBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <Feather name="paperclip" size={17} color={colors.foreground} />}
+        </Pressable>
+        {pendingAttachments?.length ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, maxWidth: 110 }}>
+            {pendingAttachments.map((attachment) => (
+              <Pressable key={attachment.reference.id} onPress={() => {
+                setPendingAttachments((current) => (current ?? []).filter((item) => item.reference.id !== attachment.reference.id));
+                void deleteAttachment(attachment.reference.id).catch((cause) => {
+                  setPendingAttachments((current) => [...(current ?? []), attachment].slice(0, 4));
+                  setError(cause instanceof Error ? cause.message : 'Attachment মুছতে সমস্যা হয়েছে।');
+                });
+              }} accessibilityRole="button" accessibilityLabel={attachment.reference.name + ' সরান'} style={{ paddingHorizontal: 6, paddingVertical: 4, borderRadius: 7, backgroundColor: colors.secondary }}>
+                <Text numberOfLines={1} style={{ color: colors.foreground, fontSize: 9, maxWidth: 90 }}>{attachment.reference.name} ×</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
         <TextInput
           value={draft}
           onChangeText={setDraft}
@@ -1321,10 +1456,10 @@ export default function ChatScreen() {
         </Pressable>
         <Pressable
           onPress={() => void sendMessage(draft)}
-          disabled={!draft.trim() || busy}
+          disabled={(!draft.trim() && !(pendingAttachments?.length ?? 0)) || busy || attachmentBusy}
           accessibilityRole="button"
           accessibilityLabel="পাঠান"
-          style={[styles.roundButton, { backgroundColor: colors.primary, opacity: !draft.trim() || busy ? 0.4 : 1 }]}
+          style={[styles.roundButton, { backgroundColor: colors.primary, opacity: (!draft.trim() && !(pendingAttachments?.length ?? 0)) || busy || attachmentBusy ? 0.4 : 1 }]}
         >
           {busy ? <ActivityIndicator size="small" color={colors.primaryForeground} /> : <Feather name="arrow-up" size={20} color={colors.primaryForeground} />}
         </Pressable>

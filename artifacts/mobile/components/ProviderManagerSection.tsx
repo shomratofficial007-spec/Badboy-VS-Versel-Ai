@@ -1,6 +1,6 @@
 import { Feather } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { useAssistant } from '@/context/AssistantContext';
 import { useColors } from '@/hooks/useColors';
 import {
@@ -11,7 +11,12 @@ import {
   saveProviderApiKey,
   normalizeProviderBaseUrl,
   type AIProviderId,
+  saveLocalOmniRouteApiKey,
+  getLocalOmniRouteApiKey,
+  deleteLocalOmniRouteApiKey,
+  getProviderApiKey as getStoredProviderApiKey,
 } from '@/lib/assistant/providerSettings';
+import { isFreeOpenRouterModel, normalizeLocalOmniRouteBaseUrl } from '@/lib/assistant/localOmniRouteCore';
 
 const PROVIDERS: Array<{ id: AIProviderId; label: string }> = [
   { id: 'server', label: 'Server AI' },
@@ -33,6 +38,28 @@ export function ProviderManagerSection() {
   const [fallbackProvider, setFallbackProvider] = useState(settings.aiFallbackProvider ?? 'none');
   const [fallbackModel, setFallbackModel] = useState(settings.aiFallbackModel ?? '');
   const [fallbackKeyConfigured, setFallbackKeyConfigured] = useState(false);
+  const [localUrl, setLocalUrl] = useState(settings.localOmniRouteBaseUrl ?? '');
+  const [localModel, setLocalModel] = useState(settings.localOmniRouteModel ?? '');
+  const [localFallbackModel, setLocalFallbackModel] = useState(settings.localOmniRouteFallbackModel ?? 'openrouter/free');
+  const [localKeyDraft, setLocalKeyDraft] = useState('');
+  const [localKeyConfigured, setLocalKeyConfigured] = useState(false);
+  const [freeBackupKeyConfigured, setFreeBackupKeyConfigured] = useState(false);
+
+  useEffect(() => {
+    setLocalUrl(settings.localOmniRouteBaseUrl ?? '');
+    setLocalModel(settings.localOmniRouteModel ?? '');
+    setLocalFallbackModel(settings.localOmniRouteFallbackModel ?? 'openrouter/free');
+    let active = true;
+    void Promise.all([getLocalOmniRouteApiKey(), getStoredProviderApiKey('openrouter')]).then(([localKey, backupKey]) => {
+      if (active) {
+        setLocalKeyConfigured(Boolean(localKey));
+        setFreeBackupKeyConfigured(Boolean(backupKey));
+      }
+    }).catch(() => {
+      if (active) { setLocalKeyConfigured(false); setFreeBackupKeyConfigured(false); }
+    });
+    return () => { active = false; };
+  }, [settings.localOmniRouteBaseUrl, settings.localOmniRouteModel, settings.localOmniRouteFallbackModel]);
 
   useEffect(() => {
     setBaseUrl(settings.aiBaseUrl || preset?.baseUrl || '');
@@ -83,6 +110,7 @@ export function ProviderManagerSection() {
     try {
       await saveProviderApiKey(providerId, keyDraft);
       setKeyConfigured(true);
+      if (providerId === 'openrouter') setFreeBackupKeyConfigured(true);
       setKeyDraft('');
       Alert.alert('সংরক্ষিত', 'API Key ফোনের Secure Storage-এ সংরক্ষণ হয়েছে।');
     } catch (cause) {
@@ -97,6 +125,7 @@ export function ProviderManagerSection() {
     try {
       await deleteProviderApiKey(providerId);
       setKeyConfigured(false);
+      if (providerId === 'openrouter') setFreeBackupKeyConfigured(false);
       setKeyDraft('');
       Alert.alert('মুছে ফেলা হয়েছে', 'এই Provider-এর API Key সরানো হয়েছে।');
     } catch (cause) {
@@ -121,6 +150,48 @@ export function ProviderManagerSection() {
     }
   };
 
+  const saveLocalConfiguration = () => {
+    try {
+      const normalized = normalizeLocalOmniRouteBaseUrl(localUrl);
+      if (!localModel.trim() || !/^[\w./:-]{1,200}$/.test(localModel.trim())) throw new Error('Local OmniRoute Model ID সঠিক নয়।');
+      if (!localKeyConfigured) throw new Error('OmniRoute-এর Bearer API Key SecureStore-এ সংরক্ষণ করুন।');
+      if (!isFreeOpenRouterModel(localFallbackModel) || !freeBackupKeyConfigured) {
+        throw new Error('Backup-এর জন্য OpenRouter SecureStore-এ Key এবং openrouter/free বা :free Model প্রয়োজন।');
+      }
+      updateSettings({
+        localOmniRouteBaseUrl: normalized,
+        localOmniRouteModel: localModel.trim(),
+        localOmniRouteFallbackModel: localFallbackModel.trim(),
+        localOmniRouteFallbackEnabled: true,
+      });
+      Alert.alert('Local OmniRoute সংরক্ষিত', 'লোকাল Router configuration এই ফোনে সংরক্ষণ হয়েছে।');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Local OmniRoute configuration সঠিক নয়।');
+    }
+  };
+
+  const saveLocalKey = async () => {
+    if (!localKeyDraft.trim()) return;
+    setBusy(true);
+    try {
+      await saveLocalOmniRouteApiKey(localKeyDraft);
+      setLocalKeyConfigured(true);
+      setLocalKeyDraft('');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Local API Key সংরক্ষণ করা যায়নি।');
+    } finally { setBusy(false); }
+  };
+
+  const removeLocalKey = async () => {
+    try {
+      await deleteLocalOmniRouteApiKey();
+      setLocalKeyConfigured(false);
+      setLocalKeyDraft('');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Local API Key সরানো যায়নি।');
+    }
+  };
+
   const saveSelection = () => {
     try {
       const normalizedBaseUrl = providerId === 'server' ? '' : normalizeProviderBaseUrl(baseUrl);
@@ -142,6 +213,35 @@ export function ProviderManagerSection() {
           <Text style={{ color: colors.foreground, fontSize: 16, fontWeight: '800' }}>AI Provider Manager</Text>
           <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Provider, Model, API Key ও নিজের Proxy নির্বাচন করুন</Text>
         </View>
+      </View>
+      <View style={{ borderTopWidth: 1, borderColor: colors.border, paddingTop: 12, gap: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: colors.foreground, fontWeight: '800', fontSize: 13 }}>On-device Local OmniRoute</Text>
+            <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>ফোন থেকে সরাসরি local router-এ request যাবে; Worker-এ localhost পাঠানো হবে না।</Text>
+          </View>
+          <Switch value={settings.localOmniRouteEnabled} onValueChange={(value) => updateSettings({ localOmniRouteEnabled: value, localOmniRouteFallbackEnabled: true })} />
+        </View>
+        <TextInput value={localUrl} onChangeText={setLocalUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="http://127.0.0.1:20128/v1" placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 11, padding: 10, color: colors.foreground, fontSize: 12 }} />
+        <TextInput value={localModel} onChangeText={setLocalModel} autoCapitalize="none" autoCorrect={false} placeholder="Local model ID" placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 11, padding: 10, color: colors.foreground, fontSize: 12 }} />
+        <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>OmniRoute-এর /v1/models থেকে exact Model ID দিন; ছবি বুঝতে vision-capable model লাগবে।</Text>
+        <TextInput value={localKeyDraft} onChangeText={setLocalKeyDraft} secureTextEntry autoCapitalize="none" autoCorrect={false} placeholder={localKeyConfigured ? 'Local OmniRoute Bearer Key saved · replace if needed' : 'Required OmniRoute Bearer API Key'} placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 11, padding: 10, color: colors.foreground, fontSize: 12 }} />
+        <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>OmniRoute-এর Authorization: Bearer key প্রয়োজন; Key শুধু এই ফোনের Secure Storage-এ থাকবে।</Text>
+        <View style={{ flexDirection: 'row', gap: 7 }}>
+          <Pressable onPress={() => void saveLocalKey()} disabled={!localKeyDraft.trim() || busy} style={{ flex: 1, minHeight: 38, borderRadius: 10, backgroundColor: colors.secondary, alignItems: 'center', justifyContent: 'center', opacity: !localKeyDraft.trim() || busy ? 0.5 : 1 }}>
+            <Text style={{ color: colors.secondaryForeground, fontSize: 11, fontWeight: '700' }}>Save Local Key</Text>
+          </Pressable>
+          {localKeyConfigured ? <Pressable onPress={() => void removeLocalKey()} style={{ paddingHorizontal: 10, borderRadius: 10, borderWidth: 1, borderColor: colors.destructive, justifyContent: 'center' }}><Text style={{ color: colors.destructive, fontSize: 11 }}>Remove Key</Text></Pressable> : null}
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '600' }}>Free-only API backup</Text>
+          <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '800' }}>ALWAYS ON</Text>
+        </View>
+        <TextInput value={localFallbackModel} onChangeText={setLocalFallbackModel} autoCapitalize="none" autoCorrect={false} placeholder="openrouter/free" placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 11, padding: 10, color: colors.foreground, fontSize: 12 }} />
+        <Text style={{ color: freeBackupKeyConfigured ? colors.primary : colors.mutedForeground, fontSize: 10 }}>{freeBackupKeyConfigured ? 'OpenRouter backup key SecureStore-এ আছে।' : 'Backup ব্যবহারের জন্য Provider Manager-এ OpenRouter key সংরক্ষণ করুন।'}</Text>
+        <Pressable onPress={saveLocalConfiguration} style={{ minHeight: 40, borderRadius: 10, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ color: colors.primaryForeground, fontWeight: '800', fontSize: 12 }}>Save Local OmniRoute</Text>
+        </Pressable>
       </View>
       <Text style={{ color: colors.mutedForeground, fontSize: 11, fontWeight: '700' }}>PROVIDER</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>

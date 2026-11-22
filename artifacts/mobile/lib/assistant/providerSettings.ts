@@ -32,6 +32,32 @@ export const saveProviderApiKey = (providerId: AIProviderId, apiKey: string) => 
 export const getProviderApiKey = (providerId: AIProviderId) => providerKeyStore.get(providerId);
 export const deleteProviderApiKey = (providerId: AIProviderId) => providerKeyStore.delete(providerId);
 
+const LOCAL_OMNIROUTE_KEY = 'badboy-ai-local-omniroute-key-v1';
+
+/** Local router credentials stay in device SecureStore and never pass through the Worker. */
+export async function saveLocalOmniRouteApiKey(apiKey: string): Promise<void> {
+  const clean = apiKey.trim();
+  if (!clean || clean.length > 4096 || /[\r\n]/.test(clean)) {
+    throw new Error('Local OmniRoute API Key-এর ফরম্যাট সঠিক নয়।');
+  }
+  if (!(await SecureStore.isAvailableAsync())) {
+    throw new Error('এই ডিভাইসে Secure Storage পাওয়া যাচ্ছে না; Local OmniRoute Key সংরক্ষণ করা হয়নি।');
+  }
+  await SecureStore.setItemAsync(LOCAL_OMNIROUTE_KEY, clean);
+}
+
+export async function getLocalOmniRouteApiKey(): Promise<string | null> {
+  if (!(await SecureStore.isAvailableAsync())) return null;
+  return SecureStore.getItemAsync(LOCAL_OMNIROUTE_KEY);
+}
+
+export async function deleteLocalOmniRouteApiKey(): Promise<void> {
+  if (!(await SecureStore.isAvailableAsync())) {
+    throw new Error('এই ডিভাইসে Secure Storage পাওয়া যাচ্ছে না।');
+  }
+  await SecureStore.deleteItemAsync(LOCAL_OMNIROUTE_KEY);
+}
+
 /**
  * Fetch the selected provider's model list through the authenticated Cloudflare Worker.
  * The API key stays in device SecureStore and is forwarded only for this request;

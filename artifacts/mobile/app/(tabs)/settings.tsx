@@ -816,10 +816,15 @@ export default function SettingsScreen() {
   const settingsScrollRef = useRef<any>(null);
   const settingsSectionOffsets = useRef<Record<string, number>>({});
   const requestedSection = Array.isArray(routeParams.section) ? routeParams.section[0] : routeParams.section;
+  const lastAutoScrolledSection = useRef<string | undefined>(undefined);
   const recordSettingsSection = (key: string) => (event: { nativeEvent: { layout: { y: number } } }) => {
     settingsSectionOffsets.current[key] = event.nativeEvent.layout.y;
-    if (requestedSection === key) {
-      setTimeout(() => settingsScrollRef.current?.scrollTo({ y: event.nativeEvent.layout.y, animated: true }), 0);
+    if (requestedSection === key && lastAutoScrolledSection.current !== requestedSection) {
+      // Layout can fire repeatedly (for example after text measurement or rotation).
+      // Scroll once per requested section to avoid repeatedly jumping the Settings list.
+      lastAutoScrolledSection.current = requestedSection;
+      const targetY = event.nativeEvent.layout.y;
+      setTimeout(() => settingsScrollRef.current?.scrollTo({ y: targetY, animated: true }), 0);
     }
   };
   const [activeSettingsCategory, setActiveSettingsCategory] = useState<string | null>(null);

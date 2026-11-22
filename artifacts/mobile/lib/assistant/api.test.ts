@@ -6,6 +6,8 @@ let fetchHandler: (...args: any[]) => Promise<any> = async () => {
 };
 let fileContent = '';
 const requestedFiles: string[] = [];
+let uploadHandler: (...args: any[]) => Promise<any> = async () => ({ status: 201, body: JSON.stringify({ id: '123e4567-e89b-12d3-a456-426614174000', name: 'photo.png', mimeType: 'image/png', size: 9 }) });
+const uploadCalls: any[] = [];
 
 mock.module('expo/fetch', {
   namedExports: { fetch: (...args: any[]) => fetchHandler(...args) },
@@ -13,6 +15,8 @@ mock.module('expo/fetch', {
 mock.module('expo-file-system/legacy', {
   namedExports: {
     EncodingType: { Base64: 'base64' },
+    FileSystemUploadType: { MULTIPART: 1 },
+    uploadAsync: (...args: any[]) => { uploadCalls.push(args); return uploadHandler(...args); },
     readAsStringAsync: async (uri: string, options: unknown) => {
       requestedFiles.push(uri);
       assert.deepEqual(options, { encoding: 'base64' });
@@ -31,8 +35,10 @@ mock.module('./providerSettings.ts', {
     AI_PROVIDER_PRESETS: [
       { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
       { id: 'groq', label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1' },
+      { id: 'openrouter', label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
     ],
     getProviderApiKey: async () => 'provider-key-test',
+    getLocalOmniRouteApiKey: async () => 'local-key-test',
     normalizeProviderBaseUrl: (value: string) => value.endsWith('/') ? value.slice(0, -1) : value,
   },
 });
@@ -59,6 +65,14 @@ function streamResponse(chunks: string[], status = 200) {
 
 function authFrom(init: any) {
   return new Headers(init?.headers).get('Authorization');
+}
+
+function isWorkerRequestUrl(value: string): boolean {
+  try {
+    return new URL(value).origin === 'https://worker.example';
+  } catch {
+    return false;
+  }
 }
 
 test('streamReply sends owner-authenticated request and parses split SSE frames', async () => {
@@ -153,6 +167,59 @@ test('streamAgenticReply sends selected provider configuration to the full agent
   assert.deepEqual(chunks, ['orchestrated']);
 });
 
+test('uploadAgentAttachment uses owner-authenticated multipart upload and validates the stored reference', async () => {
+  const { uploadAgentAttachment } = await apiPromise;
+  uploadCalls.length = 0;
+  uploadHandler = async (_url, _uri, options) => {
+    assert.equal(options.httpMethod, 'POST');
+    assert.equal(options.fieldName, 'file');
+    assert.equal(options.uploadType, 1);
+    assert.equal(new Headers(options.headers).get('Authorization'), 'Bearer owner-token-test');
+    return { status: 201, body: JSON.stringify({ id: '123e4567-e89b-12d3-a456-426614174000', name: 'photo.png', mimeType: 'image/png', size: 9 }) };
+  };
+  const uploaded = await uploadAgentAttachment('file:///photo.png', 'photo.png', 'image/png');
+  assert.deepEqual(uploaded, { id: '123e4567-e89b-12d3-a456-426614174000', name: 'photo.png', mimeType: 'image/png', size: 9 });
+  assert.equal(uploadCalls.length, 1);
+  uploadHandler = async () => ({ status: 503, body: JSON.stringify({ error: 'storage unavailable' }) });
+  await assert.rejects(uploadAgentAttachment('file:///photo.png', 'photo.png', 'image/png'), /storage unavailable/);
+});
+
+test('downloadAgentAttachment tolerates malformed percent-encoding in filename headers', async () => {
+  const { downloadAgentAttachment } = await apiPromise;
+  fetchHandler = async (_input, init) => {
+    assert.equal(authFrom(init), 'Bearer owner-token-test');
+    return new Response(new TextEncoder().encode('safe attachment text'), {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/plain',
+        'Content-Disposition': "attachment; filename*=UTF-8''bad%ZZname.txt",
+      },
+    });
+  };
+  const downloaded = await downloadAgentAttachment('123e4567-e89b-12d3-a456-426614174000');
+  assert.equal(downloaded.reference.name, 'attachment');
+  assert.equal(downloaded.text, 'safe attachment text');
+});
+
+test('streamAgenticReply sends only validated owner attachment references to the Agentic Worker', async () => {
+  const { streamAgenticReply } = await apiPromise;
+  let sent: any;
+  fetchHandler = async (_input, init) => {
+    sent = JSON.parse(String(init.body));
+    return streamResponse(['data: {"content":"attached"}\n\n', 'data: [DONE]\n\n']);
+  };
+  const attachment = {
+    reference: { id: '123e4567-e89b-12d3-a456-426614174000', name: 'photo.png', mimeType: 'image/png', size: 9 },
+    base64: 'iVBORw0KGgo=',
+  };
+  await streamAgenticReply('describe this', { personality: 'helpful', voiceLanguage: 'en-US', developerMode: false } as any, [], () => {}, '', '', [], [attachment]);
+  assert.deepEqual(sent.attachments, ['123e4567-e89b-12d3-a456-426614174000']);
+  await assert.rejects(
+    streamAgenticReply('describe this', { personality: 'helpful', voiceLanguage: 'en-US', developerMode: false } as any, [], () => {}, '', '', [], [{ ...attachment, reference: { ...attachment.reference, id: 'not-an-id' } }]),
+    /বৈধ attachment/,
+  );
+});
+
 test('streamAgenticReply uses configured fallback only when primary fails before final text', async () => {
   const { streamAgenticReply } = await apiPromise;
   const requests: Array<{ providerId: string; model: string; key: string | null }> = [];
@@ -174,6 +241,221 @@ test('streamAgenticReply uses configured fallback only when primary fails before
   ]);
   assert.ok(requests.every((request) => request.key === 'provider-key-test'));
   assert.deepEqual(chunks, ['fallback answer']);
+});
+
+test('streamAgenticReply runs every Agentic stage directly through Local OmniRoute and executes tools on-device', async () => {
+  const { streamAgenticReply } = await apiPromise;
+  const requests: Array<{ url: string; auth: string | null; body: any }> = [];
+  fetchHandler = async (input, init) => {
+    const url = String(input);
+    const headers = new Headers(init?.headers);
+    const body = JSON.parse(String(init?.body));
+    requests.push({ url, auth: headers.get('Authorization'), body });
+    if (body.stream) {
+      return streamResponse([
+        'data: {"choices":[{"delta":{"content":"Local "}}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"answer"}}]}\n\n',
+        'data: [DONE]\n\n',
+      ]);
+    }
+    const system = String(body.messages[0]?.content ?? '');
+    if (system.includes('Badboy Planner')) {
+      return jsonResponse({ choices: [{ message: { content: JSON.stringify({ goal: 'হিসাব', steps: [{ id: '1', task: 'হিসাব', success_criteria: 'ফল পাওয়া' }], risks: [] }) } }] });
+    }
+    if (system.includes('Badboy Tool Calling Agent')) {
+      if (body.messages.some((item: any) => item.role === 'tool')) {
+        return jsonResponse({ choices: [{ message: { content: 'ফলাফল ৪' } }] });
+      }
+      return jsonResponse({ choices: [{ message: { content: '', tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'calculator', arguments: '{"expression":"2 + 2"}' } }] } }] });
+    }
+    if (system.includes('Badboy Reviewer')) {
+      return jsonResponse({ choices: [{ message: { content: 'হিসাব সঠিক' } }] });
+    }
+    throw new Error('Unexpected Local OmniRoute stage');
+  };
+  const chunks: string[] = [];
+  const statuses: any[] = [];
+  const stages: any[] = [];
+  await streamAgenticReply('2 + 2 কত?', {
+    localOmniRouteEnabled: true,
+    localOmniRouteBaseUrl: 'http://127.0.0.1:8765/v1',
+    localOmniRouteModel: 'qwen-local',
+    localOmniRouteFallbackEnabled: false,
+    personality: 'helpful',
+    voiceLanguage: 'bn-BD',
+    developerMode: false,
+  } as any, [], (chunk) => chunks.push(chunk), '', '', [], [{
+    reference: { id: '123e4567-e89b-12d3-a456-426614174000', name: 'photo.png', mimeType: 'image/png', size: 9 },
+    base64: 'iVBORw0KGgo=',
+  }, {
+    reference: { id: '123e4567-e89b-12d3-a456-426614174001', name: 'notes.md', mimeType: 'text/markdown', size: 14 },
+    text: '# Notes\nhello',
+  }], (status) => statuses.push(status), (status) => stages.push(status));
+  assert.deepEqual(chunks, ['Local ', 'answer']);
+  assert.deepEqual(statuses, [{ route: 'local' }]);
+  assert.deepEqual(stages.filter((item) => item.status === 'started').map((item) => item.stage), ['planner', 'tool-calling', 'executor', 'tool-calling', 'reviewer', 'synthesizer']);
+  const userMessage = requests[0].body.messages.find((item: any) => item.role === 'user');
+  assert.ok(Array.isArray(userMessage.content));
+  assert.deepEqual(userMessage.content[1], { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' } });
+  assert.equal(userMessage.content[2].type, 'text');
+  assert.match(userMessage.content[2].text, /Attachment notes.md/);
+  assert.match(userMessage.content[2].text, /# Notes\nhello/);
+  assert.ok(requests.every((request) => request.url === 'http://127.0.0.1:8765/v1/chat/completions'));
+  assert.ok(requests.every((request) => request.auth === 'Bearer local-key-test'));
+  assert.ok(requests.every((request) => !request.body.provider));
+  assert.ok(requests.every((request) => request.body.model === 'qwen-local'));
+  assert.equal(requests.some((request) => request.url.includes('worker.example')), false);
+});
+
+test('Local OmniRoute failure uses only the configured OpenRouter free backup and reports the reason', async () => {
+  const { streamAgenticReply } = await apiPromise;
+  const requests: Array<{ url: string; body: any; headers: Headers }> = [];
+  fetchHandler = async (input, init) => {
+    const url = String(input);
+    const headers = new Headers(init?.headers);
+    const body = init?.body ? JSON.parse(String(init.body)) : {};
+    requests.push({ url, body, headers });
+    if (url.startsWith('http://127.0.0.1:8765')) return jsonResponse({ error: { message: 'Local router unavailable' } }, 503);
+    return streamResponse(['data: {"content":"free backup answer"}\n\n', 'data: [DONE]\n\n']);
+  };
+  const chunks: string[] = [];
+  const statuses: any[] = [];
+  await streamAgenticReply('hello', {
+    localOmniRouteEnabled: true,
+    localOmniRouteBaseUrl: 'http://127.0.0.1:8765/v1',
+    localOmniRouteModel: 'qwen-local',
+    localOmniRouteFallbackEnabled: true,
+    localOmniRouteFallbackModel: 'openrouter/free',
+    aiProvider: 'server',
+    personality: 'helpful',
+    voiceLanguage: 'bn-BD',
+    developerMode: false,
+  } as any, [], (chunk) => chunks.push(chunk), '', '', [], [], (status) => statuses.push(status));
+  const backup = requests.find((request) => request.url === 'https://worker.example/api/assistant/agent');
+  assert.ok(backup);
+  assert.deepEqual(backup?.body.provider, {
+    providerId: 'openrouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    model: 'openrouter/free',
+  });
+  assert.equal(backup?.headers.get('X-Provider-Key'), 'provider-key-test');
+  assert.equal(backup?.headers.get('Authorization'), 'Bearer owner-token-test');
+  assert.deepEqual(chunks, ['free backup answer']);
+  assert.equal(statuses[0].route, 'local');
+  assert.equal(statuses[1].route, 'free-fallback');
+  assert.match(statuses[1].reason, /Local router unavailable/);
+});
+
+test('Local OmniRoute never falls back to a paid model', async () => {
+  const { streamAgenticReply } = await apiPromise;
+  const urls: string[] = [];
+  fetchHandler = async (input) => {
+    urls.push(String(input));
+    return jsonResponse({ error: { message: 'offline' } }, 503);
+  };
+  await assert.rejects(
+    streamAgenticReply('hello', {
+      localOmniRouteEnabled: true,
+      localOmniRouteBaseUrl: 'http://127.0.0.1:8765/v1',
+      localOmniRouteModel: 'qwen-local',
+      localOmniRouteFallbackEnabled: true,
+      localOmniRouteFallbackModel: 'gpt-4o',
+      personality: 'helpful',
+      voiceLanguage: 'bn-BD',
+      developerMode: false,
+    } as any, [], () => undefined, '', '', [], [], () => undefined),
+    /paid models are blocked/,
+  );
+  assert.ok(urls.length >= 1);
+  assert.ok(urls.every((url) => url === 'http://127.0.0.1:8765/v1/chat/completions'), 'paid or cloud fallback must never be requested');
+});
+
+test('Local OmniRoute never switches to Free API after final text has started streaming', async () => {
+  const { streamAgenticReply } = await apiPromise;
+  const urls: string[] = [];
+  const chunks: string[] = [];
+  const routes: any[] = [];
+  fetchHandler = async (input, init) => {
+    const url = String(input);
+    urls.push(url);
+    if (isWorkerRequestUrl(url)) return streamResponse(['data: {"content":"must not switch"}\n\n', 'data: [DONE]\n\n']);
+    const body = JSON.parse(String(init?.body));
+    if (body.stream) {
+      let sentPartial = false;
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (!sentPartial) {
+            sentPartial = true;
+            controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'));
+            return;
+          }
+          controller.error(new Error('local final stream interrupted'));
+        },
+      });
+      return new Response(stream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    }
+    const system = String(body.messages[0]?.content ?? '');
+    if (system.includes('Badboy Planner')) {
+      return jsonResponse({ choices: [{ message: { content: JSON.stringify({ goal: 'test', steps: [{ task: 'test', success_criteria: 'test' }], risks: [] }) } }] });
+    }
+    if (system.includes('Badboy Tool Calling Agent')) return jsonResponse({ choices: [{ message: { content: 'No tools needed.' } }] });
+    if (system.includes('Badboy Reviewer')) return jsonResponse({ choices: [{ message: { content: 'review passed' } }] });
+    throw new Error('Unexpected local stage');
+  };
+  await assert.rejects(
+    streamAgenticReply('একটি উত্তর দাও', {
+      localOmniRouteEnabled: true,
+      localOmniRouteBaseUrl: 'http://127.0.0.1:8765/v1',
+      localOmniRouteModel: 'qwen-local',
+      localOmniRouteFallbackEnabled: true,
+      localOmniRouteFallbackModel: 'openrouter/free',
+      personality: 'helpful',
+      voiceLanguage: 'bn-BD',
+      developerMode: false,
+    } as any, [], (chunk) => chunks.push(chunk), '', '', [], [], (status) => routes.push(status)),
+    /local final stream interrupted/,
+  );
+  assert.deepEqual(chunks, ['partial']);
+  assert.ok(routes.length >= 1 && routes.every((status) => status.route === 'local'), 'no Free API route may be selected after output starts');
+  assert.ok(urls.length > 0 && urls.every((url) => url === 'http://127.0.0.1:8765/v1/chat/completions'));
+});
+
+test('Local OmniRoute does not replay the cloud workflow after a tool has executed', async () => {
+  const { streamAgenticReply } = await apiPromise;
+  const urls: string[] = [];
+  let executorCalls = 0;
+  fetchHandler = async (input, init) => {
+    const url = String(input);
+    urls.push(url);
+    if (isWorkerRequestUrl(url)) return streamResponse(['data: {"content":"must not replay"}\n\n', 'data: [DONE]\n\n']);
+    const body = JSON.parse(String(init?.body));
+    const system = String(body.messages[0]?.content ?? '');
+    if (system.includes('Badboy Planner')) {
+      return jsonResponse({ choices: [{ message: { content: JSON.stringify({ goal: 'test', steps: [{ task: 'test', success_criteria: 'test' }], risks: [] }) } }] });
+    }
+    if (system.includes('Badboy Tool Calling Agent')) {
+      executorCalls += 1;
+      if (executorCalls === 1) {
+        return jsonResponse({ choices: [{ message: { content: '', tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'calculator', arguments: '{"expression":"2+2"}' } }] } }] });
+      }
+      return jsonResponse({ error: { message: 'router disconnected' } }, 503);
+    }
+    throw new Error('Unexpected stage');
+  };
+  await assert.rejects(
+    streamAgenticReply('2+2', {
+      localOmniRouteEnabled: true,
+      localOmniRouteBaseUrl: 'http://127.0.0.1:8765/v1',
+      localOmniRouteModel: 'qwen-local',
+      localOmniRouteFallbackEnabled: true,
+      localOmniRouteFallbackModel: 'openrouter/free',
+      personality: 'helpful',
+      voiceLanguage: 'bn-BD',
+      developerMode: false,
+    } as any, [], () => undefined, '', '', [], [], () => undefined),
+    /not replayed on a cloud provider/,
+  );
+  assert.equal(urls.some((url) => isWorkerRequestUrl(url)), false);
 });
 
 test('streamAgenticReply sends owner-authenticated bounded history and consumes agentic SSE', async () => {
@@ -199,7 +481,7 @@ test('streamAgenticReply sends owner-authenticated bounded history and consumes 
     [{ role: 'user', content: 'আগের প্রশ্ন' }],
     (chunk) => chunks.push(chunk),
     'Project note: preserve all current features.',
-    'Skill: Project Planner\\nInstructions: split work into tested steps.',
+    'Skill: Project Planner\nInstructions: split work into tested steps.',
     ['web-research', 'discord-history'],
   );
   assert.equal(url, 'https://worker.example/api/assistant/agent');

@@ -110,6 +110,23 @@ test('fetchProviderModels reports Worker errors and rejects invalid model payloa
   await assert.rejects(fetchProviderModels('https://api.openai.com/v1', 'provider-key', 'openai'), /OpenAI-compatible \/models response/);
 });
 
+test('Local OmniRoute API keys stay in SecureStore and are rejected when storage is unavailable', async () => {
+  const { saveLocalOmniRouteApiKey, getLocalOmniRouteApiKey, deleteLocalOmniRouteApiKey } = await providerSettingsPromise;
+  secureStoreAvailable = true;
+  secureValues.clear();
+  await saveLocalOmniRouteApiKey('  local-router-secret  ');
+  assert.equal(secureValues.get('badboy-ai-local-omniroute-key-v1'), 'local-router-secret');
+  assert.equal(await getLocalOmniRouteApiKey(), 'local-router-secret');
+  await assert.rejects(() => saveLocalOmniRouteApiKey('local\nkey'));
+  secureStoreAvailable = false;
+  assert.equal(await getLocalOmniRouteApiKey(), null);
+  await assert.rejects(() => saveLocalOmniRouteApiKey('local-router-secret'));
+  await assert.rejects(() => deleteLocalOmniRouteApiKey());
+  secureStoreAvailable = true;
+  await deleteLocalOmniRouteApiKey();
+  assert.equal(await getLocalOmniRouteApiKey(), null);
+});
+
 test('provider API key helpers persist and remove keys through SecureStore', async () => {
   const { saveProviderApiKey, getProviderApiKey, deleteProviderApiKey } = await providerSettingsPromise;
   secureStoreAvailable = true;
