@@ -364,7 +364,7 @@ export default function ChatScreen() {
 
   const sendMessage = useCallback(async (rawText: string) => {
     const text = rawText.trim();
-    if ((!text && !(pendingAttachments?.length ?? 0)) || busy) return;
+    if ((!text && !(pendingAttachments?.length ?? 0)) || busy || attachmentBusy) return;
     Keyboard.dismiss();
     setDraft('');
     setError(null);
@@ -528,7 +528,7 @@ export default function ChatScreen() {
         });
       }
     }
-  }, [awaitingSongName, busy, messages, pendingAttachments, resumeWakeWord, selectedLang, setError, setMessages, settings, speakVoiceReply, voiceMode]);
+  }, [attachmentBusy, awaitingSongName, busy, messages, pendingAttachments, resumeWakeWord, selectedLang, setError, setMessages, settings, speakVoiceReply, voiceMode]);
 
   const requestImprovement = useCallback(async () => {
     const lastUserMessage = [...messages].reverse().find((item) => item.role === 'user');
@@ -1478,10 +1478,10 @@ export default function ChatScreen() {
         </Pressable>
         <Pressable
           onPress={() => void sendMessage(draft)}
-          disabled={(!draft.trim() && !(pendingAttachments?.length ?? 0)) || busy}
+          disabled={(!draft.trim() && !(pendingAttachments?.length ?? 0)) || busy || attachmentBusy}
           accessibilityRole="button"
           accessibilityLabel="পাঠান"
-          style={[styles.roundButton, { backgroundColor: colors.primary, opacity: (!draft.trim() && !(pendingAttachments?.length ?? 0)) || busy ? 0.4 : 1 }]}
+          style={[styles.roundButton, { backgroundColor: colors.primary, opacity: (!draft.trim() && !(pendingAttachments?.length ?? 0)) || busy || attachmentBusy ? 0.4 : 1 }]}
         >
           {busy ? <ActivityIndicator size="small" color={colors.primaryForeground} /> : <Feather name="arrow-up" size={20} color={colors.primaryForeground} />}
         </Pressable>
