@@ -1359,9 +1359,12 @@ export default function ChatScreen() {
         {pendingAttachments?.length ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, maxWidth: 110 }}>
             {pendingAttachments.map((attachment) => (
-              <View key={attachment.id} style={{ paddingHorizontal: 6, paddingVertical: 4, borderRadius: 7, backgroundColor: colors.secondary }}>
-                <Text numberOfLines={1} style={{ color: colors.foreground, fontSize: 9, maxWidth: 90 }}>{attachment.name}</Text>
-              </View>
+              <Pressable key={attachment.reference.id} onPress={() => {
+                setPendingAttachments((current) => (current ?? []).filter((item) => item.reference.id !== attachment.reference.id));
+                void deleteAttachment(attachment.reference.id).catch((cause) => setError(cause instanceof Error ? cause.message : 'Attachment মুছতে সমস্যা হয়েছে।'));
+              }} accessibilityRole="button" accessibilityLabel={attachment.reference.name + ' সরান'} style={{ paddingHorizontal: 6, paddingVertical: 4, borderRadius: 7, backgroundColor: colors.secondary }}>
+                <Text numberOfLines={1} style={{ color: colors.foreground, fontSize: 9, maxWidth: 90 }}>{attachment.reference.name} ×</Text>
+              </Pressable>
             ))}
           </View>
         ) : null}
