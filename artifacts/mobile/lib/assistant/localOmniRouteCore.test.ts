@@ -82,7 +82,7 @@ test('Local OmniRoute executes Planner, Tool Calling, Executor, Reviewer and Syn
     streamFinal: async (_messages, onChunk) => { onChunk('উত্তর ৪'); },
     onChunk: (chunk) => output.push(chunk),
   });
-  assert.deepEqual(stages, ['planner', 'executor', 'reviewer', 'synthesizer']);
+  assert.deepEqual(stages, ['planner', 'tool-calling', 'executor', 'tool-calling', 'reviewer', 'synthesizer']);
   assert.deepEqual(toolCalls, ['calculator']);
   assert.deepEqual(output, ['উত্তর ৪']);
 });
