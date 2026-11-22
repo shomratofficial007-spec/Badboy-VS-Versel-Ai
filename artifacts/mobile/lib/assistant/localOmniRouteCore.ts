@@ -339,7 +339,7 @@ export async function runLocalAgenticWorkflow(input: LocalAgenticWorkflowInput):
       ...baseMessages.slice(1),
       { role: 'assistant', content: 'পরিকল্পনা:\\n' + plan },
     ];
-    let current = [...toolCallingMessages];
+    const current = [...toolCallingMessages];
     let execution = '';
     for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
       stage = 'tool-calling';
