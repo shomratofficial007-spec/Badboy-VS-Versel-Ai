@@ -332,7 +332,7 @@ async function executeLocalAgentTool(name: string, rawArguments: string): Promis
       if (args.timeMin !== undefined && (typeof args.timeMin !== 'string' || args.timeMin.length > 40 || !Number.isFinite(Date.parse(args.timeMin)) || !args.timeMin.endsWith('Z'))) {
         throw new Error('google_calendar_events accepts only an optional UTC ISO-8601 timeMin.');
       }
-      pathname = '/integrations/google-calendar/events' + (typeof args.timeMin === 'string' ? '?timeMin=' + encodeURIComponent(args.timeMin) : '');
+      pathname = '/integrations/google-calendar/events?timeMin=' + encodeURIComponent(typeof args.timeMin === 'string' ? args.timeMin : new Date().toISOString());
     } else {
       throw new Error('Tool is not in the Badboy allowlist.');
     }
