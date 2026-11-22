@@ -224,6 +224,12 @@ const MAX_TOOL_ROUNDS = 4;
 const MAX_TOOL_CALLS = 6;
 const MAX_TOOL_RESULT_CHARS = 4000;
 
+function isResponseFormatUnsupportedError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /response[_ -]?format|json[_ -]?object|structured output/i.test(message) &&
+    /unsupported|not supported|unknown parameter|unrecognized|invalid parameter/i.test(message);
+}
+
 export function normalizeStructuredAgentPlan(content: string): string | null {
   try {
     const value = JSON.parse(content) as Record<string, unknown>;
@@ -303,7 +309,8 @@ export async function runLocalAgenticWorkflow(input: LocalAgenticWorkflowInput):
     let planned: LocalAgentCompletion;
     try {
       planned = await input.requestCompletion(plannerMessages, { responseFormat: 'json_object' });
-    } catch {
+    } catch (error) {
+      if (!isResponseFormatUnsupportedError(error)) throw error;
       planned = await input.requestCompletion([
         ...plannerMessages,
         { role: 'system', content: 'Fallback: return only valid JSON. Do not use Markdown fences.' },
