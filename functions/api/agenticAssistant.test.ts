@@ -209,7 +209,7 @@ test("cloud fallback loads image attachment bytes only for the verified owner", 
     const userMessage = calls[0].messages.find((item: any) => item.role === "user");
     assert.ok(Array.isArray(userMessage.content));
     assert.equal(userMessage.content[1].type, "image_url");
-    assert.match(userMessage.content[1].image_url.url, /^data:image\\/png;base64,/);
+    assert.match(userMessage.content[1].image_url.url, /^data:image\/png;base64,/);
     const crossOwner = await handleAgenticAssistantRequest(agentRequest({
       message: "Describe this image", mode: "single", attachments: [id],
     }), { OPENROUTER_API_KEY: "server-key", AGENT_DB: db }, "owner-b");
