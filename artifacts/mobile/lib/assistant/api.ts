@@ -500,6 +500,7 @@ export async function streamAgenticReply(
       const localModel = settings.localOmniRouteModel.trim();
       if (!localModel || !/^[\w./:-]{1,200}$/.test(localModel)) throw new Error('Local OmniRoute Model ID দিন।');
       const localKey = await getLocalOmniRouteApiKey();
+      if (!localKey) throw new Error('Local OmniRoute Bearer API Key SecureStore-এ নেই।');
       const localAttachmentInputs = await Promise.all(attachments.map(async (item) => {
         if (typeof item === 'string') return downloadAgentAttachment(item);
         if ('reference' in item) {
