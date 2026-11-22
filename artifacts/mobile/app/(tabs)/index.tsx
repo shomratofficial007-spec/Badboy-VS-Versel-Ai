@@ -301,12 +301,12 @@ export default function ChatScreen() {
 
   const sendMessage = useCallback(async (rawText: string) => {
     const text = rawText.trim();
-    if (!text || busy) return;
+    if ((!text && !(pendingAttachments?.length ?? 0)) || busy) return;
     Keyboard.dismiss();
     setDraft('');
     setError(null);
 
-    const userMessage = newMessage('user', text);
+    const userMessage = newMessage('user', text || 'এই সংযুক্তিগুলো বিশ্লেষণ করো।');
     let answer = newMessage('assistant');
     let working = [...messages, userMessage, answer];
     setMessages(working);
@@ -1367,6 +1367,15 @@ export default function ChatScreen() {
         >
           {attachmentBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <Feather name="paperclip" size={17} color={colors.foreground} />}
         </Pressable>
+        {pendingAttachments?.length ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, maxWidth: 110 }}>
+            {pendingAttachments.map((attachment) => (
+              <View key={attachment.id} style={{ paddingHorizontal: 6, paddingVertical: 4, borderRadius: 7, backgroundColor: colors.secondary }}>
+                <Text numberOfLines={1} style={{ color: colors.foreground, fontSize: 9, maxWidth: 90 }}>{attachment.name}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
         <TextInput
           value={draft}
           onChangeText={setDraft}
