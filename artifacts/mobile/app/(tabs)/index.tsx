@@ -315,6 +315,50 @@ export default function ChatScreen() {
     }
   }, [attachmentBusy, pendingAttachments?.length]);
 
+  const pickChatDocument = useCallback(async () => {
+    if (attachmentBusy || (pendingAttachments?.length ?? 0) >= 4) return;
+    setAttachmentBusy(true);
+    setError(null);
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({
+        type: ['text/plain', 'text/markdown', 'text/csv', 'application/json'],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (picked.canceled || !picked.assets[0]) return;
+      const asset = picked.assets[0];
+      if (typeof asset.size === 'number' && asset.size > 1_000_000) {
+        throw new Error('ডকুমেন্ট সর্বোচ্চ ১ MB হতে পারবে।');
+      }
+      const text = await FileSystem.readAsStringAsync(asset.uri, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      if (text.length > 200_000) throw new Error('ডকুমেন্টের টেক্সট সীমা অতিক্রম করেছে।');
+      const extension = asset.name.split('.').pop()?.toLowerCase() ?? '';
+      const mimeType = asset.mimeType || ({
+        txt: 'text/plain',
+        md: 'text/markdown',
+        markdown: 'text/markdown',
+        csv: 'text/csv',
+        json: 'application/json',
+      } as Record<string, string>)[extension] || 'application/octet-stream';
+      const uploaded = await uploadAgentAttachment(asset.uri, asset.name, mimeType);
+      setPendingAttachments((current) => [...(current ?? []), { reference: uploaded, text }].slice(0, 4));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'ডকুমেন্ট সংযুক্ত করা যায়নি।');
+    } finally {
+      setAttachmentBusy(false);
+    }
+  }, [attachmentBusy, pendingAttachments?.length]);
+
+  const openAttachmentPicker = useCallback(() => {
+    Alert.alert('ফাইল সংযুক্ত করুন', 'ছবি অথবা text document নির্বাচন করুন।', [
+      { text: 'ছবি', onPress: () => void pickChatImage() },
+      { text: 'ডকুমেন্ট', onPress: () => void pickChatDocument() },
+      { text: 'বাতিল', style: 'cancel' },
+    ]);
+  }, [pickChatDocument, pickChatImage]);
+
   const sendMessage = useCallback(async (rawText: string) => {
     const text = rawText.trim();
     if ((!text && !(pendingAttachments?.length ?? 0)) || busy) return;
