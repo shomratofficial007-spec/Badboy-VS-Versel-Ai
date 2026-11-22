@@ -117,7 +117,7 @@ test('Local OmniRoute API keys stay in SecureStore and are rejected when storage
   await saveLocalOmniRouteApiKey('  local-router-secret  ');
   assert.equal(secureValues.get('badboy-ai-local-omniroute-key-v1'), 'local-router-secret');
   assert.equal(await getLocalOmniRouteApiKey(), 'local-router-secret');
-  await assert.rejects(() => saveLocalOmniRouteApiKey('local\\nkey'));
+  await assert.rejects(() => saveLocalOmniRouteApiKey('local\nkey'));
   secureStoreAvailable = false;
   assert.equal(await getLocalOmniRouteApiKey(), null);
   await assert.rejects(() => saveLocalOmniRouteApiKey('local-router-secret'));
