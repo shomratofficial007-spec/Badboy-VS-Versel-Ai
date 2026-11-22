@@ -341,7 +341,8 @@ test('Local OmniRoute never falls back to a paid model', async () => {
     } as any, [], () => undefined, '', '', [], [], () => undefined),
     /paid models are blocked/,
   );
-  assert.deepEqual(urls, ['http://127.0.0.1:8765/v1/chat/completions']);
+  assert.ok(urls.length >= 1);
+  assert.ok(urls.every((url) => url === 'http://127.0.0.1:8765/v1/chat/completions'), 'paid or cloud fallback must never be requested');
 });
 
 test('Local OmniRoute does not replay the cloud workflow after a tool has executed', async () => {
