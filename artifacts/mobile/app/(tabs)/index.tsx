@@ -289,7 +289,12 @@ export default function ChatScreen() {
         csv: 'text/csv', json: 'application/json',
       };
       for (const file of picked.assets.slice(0, available)) {
-        if (typeof file.size !== 'number' || file.size <= 0 || file.size > 1_000_000) {
+        let fileSize = file.size;
+        if (typeof fileSize !== 'number' || fileSize <= 0) {
+          const fileInfo = await FileSystem.getInfoAsync(file.uri);
+          fileSize = 'size' in fileInfo && typeof fileInfo.size === 'number' ? fileInfo.size : null;
+        }
+        if (typeof fileSize !== 'number' || fileSize <= 0 || fileSize > 1_000_000) {
           setError(file.name + ': ফাইলের আকার ১ MB-এর মধ্যে হতে হবে।');
           continue;
         }
