@@ -34,7 +34,7 @@ import { useAssistant } from '@/context/AssistantContext';
 import { useOwnerAuth } from '@/context/OwnerAuthContext';
 import { isOwnerLoginRequiredError } from '@/lib/assistant/ownerAuth';
 import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
-import { deleteAttachment, searchAgentMemory, streamAgenticReply, streamReply, transcribeRecordedAudio, uploadAgentAttachment, type AgenticAttachmentInput, type AgentRouteStatus } from '@/lib/assistant/api';
+import { deleteAttachment, searchAgentMemory, streamAgenticReply, streamReply, transcribeRecordedAudio, uploadAgentAttachment, type AgenticAttachmentInput, type AgentRouteStatus, type AgentStageStatus } from '@/lib/assistant/api';
 import { listDeveloperProjects } from '@/lib/assistant/developerData';
 import {
   dictateOnce,
@@ -112,6 +112,7 @@ export default function ChatScreen() {
   const [pendingAttachments, setPendingAttachments] = useState<AgenticAttachmentInput[]>([]);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [agentRouteStatus, setAgentRouteStatus] = useState<AgentRouteStatus | null>(null);
+  const [agentStageStatus, setAgentStageStatus] = useState<AgentStageStatus | null>(null);
   const [awaitingSongName, setAwaitingSongName] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const stopDictationRef = useRef<(() => void) | null>(null);
@@ -323,6 +324,7 @@ export default function ChatScreen() {
     setDraft('');
     setError(null);
     setAgentRouteStatus(null);
+    setAgentStageStatus(null);
 
     const userMessage = newMessage('user', text || 'এই সংযুক্তিগুলো বিশ্লেষণ করো।');
     let answer = newMessage('assistant');
@@ -452,6 +454,7 @@ export default function ChatScreen() {
         enabledPluginIds,
         attachmentsToSend,
         setAgentRouteStatus,
+        setAgentStageStatus,
       );
     } catch (cause) {
       if (attachmentsToSend.length) setPendingAttachments((current) => [...attachmentsToSend, ...(current ?? [])].slice(0, 4));
@@ -823,6 +826,7 @@ export default function ChatScreen() {
     setBusy(true);
     setError(null);
     setAgentRouteStatus(null);
+    setAgentStageStatus(null);
     try {
       await streamAgenticReply(
         previousUser.content,
@@ -838,6 +842,7 @@ export default function ChatScreen() {
         await loadEnabledPluginIds().catch(() => []),
         previousUser.attachments ?? [],
         setAgentRouteStatus,
+        setAgentStageStatus,
       );
     } catch (cause) {
       setMessages(messages);
@@ -1332,6 +1337,14 @@ export default function ChatScreen() {
           }
         />
       )}
+
+      {agentStageStatus ? (
+        <View style={{ paddingHorizontal: 14, paddingBottom: 5 }}>
+          <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>
+            {agentStageStatus.stage === 'tool-calling' ? 'Tool Calling' : agentStageStatus.stage.charAt(0).toUpperCase() + agentStageStatus.stage.slice(1)} · {agentStageStatus.status === 'started' ? 'চলছে' : 'সম্পন্ন'}
+          </Text>
+        </View>
+      ) : null}
 
       {agentRouteStatus ? (
         <View style={{ paddingHorizontal: 14, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 7 }}>
