@@ -7,6 +7,14 @@ export interface ChatMessage {
   createdAt: string;
   ytUrl?: string;
   ytAppUrl?: string;
+  attachments?: ChatAttachmentReference[];
+}
+
+export interface ChatAttachmentReference {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
 }
 
 export interface MemoryNote {
@@ -27,6 +35,11 @@ export interface AssistantSettings {
   aiBaseUrl: string;
   aiFallbackProvider: 'none' | 'openai' | 'openrouter' | 'gemini' | 'groq' | 'together' | 'cerebras' | 'sambanova' | 'mistral' | 'cloudflare' | 'cohere' | 'nvidia';
   aiFallbackModel: string;
+  localOmniRouteEnabled: boolean;
+  localOmniRouteBaseUrl: string;
+  localOmniRouteModel: string;
+  localOmniRouteFallbackEnabled: boolean;
+  localOmniRouteFallbackModel: string;
   theme: ThemeName;
   onlineAI: boolean;
   personality: string;
@@ -67,6 +80,11 @@ export const DEFAULT_SETTINGS: AssistantSettings = {
   aiBaseUrl: '',
   aiFallbackProvider: 'none',
   aiFallbackModel: '',
+  localOmniRouteEnabled: false,
+  localOmniRouteBaseUrl: '',
+  localOmniRouteModel: '',
+  localOmniRouteFallbackEnabled: true,
+  localOmniRouteFallbackModel: 'openrouter/free',
   theme: 'badboy',
   onlineAI: true,
   personality: 'Warm, thoughtful, clear, and practical. Always reply in Bangla (Bengali).',
