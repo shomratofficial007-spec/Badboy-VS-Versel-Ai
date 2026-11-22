@@ -33,6 +33,7 @@ mock.module('./providerSettings.ts', {
       { id: 'groq', label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1' },
     ],
     getProviderApiKey: async () => 'provider-key-test',
+    getLocalOmniRouteApiKey: async () => 'local-key-test',
     normalizeProviderBaseUrl: (value: string) => value.endsWith('/') ? value.slice(0, -1) : value,
   },
 });
@@ -174,6 +175,156 @@ test('streamAgenticReply uses configured fallback only when primary fails before
   ]);
   assert.ok(requests.every((request) => request.key === 'provider-key-test'));
   assert.deepEqual(chunks, ['fallback answer']);
+});
+
+test('streamAgenticReply runs every Agentic stage directly through Local OmniRoute and executes tools on-device', async () => {
+  const { streamAgenticReply } = await apiPromise;
+  const requests: Array<{ url: string; auth: string | null; body: any }> = [];
+  fetchHandler = async (input, init) => {
+    const url = String(input);
+    const headers = new Headers(init?.headers);
+    const body = JSON.parse(String(init?.body));
+    requests.push({ url, auth: headers.get('Authorization'), body });
+    if (body.stream) {
+      return streamResponse([
+        'data: {"choices":[{"delta":{"content":"Local "}}]}\\n\\n',
+        'data: {"choices":[{"delta":{"content":"answer"}}]}\\n\\n',
+        'data: [DONE]\\n\\n',
+      ]);
+    }
+    const system = String(body.messages[0]?.content ?? '');
+    if (system.includes('Badboy Planner')) {
+      return jsonResponse({ choices: [{ message: { content: JSON.stringify({ goal: 'হিসাব', steps: [{ id: '1', task: 'হিসাব', success_criteria: 'ফল পাওয়া' }], risks: [] }) } }] });
+    }
+    if (system.includes('Badboy Executor')) {
+      if (body.messages.some((item: any) => item.role === 'tool')) {
+        return jsonResponse({ choices: [{ message: { content: 'ফলাফল ৪' } }] });
+      }
+      return jsonResponse({ choices: [{ message: { content: '', tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'calculator', arguments: '{"expression":"2 + 2"}' } }] } }] });
+    }
+    if (system.includes('Badboy Reviewer')) {
+      return jsonResponse({ choices: [{ message: { content: 'হিসাব সঠিক' } }] });
+    }
+    throw new Error('Unexpected Local OmniRoute stage');
+  };
+  const chunks: string[] = [];
+  const statuses: any[] = [];
+  await streamAgenticReply('2 + 2 কত?', {
+    localOmniRouteEnabled: true,
+    localOmniRouteBaseUrl: 'http://127.0.0.1:8765/v1',
+    localOmniRouteModel: 'qwen-local',
+    localOmniRouteFallbackEnabled: false,
+    personality: 'helpful',
+    voiceLanguage: 'bn-BD',
+    developerMode: false,
+  } as any, [], (chunk) => chunks.push(chunk), '', '', [], [], (status) => statuses.push(status));
+  assert.deepEqual(chunks, ['Local ', 'answer']);
+  assert.deepEqual(statuses, [{ route: 'local' }]);
+  assert.ok(requests.every((request) => request.url === 'http://127.0.0.1:8765/v1/chat/completions'));
+  assert.ok(requests.every((request) => request.auth === 'Bearer local-key-test'));
+  assert.ok(requests.every((request) => !request.body.provider));
+  assert.ok(requests.every((request) => request.body.model === 'qwen-local'));
+  assert.equal(requests.some((request) => request.url.includes('worker.example')), false);
+});
+
+test('Local OmniRoute failure uses only the configured OpenRouter free backup and reports the reason', async () => {
+  const { streamAgenticReply } = await apiPromise;
+  const requests: Array<{ url: string; body: any; headers: Headers }> = [];
+  fetchHandler = async (input, init) => {
+    const url = String(input);
+    const headers = new Headers(init?.headers);
+    const body = init?.body ? JSON.parse(String(init.body)) : {};
+    requests.push({ url, body, headers });
+    if (url.startsWith('http://127.0.0.1:8765')) return jsonResponse({ error: { message: 'Local router unavailable' } }, 503);
+    return streamResponse(['data: {"content":"free backup answer"}\\n\\n', 'data: [DONE]\\n\\n']);
+  };
+  const chunks: string[] = [];
+  const statuses: any[] = [];
+  await streamAgenticReply('hello', {
+    localOmniRouteEnabled: true,
+    localOmniRouteBaseUrl: 'http://127.0.0.1:8765/v1',
+    localOmniRouteModel: 'qwen-local',
+    localOmniRouteFallbackEnabled: true,
+    localOmniRouteFallbackModel: 'openrouter/free',
+    aiProvider: 'server',
+    personality: 'helpful',
+    voiceLanguage: 'bn-BD',
+    developerMode: false,
+  } as any, [], (chunk) => chunks.push(chunk), '', '', [], [], (status) => statuses.push(status));
+  const backup = requests.find((request) => request.url === 'https://worker.example/api/assistant/agent');
+  assert.ok(backup);
+  assert.deepEqual(backup?.body.provider, {
+    providerId: 'openrouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    model: 'openrouter/free',
+  });
+  assert.equal(backup?.headers.get('X-Provider-Key'), 'provider-key-test');
+  assert.equal(backup?.headers.get('Authorization'), 'Bearer owner-token-test');
+  assert.deepEqual(chunks, ['free backup answer']);
+  assert.equal(statuses[0].route, 'local');
+  assert.equal(statuses[1].route, 'free-fallback');
+  assert.match(statuses[1].reason, /Local router unavailable/);
+});
+
+test('Local OmniRoute never falls back to a paid model', async () => {
+  const { streamAgenticReply } = await apiPromise;
+  const urls: string[] = [];
+  fetchHandler = async (input) => {
+    urls.push(String(input));
+    return jsonResponse({ error: { message: 'offline' } }, 503);
+  };
+  await assert.rejects(
+    streamAgenticReply('hello', {
+      localOmniRouteEnabled: true,
+      localOmniRouteBaseUrl: 'http://127.0.0.1:8765/v1',
+      localOmniRouteModel: 'qwen-local',
+      localOmniRouteFallbackEnabled: true,
+      localOmniRouteFallbackModel: 'gpt-4o',
+      personality: 'helpful',
+      voiceLanguage: 'bn-BD',
+      developerMode: false,
+    } as any, [], () => undefined, '', '', [], [], () => undefined),
+    /paid models are blocked/,
+  );
+  assert.deepEqual(urls, ['http://127.0.0.1:8765/v1/chat/completions']);
+});
+
+test('Local OmniRoute does not replay the cloud workflow after a tool has executed', async () => {
+  const { streamAgenticReply } = await apiPromise;
+  const urls: string[] = [];
+  let executorCalls = 0;
+  fetchHandler = async (input, init) => {
+    const url = String(input);
+    urls.push(url);
+    if (url.startsWith('https://worker.example')) return streamResponse(['data: {"content":"must not replay"}\\n\\n', 'data: [DONE]\\n\\n']);
+    const body = JSON.parse(String(init?.body));
+    const system = String(body.messages[0]?.content ?? '');
+    if (system.includes('Badboy Planner')) {
+      return jsonResponse({ choices: [{ message: { content: JSON.stringify({ goal: 'test', steps: [{ task: 'test', success_criteria: 'test' }], risks: [] }) } }] });
+    }
+    if (system.includes('Badboy Executor')) {
+      executorCalls += 1;
+      if (executorCalls === 1) {
+        return jsonResponse({ choices: [{ message: { content: '', tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'calculator', arguments: '{"expression":"2+2"}' } }] } }] });
+      }
+      return jsonResponse({ error: { message: 'router disconnected' } }, 503);
+    }
+    throw new Error('Unexpected stage');
+  };
+  await assert.rejects(
+    streamAgenticReply('2+2', {
+      localOmniRouteEnabled: true,
+      localOmniRouteBaseUrl: 'http://127.0.0.1:8765/v1',
+      localOmniRouteModel: 'qwen-local',
+      localOmniRouteFallbackEnabled: true,
+      localOmniRouteFallbackModel: 'openrouter/free',
+      personality: 'helpful',
+      voiceLanguage: 'bn-BD',
+      developerMode: false,
+    } as any, [], () => undefined, '', '', [], [], () => undefined),
+    /not replayed on a cloud provider/,
+  );
+  assert.equal(urls.some((url) => url.startsWith('https://worker.example')), false);
 });
 
 test('streamAgenticReply sends owner-authenticated bounded history and consumes agentic SSE', async () => {
