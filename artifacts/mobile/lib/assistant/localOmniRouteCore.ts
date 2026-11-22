@@ -396,7 +396,7 @@ export async function runLocalAgenticWorkflow(input: LocalAgenticWorkflowInput):
     stage = 'synthesizer';
     notify(stage, 'started');
     const finalMessages: LocalAgentMessage[] = [
-      { role: 'system', content: system + '\n\nYou are the final synthesizer in a multi-agent workflow. Answer the user's original request directly. Incorporate valid reviewer corrections, do not mention internal orchestration unless asked, and do not claim actions that were not performed.' },
+      { role: "system", content: system + "\n\nYou are the final synthesizer in a multi-agent workflow. Answer the user's original request directly. Incorporate valid reviewer corrections, do not mention internal orchestration unless asked, and do not claim actions that were not performed." },
       { role: 'user', content: 'Original request:\n' + input.message + '\n\nPlan:\n' + plan + '\n\nExecutor result (including any tool findings):\n' + execution + '\n\nReviewer notes:\n' + review + '\n\nWrite the final answer in Bangla unless English was explicitly requested.' },
     ];
     await input.streamFinal(finalMessages, input.onChunk);
