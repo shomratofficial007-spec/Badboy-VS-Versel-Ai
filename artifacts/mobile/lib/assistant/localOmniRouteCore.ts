@@ -271,13 +271,13 @@ export interface LocalAgenticWorkflowInput {
   executeTool: (name: string, rawArguments: string) => Promise<LocalAgentToolOutcome>;
   streamFinal: (messages: LocalAgentMessage[], onChunk: (chunk: string) => void) => Promise<void>;
   onChunk: (chunk: string) => void;
-  onStage?: (stage: LocalAgentStage, status: 'started' | 'completed') => void;
+  onStage?: (stage: LocalAgentStage, status: 'started' | 'completed' | 'failed') => void;
 }
 
 export async function runLocalAgenticWorkflow(input: LocalAgenticWorkflowInput): Promise<void> {
   let stage: LocalAgentStage = 'planner';
   let toolCallsExecuted = 0;
-  const notify = (name: LocalAgentStage, status: 'started' | 'completed') => input.onStage?.(name, status);
+  const notify = (name: LocalAgentStage, status: 'started' | 'completed' | 'failed') => input.onStage?.(name, status);
   const system = buildSystemPrompt(input.personality, input.developerMode, input.voiceLanguage);
   const userContent: string | LocalAgentContentPart[] = input.attachments.length
     ? [{ type: 'text', text: input.message }, ...input.attachments]
@@ -402,6 +402,7 @@ export async function runLocalAgenticWorkflow(input: LocalAgenticWorkflowInput):
     await input.streamFinal(finalMessages, input.onChunk);
     notify(stage, 'completed');
   } catch (error) {
+    notify(stage, 'failed');
     throw new LocalAgenticWorkflowError(stage, toolCallsExecuted, error);
   }
 }
