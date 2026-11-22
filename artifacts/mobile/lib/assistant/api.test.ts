@@ -353,12 +353,12 @@ test('Local OmniRoute never switches to Free API after final text has started st
   fetchHandler = async (input, init) => {
     const url = String(input);
     urls.push(url);
-    if (url.startsWith('https://worker.example')) return streamResponse(['data: {"content":"must not switch"}\\n\\n', 'data: [DONE]\\n\\n']);
+    if (url.startsWith('https://worker.example')) return streamResponse(['data: {"content":"must not switch"}\n\n', 'data: [DONE]\n\n']);
     const body = JSON.parse(String(init?.body));
     if (body.stream) {
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
-          controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"partial"}}]}\\n\\n'));
+          controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'));
           controller.error(new Error('local final stream interrupted'));
         },
       });
