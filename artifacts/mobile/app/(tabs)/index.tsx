@@ -458,7 +458,10 @@ export default function ChatScreen() {
         skillContext,
         enabledPluginIds,
         attachmentsToSend,
-        setAgentRouteStatus,
+        (status) => {
+          setAgentRouteStatus(status);
+          if (status.route !== 'local') setAgentStageStatus(null);
+        },
         setAgentStageStatus,
       );
     } catch (cause) {
@@ -1346,7 +1349,7 @@ export default function ChatScreen() {
       {agentStageStatus ? (
         <View style={{ paddingHorizontal: 14, paddingBottom: 5 }}>
           <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>
-            {agentStageStatus.stage === 'tool-calling' ? 'Tool Calling' : agentStageStatus.stage.charAt(0).toUpperCase() + agentStageStatus.stage.slice(1)} · {agentStageStatus.status === 'started' ? 'চলছে' : 'সম্পন্ন'}
+            {agentStageStatus.stage === 'tool-calling' ? 'Tool Calling' : agentStageStatus.stage.charAt(0).toUpperCase() + agentStageStatus.stage.slice(1)} · {agentStageStatus.status === 'started' ? 'চলছে' : agentStageStatus.status === 'completed' ? 'সম্পন্ন' : 'ব্যর্থ'}
           </Text>
         </View>
       ) : null}
