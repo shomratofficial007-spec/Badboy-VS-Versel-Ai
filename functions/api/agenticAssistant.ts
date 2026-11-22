@@ -516,9 +516,10 @@ async function completeText(apiKey: string, messages: ChatMessage[], tools = fal
   const body = await response.json() as CompletionResponse;
   const message = body.choices?.[0]?.message;
   if (!message) throw new Error("The AI provider returned an empty completion.");
+  const assistantContent = typeof message.content === "string" ? message.content : "";
   const assistantMessage: ChatMessage = {
     role: "assistant",
-    content: typeof message.content === "string" ? message.content : "",
+    content: assistantContent,
     ...(Array.isArray(message.tool_calls) ? {
       tool_calls: message.tool_calls.filter((call): call is ToolCall & { id: string; function: { name: string; arguments: string } } =>
         typeof call.id === "string" && typeof call.function?.name === "string" && typeof call.function.arguments === "string",
@@ -529,7 +530,7 @@ async function completeText(apiKey: string, messages: ChatMessage[], tools = fal
       })),
     } : {}),
   };
-  return { content: assistantMessage.content ?? "", messages: [...messages, assistantMessage] };
+  return { content: assistantContent, messages: [...messages, assistantMessage] };
 }
 
 async function runToolAgent(
