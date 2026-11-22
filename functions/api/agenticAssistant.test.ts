@@ -166,6 +166,59 @@ test("agentic endpoint rejects media type, malformed JSON, oversized body, and i
   assert.equal((await handleAgenticAssistantRequest(agentRequest({ message: "" }), {})).status, 400);
 });
 
+test("agentic payload accepts only bounded unique attachment references", () => {
+  const id = "123e4567-e89b-12d3-a456-426614174000";
+  const valid = validateAgenticPayload({ message: "inspect", attachments: [id] });
+  assert.equal(valid.ok, true);
+  if (valid.ok) assert.deepEqual(valid.value.attachments, [id]);
+  assert.equal(validateAgenticPayload({ message: "inspect", attachments: ["not-an-id"] }).ok, false);
+  assert.equal(validateAgenticPayload({ message: "inspect", attachments: [id, id] }).ok, false);
+  assert.equal(validateAgenticPayload({ message: "inspect", attachments: [id, id, id, id, id] }).ok, false);
+});
+
+test("cloud fallback loads image attachment bytes only for the verified owner", async () => {
+  const original = globalThis.fetch;
+  const id = "123e4567-e89b-12d3-a456-426614174000";
+  const imageBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+  const db = {
+    prepare: (_sql: string) => {
+      const statement = {
+        bind: (..._values: unknown[]) => statement,
+        all: async () => ({ success: true, results: [{
+          attachment_id: id, owner_id: "owner-a", file_name: "photo.png",
+          mime_type: "image/png", byte_size: imageBytes.length,
+          content: imageBytes, created_at: "2026-11-22T00:00:00.000Z",
+        }] }),
+      };
+      return statement;
+    },
+  } as any;
+  const calls: any[] = [];
+  globalThis.fetch = async (_input, init) => {
+    const payload = JSON.parse(String(init?.body));
+    calls.push(payload);
+    return payload.stream ? finalStream() : completion("image inspected");
+  };
+  try {
+    const response = await handleAgenticAssistantRequest(agentRequest({
+      message: "Describe this image",
+      mode: "single",
+      attachments: [id],
+    }), { OPENROUTER_API_KEY: "server-key", AGENT_DB: db }, "owner-a");
+    assert.equal(response.status, 200);
+    const userMessage = calls[0].messages.find((item: any) => item.role === "user");
+    assert.ok(Array.isArray(userMessage.content));
+    assert.equal(userMessage.content[1].type, "image_url");
+    assert.match(userMessage.content[1].image_url.url, /^data:image\\/png;base64,/);
+    const crossOwner = await handleAgenticAssistantRequest(agentRequest({
+      message: "Describe this image", mode: "single", attachments: [id],
+    }), { OPENROUTER_API_KEY: "server-key", AGENT_DB: db }, "owner-b");
+    assert.equal(crossOwner.status, 404);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("agentic endpoint requires a server-side OpenRouter key", async () => {
   const response = await handleAgenticAssistantRequest(agentRequest({ message: "হ্যালো" }), { OPENROUTER_API_KEY: "  " });
   assert.equal(response.status, 503);
