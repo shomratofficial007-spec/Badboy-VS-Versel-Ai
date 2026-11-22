@@ -196,9 +196,22 @@ export async function handleAttachmentRequest(
       const id = crypto.randomUUID();
       const createdAt = new Date().toISOString();
       const inserted = await db.prepare(
-        'INSERT INTO agent_attachments (attachment_id, owner_id, file_name, mime_type, byte_size, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      ).bind(id, ownerId, name, mimeType, bytes.byteLength, bytes, createdAt).run();
+        'INSERT INTO agent_attachments (attachment_id, owner_id, file_name, mime_type, byte_size, content, created_at) ' +
+        'SELECT ?, ?, ?, ?, ?, ?, ? WHERE ' +
+        '(SELECT COUNT(*) FROM agent_attachments WHERE owner_id = ?) < ? AND ' +
+        '(SELECT COALESCE(SUM(byte_size), 0) FROM agent_attachments WHERE owner_id = ?) + ? <= ?',
+      ).bind(
+        id, ownerId, name, mimeType, bytes.byteLength, bytes, createdAt,
+        ownerId, MAX_OWNER_ATTACHMENT_COUNT, ownerId, bytes.byteLength, MAX_OWNER_ATTACHMENT_BYTES,
+      ).run();
       if ((inserted.meta?.changes ?? 0) !== 1) {
+        const latestQuota = await db.prepare(
+          'SELECT COUNT(*) AS attachment_count, COALESCE(SUM(byte_size), 0) AS total_bytes FROM agent_attachments WHERE owner_id = ?',
+        ).bind(ownerId).first<{ attachment_count: number; total_bytes: number }>();
+        if ((latestQuota?.attachment_count ?? 0) >= MAX_OWNER_ATTACHMENT_COUNT ||
+          (latestQuota?.total_bytes ?? 0) + bytes.byteLength > MAX_OWNER_ATTACHMENT_BYTES) {
+          return json({ code: 'ATTACHMENT_QUOTA_EXCEEDED', error: 'Private attachment storage limit reached. Delete older attachments before uploading more.' }, 413);
+        }
         return json({ code: 'ATTACHMENT_SAVE_FAILED', error: 'Private attachment could not be saved.' }, 503);
       }
       return json({ id, name, mimeType, size: bytes.byteLength, createdAt }, 201);
