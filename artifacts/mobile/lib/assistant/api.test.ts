@@ -6,6 +6,8 @@ let fetchHandler: (...args: any[]) => Promise<any> = async () => {
 };
 let fileContent = '';
 const requestedFiles: string[] = [];
+let uploadHandler: (...args: any[]) => Promise<any> = async () => ({ status: 201, body: JSON.stringify({ id: '123e4567-e89b-12d3-a456-426614174000', name: 'photo.png', mimeType: 'image/png', size: 9 }) });
+const uploadCalls: any[] = [];
 
 mock.module('expo/fetch', {
   namedExports: { fetch: (...args: any[]) => fetchHandler(...args) },
@@ -13,6 +15,8 @@ mock.module('expo/fetch', {
 mock.module('expo-file-system/legacy', {
   namedExports: {
     EncodingType: { Base64: 'base64' },
+    FileSystemUploadType: { MULTIPART: 1 },
+    uploadAsync: (...args: any[]) => { uploadCalls.push(args); return uploadHandler(...args); },
     readAsStringAsync: async (uri: string, options: unknown) => {
       requestedFiles.push(uri);
       assert.deepEqual(options, { encoding: 'base64' });
@@ -152,6 +156,38 @@ test('streamAgenticReply sends selected provider configuration to the full agent
   assert.deepEqual(sent.provider, { providerId: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' });
   assert.equal(sent.mode, 'multi');
   assert.deepEqual(chunks, ['orchestrated']);
+});
+
+test('uploadAgentAttachment uses owner-authenticated multipart upload and validates the stored reference', async () => {
+  const { uploadAgentAttachment } = await apiPromise;
+  uploadCalls.length = 0;
+  uploadHandler = async (_url, _uri, options) => {
+    assert.equal(options.httpMethod, 'POST');
+    assert.equal(options.fieldName, 'file');
+    assert.equal(options.uploadType, 1);
+    assert.equal(new Headers(options.headers).get('Authorization'), 'Bearer owner-token-test');
+    return { status: 201, body: JSON.stringify({ id: '123e4567-e89b-12d3-a456-426614174000', name: 'photo.png', mimeType: 'image/png', size: 9 }) };
+  };
+  const uploaded = await uploadAgentAttachment('file:///photo.png', 'photo.png', 'image/png');
+  assert.deepEqual(uploaded, { id: '123e4567-e89b-12d3-a456-426614174000', name: 'photo.png', mimeType: 'image/png', size: 9 });
+  assert.equal(uploadCalls.length, 1);
+  uploadHandler = async () => ({ status: 503, body: JSON.stringify({ error: 'storage unavailable' }) });
+  await assert.rejects(uploadAgentAttachment('file:///photo.png', 'photo.png', 'image/png'), /storage unavailable/);
+});
+
+test('streamAgenticReply sends only validated owner attachment references to the Agentic Worker', async () => {
+  const { streamAgenticReply } = await apiPromise;
+  let sent: any;
+  fetchHandler = async (_input, init) => {
+    sent = JSON.parse(String(init.body));
+    return streamResponse(['data: {"content":"attached"}\\n\\n', 'data: [DONE]\\n\\n']);
+  };
+  await streamAgenticReply('describe this', { personality: 'helpful', voiceLanguage: 'en-US', developerMode: false } as any, [], () => {}, '', '', [], ['123e4567-e89b-12d3-a456-426614174000']);
+  assert.deepEqual(sent.attachments, ['123e4567-e89b-12d3-a456-426614174000']);
+  await assert.rejects(
+    streamAgenticReply('describe this', { personality: 'helpful', voiceLanguage: 'en-US', developerMode: false } as any, [], () => {}, '', '', [], ['not-an-id']),
+    /বৈধ attachment/,
+  );
 });
 
 test('streamAgenticReply uses configured fallback only when primary fails before final text', async () => {
