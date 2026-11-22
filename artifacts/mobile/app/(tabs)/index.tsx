@@ -281,7 +281,7 @@ export default function ChatScreen() {
       });
       if (picked.canceled) return;
       const available = Math.max(0, 4 - (pendingAttachments?.length ?? 0));
-      if (picked.result.length > available) setError('একবারে সর্বোচ্চ ৪টি attachment রাখা যাবে।');
+      if (picked.assets.length > available) setError('একবারে সর্বোচ্চ ৪টি attachment রাখা যাবে।');
       const extensionMime: Record<string, string> = {
         png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp',
         txt: 'text/plain', md: 'text/markdown', markdown: 'text/markdown',
