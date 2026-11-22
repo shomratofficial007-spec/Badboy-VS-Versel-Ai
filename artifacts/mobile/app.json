@@ -21,6 +21,7 @@
     },
     "android": {
       "package": "com.badboyai.assistant",
+      "usesCleartextTraffic": true,
       "permissions": [
         "RECORD_AUDIO",
         "FOREGROUND_SERVICE",
