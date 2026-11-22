@@ -262,7 +262,7 @@ test('streamAgenticReply runs every Agentic stage directly through Local OmniRou
     base64: 'iVBORw0KGgo=',
   }, {
     reference: { id: '123e4567-e89b-12d3-a456-426614174001', name: 'notes.md', mimeType: 'text/markdown', size: 14 },
-    text: '# Notes\\nhello',
+    text: '# Notes\nhello',
   }], (status) => statuses.push(status));
   assert.deepEqual(chunks, ['Local ', 'answer']);
   assert.deepEqual(statuses, [{ route: 'local' }]);
@@ -271,7 +271,7 @@ test('streamAgenticReply runs every Agentic stage directly through Local OmniRou
   assert.deepEqual(userMessage.content[1], { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' } });
   assert.equal(userMessage.content[2].type, 'text');
   assert.match(userMessage.content[2].text, /Attachment notes.md/);
-  assert.match(userMessage.content[2].text, /# Notes\\nhello/);
+  assert.match(userMessage.content[2].text, /# Notes\nhello/);
   assert.ok(requests.every((request) => request.url === 'http://127.0.0.1:8765/v1/chat/completions'));
   assert.ok(requests.every((request) => request.auth === 'Bearer local-key-test'));
   assert.ok(requests.every((request) => !request.body.provider));
