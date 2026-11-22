@@ -434,7 +434,11 @@ export async function streamAgenticReply(
   if (!settings.localOmniRouteEnabled && selectedProvider && (!selectedModel || !selectedBaseUrl || !selectedApiKey)) {
     throw new Error(!selectedModel ? 'Settings থেকে একটি Model নির্বাচন করুন।' : !selectedApiKey ? 'নির্বাচিত Provider-এর API Key Secure Storage-এ নেই।' : 'Provider Base URL সঠিক নয়।');
   }
-  if (!Array.isArray(attachmentIds) || attachmentIds.length > 4 || attachmentIds.some((id) => !/^[0-9a-f-]{36}$/i.test(id)) || new Set(attachmentIds).size !== attachmentIds.length) {
+  if (!Array.isArray(attachments) || attachments.length > 4 || attachments.some((item) =>
+    !item || !item.reference || !/^[0-9a-f-]{36}$/i.test(item.reference.id) ||
+    typeof item.reference.name !== 'string' || typeof item.reference.mimeType !== 'string' ||
+    typeof item.reference.size !== 'number' || item.reference.size <= 0 || item.reference.size > 1_000_000
+  ) || new Set(attachments.map((item) => item.reference.id)).size !== attachments.length) {
     throw new Error('সর্বোচ্চ ৪টি বৈধ attachment নির্বাচন করুন।');
   }
   const safeMemoryContext = memoryContext.trim().slice(0, 5000);
