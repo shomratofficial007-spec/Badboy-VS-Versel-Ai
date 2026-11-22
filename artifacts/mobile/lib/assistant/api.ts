@@ -32,29 +32,6 @@ export type AgentRouteStatus = {
   provider?: string;
 };
 
-/** Upload a file through the owner-authenticated private attachment endpoint. */
-export async function uploadAttachment(file: Blob & { name?: string }): Promise<ChatAttachmentReference> {
-  const form = new FormData();
-  form.append('file', file, file.name || 'attachment');
-  const response = await expoFetch(apiUrl('/attachments'), {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      Authorization: await ownerAuthorizationHeader(),
-    },
-    body: form,
-  });
-  const payload = await response.json().catch(() => ({})) as {
-    id?: unknown; name?: unknown; mimeType?: unknown; size?: unknown; error?: string;
-  };
-  if (!response.ok) throw new Error(payload.error ?? 'Attachment upload failed (HTTP ' + response.status + ').');
-  if (typeof payload.id !== 'string' || typeof payload.name !== 'string' ||
-    typeof payload.mimeType !== 'string' || typeof payload.size !== 'number') {
-    throw new Error('Attachment service returned invalid metadata.');
-  }
-  return { id: payload.id, name: payload.name, mimeType: payload.mimeType, size: payload.size };
-}
-
 /** Delete an owner-scoped attachment that is still pending in the composer. */
 export async function deleteAttachment(id: string): Promise<void> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error('Attachment reference is invalid.');
@@ -66,6 +43,47 @@ export async function deleteAttachment(id: string): Promise<void> {
   if (!response.ok) throw new Error(payload.error ?? 'Attachment could not be deleted (HTTP ' + response.status + ').');
 }
 
+
+function encodeAttachmentBase64(bytes: Uint8Array): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let output = '';
+  for (let index = 0; index < bytes.length; index += 3) {
+    const a = bytes[index];
+    const hasB = index + 1 < bytes.length;
+    const hasC = index + 2 < bytes.length;
+    const b = hasB ? bytes[index + 1] : 0;
+    const c = hasC ? bytes[index + 2] : 0;
+    output += alphabet[a >> 2];
+    output += alphabet[((a & 3) << 4) | (b >> 4)];
+    output += hasB ? alphabet[((b & 15) << 2) | (c >> 6)] : '=';
+    output += hasC ? alphabet[c & 63] : '=';
+  }
+  return output;
+}
+
+export async function downloadAgentAttachment(reference: ChatAttachmentReference | string): Promise<AgenticAttachmentInput> {
+  const id = typeof reference === 'string' ? reference : reference.id;
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error('Attachment reference is invalid.');
+  const response = await expoFetch(apiUrl('/attachments/' + id), {
+    method: 'GET',
+    headers: { Accept: '*/*', Authorization: await ownerAuthorizationHeader() },
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? 'Private attachment could not be loaded (HTTP ' + response.status + ').');
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const mimeType = response.headers.get('content-type') || (typeof reference === 'string' ? '' : reference.mimeType);
+  const disposition = response.headers.get('content-disposition') ?? '';
+  const encodedName = disposition.match(/filename\\*=UTF-8''([^;]+)/i)?.[1];
+  const name = typeof reference === 'string' ? (encodedName ? decodeURIComponent(encodedName) : 'attachment') : reference.name;
+  const metadata: ChatAttachmentReference = { id, name, mimeType, size: typeof reference === 'string' ? bytes.byteLength : reference.size };
+  if (mimeType.startsWith('image/')) return { reference: metadata, base64: encodeAttachmentBase64(bytes) };
+  if (mimeType === 'text/plain' || mimeType === 'text/markdown' || mimeType === 'text/csv' || mimeType === 'application/json') {
+    return { reference: metadata, text: new TextDecoder('utf-8', { fatal: true }).decode(bytes).slice(0, 20_000) };
+  }
+  throw new Error('এই attachment format Local OmniRoute-এর জন্য সমর্থিত নয়।');
+}
 
 async function streamSseResponse(
   response: Response,
@@ -423,7 +441,7 @@ export async function streamAgenticReply(
   memoryContext = '',
   skillContext = '',
   enabledPluginIds: AgentPluginId[] = DEFAULT_AGENT_PLUGIN_IDS,
-  attachments: AgenticAttachmentInput[] = [],
+  attachments: Array<AgenticAttachmentInput | ChatAttachmentReference | string> = [],
   onRouteStatus?: (status: AgentRouteStatus) => void,
 ) {
   const selectedProvider = settings.aiProvider && settings.aiProvider !== 'server' ? settings.aiProvider : null;
@@ -439,6 +457,10 @@ export async function streamAgenticReply(
     typeof item.reference.name !== 'string' || typeof item.reference.mimeType !== 'string' ||
     typeof item.reference.size !== 'number' || item.reference.size <= 0 || item.reference.size > 1_000_000
   ) || new Set(attachments.map((item) => item.reference.id)).size !== attachments.length) {
+    throw new Error('সর্বোচ্চ ৪টি বৈধ attachment নির্বাচন করুন।');
+  }
+  const attachmentIds = attachments.map((item) => typeof item === 'string' ? item : 'reference' in item ? item.reference.id : item.id);
+  if (attachmentIds.length > 4 || attachmentIds.some((id) => !/^[0-9a-f-]{36}$/i.test(id)) || new Set(attachmentIds).size !== attachmentIds.length) {
     throw new Error('সর্বোচ্চ ৪টি বৈধ attachment নির্বাচন করুন।');
   }
   const safeMemoryContext = memoryContext.trim().slice(0, 5000);
@@ -467,7 +489,7 @@ export async function streamAgenticReply(
         developerMode: settings.developerMode,
         mode: 'multi',
         enabledPlugins: enabledPluginIds,
-        attachments: attachments.map((item) => item.reference.id).slice(0, 4),
+        attachments: attachmentIds,
         history: history.slice(-8).map(({ role, content }) => ({
           role,
           content: content.slice(0, 3000),
@@ -484,7 +506,15 @@ export async function streamAgenticReply(
       const localModel = settings.localOmniRouteModel.trim();
       if (!localModel || !/^[\\w./:-]{1,200}$/.test(localModel)) throw new Error('Local OmniRoute Model ID দিন।');
       const localKey = await getLocalOmniRouteApiKey();
-      const localAttachmentParts = attachments.map((item) => {
+      const localAttachmentInputs = await Promise.all(attachments.map(async (item) => {
+        if (typeof item === 'string') return downloadAgentAttachment(item);
+        if ('reference' in item) {
+          if (item.base64 || item.text !== undefined) return item;
+          return downloadAgentAttachment(item.reference);
+        }
+        return downloadAgentAttachment(item);
+      }));
+      const localAttachmentParts = localAttachmentInputs.map((item) => {
         if (item.reference.mimeType.startsWith('image/')) {
           if (!item.base64) throw new Error('ছবির attachment data পাওয়া যায়নি। আবার attach করুন।');
           return { type: 'image_url' as const, image_url: { url: 'data:' + item.reference.mimeType + ';base64,' + item.base64 } };
