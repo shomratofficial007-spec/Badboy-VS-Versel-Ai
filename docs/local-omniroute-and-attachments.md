@@ -19,6 +19,7 @@ The Free OpenRouter backup is used only when the local route fails before a tool
 - Android cleartext traffic is enabled for the native app because a Termux service on the same phone normally uses loopback HTTP. The Local OmniRoute URL validator blocks public HTTP URLs, credentials, query strings, and fragments.
 - If another phone on the same Wi-Fi must reach the router phone, use the router phone's private LAN IP and configure OmniRoute to listen on that LAN interface. Keep the port private; never port-forward it to the public internet. HTTPS is preferred for LAN access.
 - Keep the Termux OmniRoute process running while using Local OmniRoute. The app cannot keep a stopped Termux process alive.
+- Android Secure Storage is device-local. Save the Local OmniRoute Bearer key and OpenRouter Free backup key separately on every phone that will use the app.
 
 ## Attachment support
 
