@@ -8,13 +8,14 @@ import {
   runLocalAgenticWorkflow,
 } from './localOmniRouteCore';
 
-test('local OmniRoute accepts loopback/private HTTP and public HTTPS only', () => {
+test('local OmniRoute accepts only loopback/private HTTP or HTTPS hosts', () => {
   assert.equal(normalizeLocalOmniRouteBaseUrl('http://127.0.0.1:8080/v1'), 'http://127.0.0.1:8080/v1');
   assert.equal(normalizeLocalOmniRouteBaseUrl('http://localhost:8080/v1'), 'http://localhost:8080/v1');
   assert.equal(normalizeLocalOmniRouteBaseUrl('http://192.168.1.20:8080/v1'), 'http://192.168.1.20:8080/v1');
-  assert.equal(normalizeLocalOmniRouteBaseUrl('https://router.example.com/v1'), 'https://router.example.com/v1');
+  assert.equal(normalizeLocalOmniRouteBaseUrl('https://192.168.1.20:8443/v1'), 'https://192.168.1.20:8443/v1');
   for (const value of [
     'http://router.example.com/v1',
+    'https://router.example.com/v1',
     'http://8.8.8.8:8080/v1',
     'http://172.32.0.1:8080/v1',
     'http://10.0.0.1:8080/v1?token=secret',
