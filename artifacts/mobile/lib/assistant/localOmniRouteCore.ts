@@ -56,7 +56,7 @@ function isLocalIpv6(host: string): boolean {
   return normalized === '::1' || normalized.startsWith('fc') || normalized.startsWith('fd');
 }
 
-/** Validate a direct device-to-router URL; HTTP is limited to literal loopback/private addresses. */
+/** Validate a direct device-to-router URL; only loopback and private LAN hosts are accepted. */
 export function normalizeLocalOmniRouteBaseUrl(value: string): string {
   const input = value.trim();
   if (!input) throw new Error('Local OmniRoute Base URL দিন।');
@@ -72,12 +72,10 @@ export function normalizeLocalOmniRouteBaseUrl(value: string): string {
   if (!host || host === '0.0.0.0' || host === '::' || host === '[::]') {
     throw new Error('Local OmniRoute-এর destination host বৈধ নয়।');
   }
-  if (parsed.protocol === 'http:') {
-    const loopbackName = host === 'localhost' || host.endsWith('.localhost');
-    const loopbackOrPrivate = loopbackName || isPrivateIpv4(host) || isLocalIpv6(host);
-    if (!loopbackOrPrivate) {
-      throw new Error('নিরাপত্তার জন্য HTTP শুধু localhost বা private LAN IP-তে ব্যবহার করা যাবে; public endpoint-এ HTTPS দিন।');
-    }
+  const loopbackName = host === 'localhost' || host.endsWith('.localhost');
+  const loopbackOrPrivate = loopbackName || isPrivateIpv4(host) || isLocalIpv6(host);
+  if (!loopbackOrPrivate) {
+    throw new Error('Local OmniRoute অবশ্যই এই ফোনের localhost অথবা private LAN host হতে হবে; public host গ্রহণ করা হবে না।');
   }
   return parsed.toString().replace(/\/+$/, '');
 }
