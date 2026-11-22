@@ -32,7 +32,7 @@ export type AgentRouteStatus = {
   provider?: string;
 };
 
-export type AgentStageStatus = { stage: LocalAgentStage; status: 'started' | 'completed' };
+export type AgentStageStatus = { stage: LocalAgentStage; status: 'started' | 'completed' | 'failed' };
 
 /** Delete an owner-scoped attachment that is still pending in the composer. */
 export async function deleteAttachment(id: string): Promise<void> {
