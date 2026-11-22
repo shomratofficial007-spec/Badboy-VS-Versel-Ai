@@ -34,8 +34,7 @@ import { useOwnerAuth } from '@/context/OwnerAuthContext';
 import { isOwnerLoginRequiredError } from '@/lib/assistant/ownerAuth';
 import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
-import { searchAgentMemory, streamAgenticReply, streamReply, transcribeRecordedAudio, uploadAgentAttachment } from '@/lib/assistant/api';
-import { streamLocalOmniRouteReply } from '@/lib/assistant/localOmniRouteClient';
+import { deleteAttachment, searchAgentMemory, streamAgenticReply, streamReply, transcribeRecordedAudio, uploadAgentAttachment, type AgenticAttachmentInput } from '@/lib/assistant/api';
 import { listDeveloperProjects } from '@/lib/assistant/developerData';
 import {
   dictateOnce,
@@ -110,7 +109,7 @@ export default function ChatScreen() {
   const [wakeDetected, setWakeDetected] = useState(false);
   const [selectedLang, setSelectedLang] = useState<string>(settings.voiceLanguage);
   const [error, setError] = useState<string | null>(null);
-  const [pendingAttachments, setPendingAttachments] = useState<ChatMessage['attachments']>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<AgenticAttachmentInput[]>([]);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [awaitingSongName, setAwaitingSongName] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
@@ -286,12 +285,15 @@ export default function ChatScreen() {
       const asset = picked.assets[0];
       setAttachmentBusy(true);
       setError(null);
+      const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
       const uploaded = await uploadAgentAttachment(
         asset.uri,
         asset.fileName || 'image-' + Date.now() + '.jpg',
         asset.mimeType || 'image/jpeg',
       );
-      setPendingAttachments((current) => [...(current ?? []), uploaded].slice(0, 4));
+      setPendingAttachments((current) => [...(current ?? []), { reference: uploaded, base64 }].slice(0, 4));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'ছবি সংযুক্ত করা যায়নি।');
     } finally {
@@ -376,7 +378,7 @@ export default function ChatScreen() {
 
     const attachmentsToSend = pendingAttachments ?? [];
     if (attachmentsToSend.length) {
-      userMessage.attachments = attachmentsToSend;
+      userMessage.attachments = attachmentsToSend.map((item) => item.reference);
       working = [...messages, userMessage, answer];
       setMessages(working);
       setPendingAttachments([]);
@@ -424,29 +426,16 @@ export default function ChatScreen() {
         );
         setMessages(working);
       };
-      if (settings.localOmniRouteEnabled) {
-        await streamLocalOmniRouteReply(
-          text,
-          settings,
-          history,
-          onChunk,
-          memoryContext,
-          skillContext,
-          enabledPluginIds,
-          attachmentsToSend,
-        );
-      } else {
-        await streamAgenticReply(
-          text,
-          settings,
-          history,
-          onChunk,
-          memoryContext,
-          skillContext,
-          enabledPluginIds,
-          attachmentsToSend.map((attachment) => attachment.id),
-        );
-      }
+      await streamAgenticReply(
+        text,
+        settings,
+        history,
+        onChunk,
+        memoryContext,
+        skillContext,
+        enabledPluginIds,
+        attachmentsToSend,
+      );
     } catch (cause) {
       if (attachmentsToSend.length) setPendingAttachments((current) => [...attachmentsToSend, ...(current ?? [])].slice(0, 4));
       working = working.filter((message) => message.id !== answer.id);
