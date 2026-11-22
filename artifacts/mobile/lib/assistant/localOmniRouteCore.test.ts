@@ -90,6 +90,7 @@ test('Local OmniRoute executes Planner, Tool Calling, Executor, Reviewer and Syn
 test('Local OmniRoute exposes executed-tool count so a failed workflow is never replayed on fallback', async () => {
   let executorRequests = 0;
   let executedTools = 0;
+  const failedStages: Array<{ stage: string; status: string }> = [];
   await assert.rejects(
     () => runLocalAgenticWorkflow({
       message: '2 + 2',
@@ -101,6 +102,7 @@ test('Local OmniRoute exposes executed-tool count so a failed workflow is never 
       skillContext: '',
       enabledPlugins: [],
       attachments: [],
+      onStage: (stage, status) => failedStages.push({ stage, status }),
       requestCompletion: async (messages) => {
         const system = String(messages[0]?.content ?? '');
         if (system.includes('Badboy Planner')) {
@@ -123,6 +125,7 @@ test('Local OmniRoute exposes executed-tool count so a failed workflow is never 
       assert.ok(error instanceof LocalAgenticWorkflowError);
       assert.equal(error.toolCallsExecuted, 1);
       assert.equal(executedTools, 1);
+      assert.deepEqual(failedStages.at(-1), { stage: 'tool-calling', status: 'failed' });
       return true;
     },
   );
