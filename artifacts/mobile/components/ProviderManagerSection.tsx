@@ -154,6 +154,7 @@ export function ProviderManagerSection() {
     try {
       const normalized = normalizeLocalOmniRouteBaseUrl(localUrl);
       if (!localModel.trim() || !/^[\w./:-]{1,200}$/.test(localModel.trim())) throw new Error('Local OmniRoute Model ID সঠিক নয়।');
+      if (!localKeyConfigured) throw new Error('OmniRoute-এর Bearer API Key SecureStore-এ সংরক্ষণ করুন।');
       if (!isFreeOpenRouterModel(localFallbackModel) || !freeBackupKeyConfigured) {
         throw new Error('Backup-এর জন্য OpenRouter SecureStore-এ Key এবং openrouter/free বা :free Model প্রয়োজন।');
       }
@@ -221,9 +222,9 @@ export function ProviderManagerSection() {
           </View>
           <Switch value={settings.localOmniRouteEnabled} onValueChange={(value) => updateSettings({ localOmniRouteEnabled: value, localOmniRouteFallbackEnabled: true })} />
         </View>
-        <TextInput value={localUrl} onChangeText={setLocalUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="http://127.0.0.1:8080/v1" placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 11, padding: 10, color: colors.foreground, fontSize: 12 }} />
+        <TextInput value={localUrl} onChangeText={setLocalUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="http://127.0.0.1:20128/v1" placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 11, padding: 10, color: colors.foreground, fontSize: 12 }} />
         <TextInput value={localModel} onChangeText={setLocalModel} autoCapitalize="none" autoCorrect={false} placeholder="Local model ID" placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 11, padding: 10, color: colors.foreground, fontSize: 12 }} />
-        <TextInput value={localKeyDraft} onChangeText={setLocalKeyDraft} secureTextEntry autoCapitalize="none" autoCorrect={false} placeholder={localKeyConfigured ? 'Local API Key saved · replace if needed' : 'Optional Local OmniRoute API Key'} placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 11, padding: 10, color: colors.foreground, fontSize: 12 }} />
+        <TextInput value={localKeyDraft} onChangeText={setLocalKeyDraft} secureTextEntry autoCapitalize="none" autoCorrect={false} placeholder={localKeyConfigured ? 'Local OmniRoute Bearer Key saved · replace if needed' : 'Required OmniRoute Bearer API Key'} placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 11, padding: 10, color: colors.foreground, fontSize: 12 }} />
         <View style={{ flexDirection: 'row', gap: 7 }}>
           <Pressable onPress={() => void saveLocalKey()} disabled={!localKeyDraft.trim() || busy} style={{ flex: 1, minHeight: 38, borderRadius: 10, backgroundColor: colors.secondary, alignItems: 'center', justifyContent: 'center', opacity: !localKeyDraft.trim() || busy ? 0.5 : 1 }}>
             <Text style={{ color: colors.secondaryForeground, fontSize: 11, fontWeight: '700' }}>Save Local Key</Text>
