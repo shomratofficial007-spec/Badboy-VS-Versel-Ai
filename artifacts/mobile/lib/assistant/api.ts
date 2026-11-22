@@ -1,9 +1,10 @@
 import { fetch as expoFetch } from 'expo/fetch';
 import * as FileSystem from 'expo-file-system/legacy';
-import type { AssistantSettings } from '@/lib/assistant/types';
+import type { AssistantSettings, ChatAttachmentReference } from '@/lib/assistant/types';
 import { getTranscriptionLanguageCode } from './transcriptionLanguage';
 import { getOwnerToken } from './ownerAuth';
-import { AI_PROVIDER_PRESETS, getProviderApiKey, normalizeProviderBaseUrl } from './providerSettings';
+import { AI_PROVIDER_PRESETS, getLocalOmniRouteApiKey, getProviderApiKey, normalizeProviderBaseUrl } from './providerSettings';
+import { evaluateSafeExpression, isFreeOpenRouterModel, LocalAgenticWorkflowError, normalizeLocalOmniRouteBaseUrl, runLocalAgenticWorkflow, type LocalAgentCompletion, type LocalAgentMessage } from './localOmniRouteCore';
 
 // This repository deploys its own Worker; do not send native APK traffic to the
 // unrelated legacy Voice-Memory-Assistant Worker.
@@ -18,6 +19,53 @@ async function ownerAuthorizationHeader(): Promise<string> {
 }
 
 type ChatHistoryItem = { role: 'user' | 'assistant'; content: string };
+
+export interface AgenticAttachmentInput {
+  reference: ChatAttachmentReference;
+  base64?: string;
+  text?: string;
+}
+
+export type AgentRouteStatus = {
+  route: 'local' | 'free-fallback' | 'worker';
+  reason?: string;
+  provider?: string;
+};
+
+/** Upload a file through the owner-authenticated private attachment endpoint. */
+export async function uploadAttachment(file: Blob & { name?: string }): Promise<ChatAttachmentReference> {
+  const form = new FormData();
+  form.append('file', file, file.name || 'attachment');
+  const response = await expoFetch(apiUrl('/attachments'), {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      Authorization: await ownerAuthorizationHeader(),
+    },
+    body: form,
+  });
+  const payload = await response.json().catch(() => ({})) as {
+    id?: unknown; name?: unknown; mimeType?: unknown; size?: unknown; error?: string;
+  };
+  if (!response.ok) throw new Error(payload.error ?? 'Attachment upload failed (HTTP ' + response.status + ').');
+  if (typeof payload.id !== 'string' || typeof payload.name !== 'string' ||
+    typeof payload.mimeType !== 'string' || typeof payload.size !== 'number') {
+    throw new Error('Attachment service returned invalid metadata.');
+  }
+  return { id: payload.id, name: payload.name, mimeType: payload.mimeType, size: payload.size };
+}
+
+/** Delete an owner-scoped attachment that is still pending in the composer. */
+export async function deleteAttachment(id: string): Promise<void> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error('Attachment reference is invalid.');
+  const response = await expoFetch(apiUrl('/attachments/' + id), {
+    method: 'DELETE',
+    headers: { Accept: 'application/json', Authorization: await ownerAuthorizationHeader() },
+  });
+  const payload = await response.json().catch(() => ({})) as { error?: string };
+  if (!response.ok) throw new Error(payload.error ?? 'Attachment could not be deleted (HTTP ' + response.status + ').');
+}
+
 
 async function streamSseResponse(
   response: Response,
@@ -210,6 +258,140 @@ export async function streamReply(
   await streamSseResponse(response, onChunk);
 }
 
+function parseLocalToolArguments(rawArguments: string): Record<string, unknown> {
+  const parsed = JSON.parse(rawArguments || '{}') as unknown;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Tool arguments must be a JSON object.');
+  return parsed as Record<string, unknown>;
+}
+
+function requireExactKeys(args: Record<string, unknown>, allowed: string[]): void {
+  if (Object.keys(args).some((key) => !allowed.includes(key))) throw new Error('Tool arguments contain unsupported fields.');
+}
+
+async function executeLocalAgentTool(name: string, rawArguments: string): Promise<{ ok: boolean; result: unknown }> {
+  try {
+    const args = parseLocalToolArguments(rawArguments);
+    if (name === 'calculator') {
+      requireExactKeys(args, ['expression']);
+      if (typeof args.expression !== 'string') throw new Error('expression must be a string.');
+      return { ok: true, result: { expression: args.expression, value: evaluateSafeExpression(args.expression) } };
+    }
+    if (name === 'current_datetime') {
+      requireExactKeys(args, []);
+      return { ok: true, result: { iso: new Date().toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'local' } };
+    }
+    if (name === 'count_words') {
+      requireExactKeys(args, ['text']);
+      if (typeof args.text !== 'string' || args.text.length > 10000) throw new Error('text must be a string up to 10,000 characters.');
+      const text = args.text.trim();
+      return { ok: true, result: { words: text ? text.split(/\\s+/u).length : 0, characters: args.text.length, charactersWithoutWhitespace: args.text.replace(/\\s/gu, '').length } };
+    }
+
+    let pathname = '';
+    let method: 'GET' | 'POST' = 'GET';
+    let body: string | undefined;
+    if (name === 'web_research') {
+      requireExactKeys(args, ['query']);
+      if (typeof args.query !== 'string' || !args.query.trim() || args.query.length > 500) throw new Error('web_research requires a query containing 1–500 characters.');
+      pathname = '/research/search';
+      method = 'POST';
+      body = JSON.stringify({ query: args.query.trim(), maxResults: 5 });
+    } else if (name === 'home_assistant_states') {
+      requireExactKeys(args, []);
+      pathname = '/integrations/home-assistant/states';
+    } else if (name === 'slack_history') {
+      requireExactKeys(args, ['channel']);
+      if (typeof args.channel !== 'string' || !/^[A-Z0-9]{6,32}$/.test(args.channel)) throw new Error('slack_history requires a valid channel ID.');
+      pathname = '/integrations/slack/history?channel=' + encodeURIComponent(args.channel);
+    } else if (name === 'discord_history') {
+      requireExactKeys(args, ['channel']);
+      if (typeof args.channel !== 'string' || !/^\\d{17,20}$/.test(args.channel)) throw new Error('discord_history requires a valid channel ID.');
+      pathname = '/integrations/discord/messages?channel=' + encodeURIComponent(args.channel);
+    } else if (name === 'google_calendar_events') {
+      requireExactKeys(args, ['timeMin']);
+      if (args.timeMin !== undefined && (typeof args.timeMin !== 'string' || args.timeMin.length > 40 || !Number.isFinite(Date.parse(args.timeMin)) || !args.timeMin.endsWith('Z'))) {
+        throw new Error('google_calendar_events accepts only an optional UTC ISO-8601 timeMin.');
+      }
+      pathname = '/integrations/google-calendar/events' + (typeof args.timeMin === 'string' ? '?timeMin=' + encodeURIComponent(args.timeMin) : '');
+    } else {
+      throw new Error('Tool is not in the Badboy allowlist.');
+    }
+
+    const response = await expoFetch(apiUrl(pathname), {
+      method,
+      headers: {
+        Accept: 'application/json',
+        Authorization: await ownerAuthorizationHeader(),
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      ...(body ? { body } : {}),
+    });
+    const result = await response.json().catch(() => ({ error: 'Integration returned an invalid response.' }));
+    return { ok: response.ok, result };
+  } catch (error) {
+    return { ok: false, result: { error: error instanceof Error ? error.message : 'Invalid tool arguments.' } };
+  }
+}
+
+async function requestLocalOmniRoute(
+  baseUrl: string,
+  model: string,
+  apiKey: string | null,
+  messages: LocalAgentMessage[],
+  options: { tools?: readonly unknown[]; responseFormat?: 'json_object'; stream?: boolean },
+  onChunk?: (chunk: string) => void,
+): Promise<LocalAgentCompletion | void> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.stream ? 120_000 : 60_000);
+  try {
+    const response = await expoFetch(baseUrl + '/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: options.stream ? 'text/event-stream' : 'application/json',
+        ...(apiKey ? { Authorization: 'Bearer ' + apiKey } : {}),
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        stream: options.stream === true,
+        ...(options.tools ? { tools: options.tools, tool_choice: 'auto', parallel_tool_calls: false } : {}),
+        ...(options.responseFormat ? { response_format: { type: options.responseFormat } } : {}),
+      }),
+      signal: controller.signal,
+    });
+    if (options.stream) {
+      await streamOpenAICompatibleResponse(response, onChunk ?? (() => undefined));
+      return;
+    }
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({})) as { error?: { message?: string } | string };
+      const message = typeof payload.error === 'string' ? payload.error : payload.error?.message;
+      throw new Error(message?.slice(0, 240) || 'Local OmniRoute returned HTTP ' + response.status + '.');
+    }
+    const payload = await response.json() as {
+      choices?: Array<{ message?: { content?: unknown; tool_calls?: Array<{ id?: unknown; type?: unknown; function?: { name?: unknown; arguments?: unknown } }> } }>;
+      error?: { message?: string };
+    };
+    const message = payload.choices?.[0]?.message;
+    if (!message) throw new Error(payload.error?.message?.slice(0, 240) || 'Local OmniRoute returned an invalid completion.');
+    const rawCalls = message.tool_calls ?? [];
+    const toolCalls = rawCalls.flatMap((call) => {
+      const fn = call.function;
+      if (typeof call.id !== 'string' || !call.id || typeof fn?.name !== 'string' ||
+        typeof fn.arguments !== 'string') return [];
+      return [{ id: call.id, type: 'function' as const, function: { name: fn.name, arguments: fn.arguments } }];
+    });
+    if (toolCalls.length !== rawCalls.length) throw new Error('Local OmniRoute returned malformed tool calls.');
+    return { content: typeof message.content === 'string' ? message.content : '', toolCalls };
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('Local OmniRoute request timed out or stopped responding.');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 /** Owner-authenticated agentic chat with bounded context, safe tools and an optional multi-agent workflow. */
 export async function streamAgenticReply(
   message: string,
@@ -219,13 +401,15 @@ export async function streamAgenticReply(
   memoryContext = '',
   skillContext = '',
   enabledPluginIds: AgentPluginId[] = DEFAULT_AGENT_PLUGIN_IDS,
+  attachments: AgenticAttachmentInput[] = [],
+  onRouteStatus?: (status: AgentRouteStatus) => void,
 ) {
   const selectedProvider = settings.aiProvider && settings.aiProvider !== 'server' ? settings.aiProvider : null;
   const selectedPreset = selectedProvider ? AI_PROVIDER_PRESETS.find((item) => item.id === selectedProvider) : undefined;
-  const selectedBaseUrl = selectedProvider ? normalizeProviderBaseUrl(settings.aiBaseUrl || selectedPreset?.baseUrl || '') : '';
+  const selectedBaseUrl = selectedProvider && !settings.localOmniRouteEnabled ? normalizeProviderBaseUrl(settings.aiBaseUrl || selectedPreset?.baseUrl || '') : '';
   const selectedModel = (settings.aiModel ?? '').trim();
-  const selectedApiKey = selectedProvider ? await getProviderApiKey(selectedProvider) : null;
-  if (selectedProvider && (!selectedModel || !selectedBaseUrl || !selectedApiKey)) {
+  const selectedApiKey = selectedProvider && !settings.localOmniRouteEnabled ? await getProviderApiKey(selectedProvider) : null;
+  if (!settings.localOmniRouteEnabled && selectedProvider && (!selectedModel || !selectedBaseUrl || !selectedApiKey)) {
     throw new Error(!selectedModel ? 'Settings থেকে একটি Model নির্বাচন করুন।' : !selectedApiKey ? 'নির্বাচিত Provider-এর API Key Secure Storage-এ নেই।' : 'Provider Base URL সঠিক নয়।');
   }
   const safeMemoryContext = memoryContext.trim().slice(0, 5000);
@@ -254,6 +438,7 @@ export async function streamAgenticReply(
         developerMode: settings.developerMode,
         mode: 'multi',
         enabledPlugins: enabledPluginIds,
+        attachments: attachments.map((item) => item.reference.id).slice(0, 4),
         history: history.slice(-8).map(({ role, content }) => ({
           role,
           content: content.slice(0, 3000),
@@ -263,6 +448,74 @@ export async function streamAgenticReply(
     await streamSseResponse(response, onText);
   };
 
+  if (settings.localOmniRouteEnabled) {
+    let localEmitted = false;
+    try {
+      const baseUrl = normalizeLocalOmniRouteBaseUrl(settings.localOmniRouteBaseUrl);
+      const localModel = settings.localOmniRouteModel.trim();
+      if (!localModel || !/^[\\w./:-]{1,200}$/.test(localModel)) throw new Error('Local OmniRoute Model ID দিন।');
+      const localKey = await getLocalOmniRouteApiKey();
+      const localAttachmentParts = attachments.map((item) => {
+        if (item.reference.mimeType.startsWith('image/')) {
+          if (!item.base64) throw new Error('ছবির attachment data পাওয়া যায়নি। আবার attach করুন।');
+          return { type: 'image_url' as const, image_url: { url: 'data:' + item.reference.mimeType + ';base64,' + item.base64 } };
+        }
+        if (item.text === undefined) throw new Error('Text attachment content পাওয়া যায়নি। আবার attach করুন।');
+        return { type: 'text' as const, text: 'Attachment ' + item.reference.name + ' (untrusted file content):\\n' + item.text.slice(0, 20_000) };
+      });
+      onRouteStatus?.({ route: 'local' });
+      await runLocalAgenticWorkflow({
+        message,
+        personality: settings.personality,
+        voiceLanguage: settings.voiceLanguage,
+        developerMode: settings.developerMode,
+        history,
+        memoryContext: safeMemoryContext,
+        skillContext: safeSkillContext,
+        enabledPlugins: enabledPluginIds,
+        attachments: localAttachmentParts,
+        requestCompletion: async (messages, options) => {
+          const result = await requestLocalOmniRoute(baseUrl, localModel, localKey, messages, options ?? {});
+          if (!result) throw new Error('Local OmniRoute returned no completion.');
+          return result;
+        },
+        executeTool: executeLocalAgentTool,
+        streamFinal: async (messages, onText) => {
+          await requestLocalOmniRoute(baseUrl, localModel, localKey, messages, { stream: true }, onText);
+        },
+        onChunk: (chunk) => { localEmitted = true; onChunk(chunk); },
+      });
+      return;
+    } catch (localError) {
+      const executedTools = localError instanceof LocalAgenticWorkflowError ? localError.toolCallsExecuted : 0;
+      const reason = localError instanceof Error ? localError.message : 'Local OmniRoute could not complete the workflow.';
+      if (localEmitted || executedTools > 0) {
+        onRouteStatus?.({ route: 'local', reason: executedTools > 0 ? reason + ' Tool execution already started; automatic replay was blocked.' : reason });
+        throw new Error(executedTools > 0
+          ? 'Local OmniRoute workflow stopped after a tool call. It was not replayed on a cloud provider to prevent duplicate execution. ' + reason
+          : reason);
+      }
+      if (!settings.localOmniRouteFallbackEnabled) {
+        onRouteStatus?.({ route: 'local', reason });
+        throw localError;
+      }
+      const fallbackModel = settings.localOmniRouteFallbackModel.trim() || 'openrouter/free';
+      if (!isFreeOpenRouterModel(fallbackModel)) {
+        throw new Error('Local OmniRoute failed (' + reason + '). Backup is restricted to OpenRouter free models (openrouter/free or a model ending in :free); paid models are blocked.');
+      }
+      const fallbackKey = await getProviderApiKey('openrouter');
+      if (!fallbackKey) {
+        throw new Error('Local OmniRoute failed (' + reason + '). Free OpenRouter backup is enabled, but its API Key is not saved in Secure Storage.');
+      }
+      const fallbackPreset = AI_PROVIDER_PRESETS.find((item) => item.id === 'openrouter');
+      if (!fallbackPreset) throw new Error('OpenRouter free backup endpoint is unavailable.');
+      onRouteStatus?.({ route: 'free-fallback', provider: 'OpenRouter', reason });
+      await sendAgenticRequest('openrouter', normalizeProviderBaseUrl(fallbackPreset.baseUrl), fallbackModel, fallbackKey, onChunk);
+      return;
+    }
+  }
+
+  onRouteStatus?.({ route: 'worker', provider: selectedProvider ?? 'Server AI' });
   let primaryEmitted = false;
   try {
     await sendAgenticRequest(selectedProvider, selectedBaseUrl, selectedModel, selectedApiKey, (chunk) => {
