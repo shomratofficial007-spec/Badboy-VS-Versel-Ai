@@ -31,7 +31,7 @@ function uploadRequest(file: File): Request {
   form.append('file', file);
   return new Request('https://worker.example/api/attachments', {
     method: 'POST',
-    headers: { 'content-type': 'multipart/form-data; boundary=generated' },
+    headers: { Accept: 'application/json' },
     body: form,
   });
 }
