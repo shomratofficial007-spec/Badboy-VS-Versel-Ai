@@ -136,7 +136,7 @@ test('local failure after a tool has executed never replays the workflow through
     throw new Error('unexpected stage');
   };
   const { streamLocalOmniRouteReply } = await clientPromise;
-  await assert.rejects(streamLocalOmniRouteReply('2+2', settings(), [], () => {}), /Local Agentic workflow failed/);
+  await assert.rejects(streamLocalOmniRouteReply('2+2', settings(), [], () => {}), /router disconnected after tool/);
   assert.equal(fetchCalls.some((call) => call.url === 'https://openrouter.ai/api/v1/chat/completions'), false);
 });
 
@@ -152,6 +152,6 @@ test('local final stream failure after visible output never switches to the free
     return finalStream(['data: {"choices":[{"delta":{"content":"partial"}}]}\\n\\n']);
   };
   const { streamLocalOmniRouteReply } = await clientPromise;
-  await assert.rejects(streamLocalOmniRouteReply('hello', settings(), [], () => {}), /Local Agentic workflow failed/);
+  await assert.rejects(streamLocalOmniRouteReply('hello', settings(), [], () => {}), /stream ended before \\[DONE\\]/);
   assert.equal(fetchCalls.some((call) => call.url === 'https://openrouter.ai/api/v1/chat/completions'), false);
 });
