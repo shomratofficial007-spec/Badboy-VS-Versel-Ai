@@ -35,6 +35,7 @@ mock.module('./providerSettings.ts', {
     AI_PROVIDER_PRESETS: [
       { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
       { id: 'groq', label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1' },
+      { id: 'openrouter', label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
     ],
     getProviderApiKey: async () => 'provider-key-test',
     getLocalOmniRouteApiKey: async () => 'local-key-test',
@@ -180,7 +181,7 @@ test('streamAgenticReply sends only validated owner attachment references to the
   let sent: any;
   fetchHandler = async (_input, init) => {
     sent = JSON.parse(String(init.body));
-    return streamResponse(['data: {"content":"attached"}\\n\\n', 'data: [DONE]\\n\\n']);
+    return streamResponse(['data: {"content":"attached"}\n\n', 'data: [DONE]\n\n']);
   };
   const attachment = {
     reference: { id: '123e4567-e89b-12d3-a456-426614174000', name: 'photo.png', mimeType: 'image/png', size: 9 },
@@ -227,9 +228,9 @@ test('streamAgenticReply runs every Agentic stage directly through Local OmniRou
     requests.push({ url, auth: headers.get('Authorization'), body });
     if (body.stream) {
       return streamResponse([
-        'data: {"choices":[{"delta":{"content":"Local "}}]}\\n\\n',
-        'data: {"choices":[{"delta":{"content":"answer"}}]}\\n\\n',
-        'data: [DONE]\\n\\n',
+        'data: {"choices":[{"delta":{"content":"Local "}}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"answer"}}]}\n\n',
+        'data: [DONE]\n\n',
       ]);
     }
     const system = String(body.messages[0]?.content ?? '');
@@ -290,7 +291,7 @@ test('Local OmniRoute failure uses only the configured OpenRouter free backup an
     const body = init?.body ? JSON.parse(String(init.body)) : {};
     requests.push({ url, body, headers });
     if (url.startsWith('http://127.0.0.1:8765')) return jsonResponse({ error: { message: 'Local router unavailable' } }, 503);
-    return streamResponse(['data: {"content":"free backup answer"}\\n\\n', 'data: [DONE]\\n\\n']);
+    return streamResponse(['data: {"content":"free backup answer"}\n\n', 'data: [DONE]\n\n']);
   };
   const chunks: string[] = [];
   const statuses: any[] = [];
@@ -350,13 +351,13 @@ test('Local OmniRoute does not replay the cloud workflow after a tool has execut
   fetchHandler = async (input, init) => {
     const url = String(input);
     urls.push(url);
-    if (url.startsWith('https://worker.example')) return streamResponse(['data: {"content":"must not replay"}\\n\\n', 'data: [DONE]\\n\\n']);
+    if (url.startsWith('https://worker.example')) return streamResponse(['data: {"content":"must not replay"}\n\n', 'data: [DONE]\n\n']);
     const body = JSON.parse(String(init?.body));
     const system = String(body.messages[0]?.content ?? '');
     if (system.includes('Badboy Planner')) {
       return jsonResponse({ choices: [{ message: { content: JSON.stringify({ goal: 'test', steps: [{ task: 'test', success_criteria: 'test' }], risks: [] }) } }] });
     }
-    if (system.includes('Badboy Executor')) {
+    if (system.includes('Badboy Tool Calling Agent')) {
       executorCalls += 1;
       if (executorCalls === 1) {
         return jsonResponse({ choices: [{ message: { content: '', tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'calculator', arguments: '{"expression":"2+2"}' } }] } }] });
@@ -404,7 +405,7 @@ test('streamAgenticReply sends owner-authenticated bounded history and consumes 
     [{ role: 'user', content: 'আগের প্রশ্ন' }],
     (chunk) => chunks.push(chunk),
     'Project note: preserve all current features.',
-    'Skill: Project Planner\\nInstructions: split work into tested steps.',
+    'Skill: Project Planner\nInstructions: split work into tested steps.',
     ['web-research', 'discord-history'],
   );
   assert.equal(url, 'https://worker.example/api/assistant/agent');
