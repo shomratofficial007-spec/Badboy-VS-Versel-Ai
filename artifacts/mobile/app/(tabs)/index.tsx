@@ -1084,6 +1084,24 @@ export default function ChatScreen() {
             </View>
             {drawerModal === 'tools' ? (
               <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 20, gap: 14 }}>
+                {settings.developerMode ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Open Developer Platform"
+                    onPress={() => {
+                      setDrawerModal(null);
+                      router.push('/(tabs)/settings?section=developer' as never);
+                    }}
+                    style={[styles.toolsLauncher, { borderColor: colors.border, backgroundColor: colors.background, flexDirection: 'row', alignItems: 'center', gap: 10 }]}
+                  >
+                    <Feather name="code" size={20} color={colors.primary} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: colors.foreground, fontWeight: '700', fontSize: 14 }}>Developer Platform</Text>
+                      <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 3 }}>Analysis Copilot, QA, Project Brain, GitHub preview ও developer controls</Text>
+                    </View>
+                    <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+                  </Pressable>
+                ) : null}
                 <View style={styles.toolsGrid}>
                   {[
                     { label: 'Image Generator', icon: 'image' as const },

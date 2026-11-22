@@ -220,34 +220,68 @@ export async function streamAgenticReply(
   skillContext = '',
   enabledPluginIds: AgentPluginId[] = DEFAULT_AGENT_PLUGIN_IDS,
 ) {
-  if (settings.aiProvider && settings.aiProvider !== 'server') {
-    await streamConfiguredProviderReply(message, settings, onChunk, history, memoryContext, skillContext);
-    return;
+  const selectedProvider = settings.aiProvider && settings.aiProvider !== 'server' ? settings.aiProvider : null;
+  const selectedPreset = selectedProvider ? AI_PROVIDER_PRESETS.find((item) => item.id === selectedProvider) : undefined;
+  const selectedBaseUrl = selectedProvider ? normalizeProviderBaseUrl(settings.aiBaseUrl || selectedPreset?.baseUrl || '') : '';
+  const selectedModel = (settings.aiModel ?? '').trim();
+  const selectedApiKey = selectedProvider ? await getProviderApiKey(selectedProvider) : null;
+  if (selectedProvider && (!selectedModel || !selectedBaseUrl || !selectedApiKey)) {
+    throw new Error(!selectedModel ? 'Settings থেকে একটি Model নির্বাচন করুন।' : !selectedApiKey ? 'নির্বাচিত Provider-এর API Key Secure Storage-এ নেই।' : 'Provider Base URL সঠিক নয়।');
   }
   const safeMemoryContext = memoryContext.trim().slice(0, 5000);
   const safeSkillContext = skillContext.trim().slice(0, 4000);
-  const response = await expoFetch(apiUrl('/assistant/agent'), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-      Authorization: await ownerAuthorizationHeader(),
-    },
-    body: JSON.stringify({
-      message,
-      personality: `${settings.personality}\n\nLanguage preference: ${settings.voiceLanguage}.`,
-      memoryContext: safeMemoryContext,
-      skillContext: safeSkillContext,
-      developerMode: settings.developerMode,
-      mode: 'multi',
-      enabledPlugins: enabledPluginIds,
-      history: history.slice(-8).map(({ role, content }) => ({
-        role,
-        content: content.slice(0, 3000),
-      })),
-    }),
-  });
-  await streamSseResponse(response, onChunk);
+  const sendAgenticRequest = async (
+    providerId: typeof selectedProvider,
+    baseUrl: string,
+    model: string,
+    apiKey: string | null,
+    onText: (chunk: string) => void,
+  ) => {
+    const response = await expoFetch(apiUrl('/assistant/agent'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        Authorization: await ownerAuthorizationHeader(),
+        ...(apiKey ? { 'X-Provider-Key': apiKey } : {}),
+      },
+      body: JSON.stringify({
+        message,
+        ...(providerId ? { provider: { providerId, baseUrl, model } } : {}),
+        personality: `${settings.personality}\n\nLanguage preference: ${settings.voiceLanguage}.`,
+        memoryContext: safeMemoryContext,
+        skillContext: safeSkillContext,
+        developerMode: settings.developerMode,
+        mode: 'multi',
+        enabledPlugins: enabledPluginIds,
+        history: history.slice(-8).map(({ role, content }) => ({
+          role,
+          content: content.slice(0, 3000),
+        })),
+      }),
+    });
+    await streamSseResponse(response, onText);
+  };
+
+  let primaryEmitted = false;
+  try {
+    await sendAgenticRequest(selectedProvider, selectedBaseUrl, selectedModel, selectedApiKey, (chunk) => {
+      primaryEmitted = true;
+      onChunk(chunk);
+    });
+  } catch (primaryError) {
+    const fallbackId = settings.aiFallbackProvider ?? 'none';
+    const fallbackModel = settings.aiFallbackModel?.trim() ?? '';
+    const fallbackPreset = AI_PROVIDER_PRESETS.find((item) => item.id === fallbackId);
+    // Retry only before any final answer text is emitted; never splice two model answers.
+    if (!selectedProvider || primaryEmitted || fallbackId === 'none' || fallbackId === selectedProvider || !fallbackPreset || !fallbackModel) {
+      throw primaryError;
+    }
+    const fallbackKey = await getProviderApiKey(fallbackId);
+    if (!fallbackKey) throw primaryError;
+    const fallbackBaseUrl = normalizeProviderBaseUrl(fallbackPreset.baseUrl);
+    await sendAgenticRequest(fallbackId, fallbackBaseUrl, fallbackModel, fallbackKey, onChunk);
+  }
 }
 
 export type DeveloperEngineRequest = 'native' | 'copilot' | 'auto';

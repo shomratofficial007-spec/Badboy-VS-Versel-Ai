@@ -1,5 +1,5 @@
 import { Feather } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -86,6 +86,7 @@ interface LocalTelegramMessage {
 export default function SettingsScreen() {
   const colors = useColors();
   const router = useRouter();
+  const routeParams = useLocalSearchParams<{ section?: string | string[] }>();
   const insets = useSafeAreaInsets();
   const { settings, updateSettings, clearChat, expertReviewDraft, clearExpertReviewDraft } = useAssistant();
   const { authenticated, signOut } = useOwnerAuth();
@@ -814,8 +815,12 @@ export default function SettingsScreen() {
   const sectionCard = { backgroundColor: colors.card, borderColor: colors.border };
   const settingsScrollRef = useRef<any>(null);
   const settingsSectionOffsets = useRef<Record<string, number>>({});
+  const requestedSection = Array.isArray(routeParams.section) ? routeParams.section[0] : routeParams.section;
   const recordSettingsSection = (key: string) => (event: { nativeEvent: { layout: { y: number } } }) => {
     settingsSectionOffsets.current[key] = event.nativeEvent.layout.y;
+    if (requestedSection === key) {
+      setTimeout(() => settingsScrollRef.current?.scrollTo({ y: event.nativeEvent.layout.y, animated: true }), 0);
+    }
   };
   const scrollToSettingsSection = (key: string) => () => {
     const y = settingsSectionOffsets.current[key];
