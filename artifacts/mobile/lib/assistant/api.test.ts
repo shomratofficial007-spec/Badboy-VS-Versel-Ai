@@ -345,6 +345,51 @@ test('Local OmniRoute never falls back to a paid model', async () => {
   assert.ok(urls.every((url) => url === 'http://127.0.0.1:8765/v1/chat/completions'), 'paid or cloud fallback must never be requested');
 });
 
+test('Local OmniRoute never switches to Free API after final text has started streaming', async () => {
+  const { streamAgenticReply } = await apiPromise;
+  const urls: string[] = [];
+  const chunks: string[] = [];
+  const routes: any[] = [];
+  fetchHandler = async (input, init) => {
+    const url = String(input);
+    urls.push(url);
+    if (url.startsWith('https://worker.example')) return streamResponse(['data: {"content":"must not switch"}\\n\\n', 'data: [DONE]\\n\\n']);
+    const body = JSON.parse(String(init?.body));
+    if (body.stream) {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"partial"}}]}\\n\\n'));
+          controller.error(new Error('local final stream interrupted'));
+        },
+      });
+      return new Response(stream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    }
+    const system = String(body.messages[0]?.content ?? '');
+    if (system.includes('Badboy Planner')) {
+      return jsonResponse({ choices: [{ message: { content: JSON.stringify({ goal: 'test', steps: [{ task: 'test', success_criteria: 'test' }], risks: [] }) } }] });
+    }
+    if (system.includes('Badboy Tool Calling Agent')) return jsonResponse({ choices: [{ message: { content: 'No tools needed.' } }] });
+    if (system.includes('Badboy Reviewer')) return jsonResponse({ choices: [{ message: { content: 'review passed' } }] });
+    throw new Error('Unexpected local stage');
+  };
+  await assert.rejects(
+    streamAgenticReply('একটি উত্তর দাও', {
+      localOmniRouteEnabled: true,
+      localOmniRouteBaseUrl: 'http://127.0.0.1:8765/v1',
+      localOmniRouteModel: 'qwen-local',
+      localOmniRouteFallbackEnabled: true,
+      localOmniRouteFallbackModel: 'openrouter/free',
+      personality: 'helpful',
+      voiceLanguage: 'bn-BD',
+      developerMode: false,
+    } as any, [], (chunk) => chunks.push(chunk), '', '', [], [], (status) => routes.push(status)),
+    /local final stream interrupted/,
+  );
+  assert.deepEqual(chunks, ['partial']);
+  assert.deepEqual(routes, [{ route: 'local' }]);
+  assert.ok(urls.length > 0 && urls.every((url) => url === 'http://127.0.0.1:8765/v1/chat/completions'));
+});
+
 test('Local OmniRoute does not replay the cloud workflow after a tool has executed', async () => {
   const { streamAgenticReply } = await apiPromise;
   const urls: string[] = [];
