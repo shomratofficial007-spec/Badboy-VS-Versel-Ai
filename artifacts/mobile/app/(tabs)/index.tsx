@@ -821,6 +821,7 @@ export default function ChatScreen() {
     setMessages(working);
     setBusy(true);
     setError(null);
+    setAgentRouteStatus(null);
     try {
       await streamAgenticReply(
         previousUser.content,
@@ -834,6 +835,8 @@ export default function ChatScreen() {
         '',
         settings.developerMode ? getDeveloperModeSkillContext() : '',
         await loadEnabledPluginIds().catch(() => []),
+        previousUser.attachments ?? [],
+        setAgentRouteStatus,
       );
     } catch (cause) {
       setMessages(messages);
