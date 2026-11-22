@@ -37,7 +37,7 @@ const LOCAL_OMNIROUTE_KEY = 'badboy-ai-local-omniroute-key-v1';
 /** Local router credentials stay in device SecureStore and never pass through the Worker. */
 export async function saveLocalOmniRouteApiKey(apiKey: string): Promise<void> {
   const clean = apiKey.trim();
-  if (!clean || clean.length > 4096 || /[\\r\\n]/.test(clean)) {
+  if (!clean || clean.length > 4096 || /[\r\n]/.test(clean)) {
     throw new Error('Local OmniRoute API Key-এর ফরম্যাট সঠিক নয়।');
   }
   if (!(await SecureStore.isAvailableAsync())) {
