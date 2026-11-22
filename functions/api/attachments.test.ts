@@ -11,6 +11,8 @@ class AttachmentD1 implements D1Database {
   calls: Array<{ sql: string; values: unknown[] }> = [];
   rows: any[] = [];
   quota = { attachment_count: 0, total_bytes: 0 };
+  quotaQueue?: Array<{ attachment_count: number; total_bytes: number }>;
+  insertChanges = 1;
   changes = 1;
 
   prepare(sql: string): D1PreparedStatement {
@@ -18,9 +20,9 @@ class AttachmentD1 implements D1Database {
     this.calls.push(call);
     const statement = {
       bind: (...values: unknown[]) => { call.values = values; return statement; },
-      first: async () => sql.includes('SUM(byte_size)') ? this.quota : this.rows[0] ?? null,
+      first: async () => sql.includes('SUM(byte_size)') ? (this.quotaQueue?.shift() ?? this.quota) : this.rows[0] ?? null,
       all: async () => ({ success: true, results: this.rows }),
-      run: async () => ({ success: true, meta: { changes: this.changes } }),
+      run: async () => ({ success: true, meta: { changes: sql.includes('INSERT INTO agent_attachments') ? this.insertChanges : this.changes } }),
     };
     return statement as D1PreparedStatement;
   }
@@ -83,6 +85,24 @@ test('private attachment upload rejects unsupported MIME, spoofed images and ove
     '/api/attachments', db, 'owner-a',
   );
   assert.equal(oversized.status, 413);
+});
+
+test('private attachment owner quota is rechecked atomically when concurrent uploads race', async () => {
+  const db = new AttachmentD1();
+  db.quotaQueue = [
+    { attachment_count: 99, total_bytes: 24 * 1024 * 1024 },
+    { attachment_count: 100, total_bytes: 24 * 1024 * 1024 + 5 },
+  ];
+  db.insertChanges = 0;
+  const response = await handleAttachmentRequest(
+    uploadRequest(new File(['hello'], 'note.txt', { type: 'text/plain' })),
+    '/api/attachments', db, 'owner-a',
+  );
+  assert.equal(response.status, 413);
+  const insert = db.calls.find((call) => call.sql.includes('INSERT INTO agent_attachments'));
+  assert.match(insert?.sql ?? '', /SELECT .*WHERE/);
+  assert.match(insert?.sql ?? '', /COUNT\(\*\).*owner_id/);
+  assert.match(insert?.sql ?? '', /SUM\(byte_size\).*owner_id/);
 });
 
 test('private attachment upload rejects missing owner and quota overflow', async () => {
