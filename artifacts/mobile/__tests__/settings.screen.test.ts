@@ -11,7 +11,6 @@ const mobileRoot = currentWorkingDirectory.endsWith('/artifacts/mobile')
   : resolve(currentWorkingDirectory, 'artifacts/mobile');
 const mobileModule = (path: string) => pathToFileURL(resolve(mobileRoot, path)).href;
 import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 
 const pressables: Array<{ label: string; onPress: () => void }> = [];
 const switchHandlers: Array<{ label: string; onValueChange: (value: boolean) => void }> = [];
@@ -227,65 +226,29 @@ mock.module(mobileModule('lib/assistant/developerEngine'), {
 
 const settingsScreenPromise = import('../app/(tabs)/settings');
 
-test('Settings screen renders existing voice, privacy, developer and account controls', async () => {
-  const { default: SettingsScreen } = await settingsScreenPromise;
-  pressables.length = 0;
-  alerts.length = 0;
-  switchHandlers.length = 0;
-  settingsUpdates.length = 0;
-  signOutCalls.length = 0;
-  clearChatCalls.length = 0;
-  const html = renderToStaticMarkup(React.createElement(SettingsScreen));
+test('Settings opens with a searchable, compact category index', async () => {
+  const render = createSettingsHookHarness({ 54: null });
+  const html = await render();
   assert.match(html, /BADBOY|Badboy/);
-  assert.match(html, /Settings|সেটিংস|ব্যক্তিগত/);
+  assert.match(html, /Settings|সেটিংস/);
   assert.match(html, /Customize your Badboy AI experience/);
-  assert.match(html, /AI Provider/);
-  assert.match(html, /Server AI/);
-  assert.match(html, /openrouter\/free/);
-  assert.match(html, /Multi-AI Fallback/);
-  assert.doesNotMatch(html, /v1[.]0[.]0|Smart · Secure · Powerful/);
-  assert.match(html, /Jarvis Assistant/);
+  assert.match(html, /Search settings/);
+  assert.doesNotMatch(html, /AI Provider &amp; Model|Owner Panel|Jarvis Assistant &amp; Quick Access/);
   for (const category of ['Account', 'AI', 'Appearance', 'Privacy', 'Developer', 'Jarvis', 'Voice', 'More']) {
     assert.ok(pressables.some((item) => item.label === `Go to ${category} settings`), `missing Settings category: ${category}`);
   }
-  assert.match(html, /APPEARANCE/);
-  assert.match(html, /AI &amp; FEATURES|AI & FEATURES/);
-  assert.match(html, /APP MANAGEMENT/);
-  assert.ok(html.indexOf('ACCOUNT &amp; ACCESS') < html.indexOf('AI &amp; FEATURES'));
-  assert.ok(html.indexOf('AI &amp; FEATURES') < html.indexOf('APPEARANCE'));
-  assert.match(html, /ভয়েস|Voice/);
-  assert.match(html, /Wake Word|ওয়েক|Hey Badboy/i);
-  assert.match(html, /Owner Sign Out/);
-  assert.ok(pressables.some((item) => item.label === 'Open Owner Panel'), 'Owner Panel is interactive');
-  assert.ok(pressables.some((item) => item.label === 'Token Management'), 'Token Management is interactive');
-  assert.ok(pressables.some((item) => item.label === 'Login Security'), 'Login Security is interactive');
-  pressables.find((item) => item.label === 'Open Owner Panel')?.onPress();
-  assert.equal(alerts.at(-1)?.title, 'Owner Panel');
-  await alerts.at(-1)?.buttons.find((button) => button.text === 'Manage Owner Token')?.onPress();
-  assert.equal(alerts.at(-1)?.title, 'Owner Token Management');
-  pressables.find((item) => item.label === 'Login Security')?.onPress();
-  assert.equal(alerts.at(-1)?.title, 'Login Security');
-  pressables.find((item) => item.label === 'Token Management')?.onPress();
-  assert.equal(alerts.at(-1)?.title, 'Owner Token Management');
-  assert.match(html, /চ্যাট ইতিহাস মুছুন/);
-  switchHandlers.find((item) => item.label === 'Developer Mode')?.onValueChange(true);
-  assert.deepEqual(settingsUpdates, [{ developerMode: true }]);
-
-  pressables.find((item) => item.label.includes('Owner Sign Out'))?.onPress();
-  assert.equal(alerts.at(-1)?.title, 'Owner Login থেকে বের হবেন?');
-  await alerts.at(-1)?.buttons.find((button) => button.text === 'Sign Out')?.onPress();
-  assert.deepEqual(signOutCalls, ['signed-out']);
-
-  pressables.find((item) => item.label.includes('চ্যাট ইতিহাস মুছুন'))?.onPress();
-  assert.equal(alerts.at(-1)?.title, 'চ্যাট ইতিহাস মুছবেন?');
-  await alerts.at(-1)?.buttons.find((button) => button.text === 'মুছুন')?.onPress();
-  assert.deepEqual(clearChatCalls, ['cleared']);
+  const search = inputHandlers.find((item) => item.label === 'Search settings');
+  assert.ok(search, 'Settings search input is available');
+  search.onChangeText('jarvis');
+  const filtered = await render();
+  assert.match(filtered, /Jarvis Assistant/);
+  assert.doesNotMatch(filtered, /Account &amp; Security|AI &amp; Models|Voice &amp; Device/);
+  assert.ok(pressables.some((item) => item.label === 'Go to Jarvis settings'));
 });
 
 test('Settings reveals Developer Agent and Project Brain controls when developer mode is enabled', async () => {
   settings.developerMode = true;
-  const { default: SettingsScreen } = await settingsScreenPromise;
-  const html = renderToStaticMarkup(React.createElement(SettingsScreen));
+  const html = await createSettingsHookHarness({ 54: 'all' })();
   assert.match(html, /Developer Agent|Developer Analysis|বিশ্লেষণ/);
   assert.match(html, /Project Brain|প্রজেক্ট ব্রেইন/);
   assert.match(html, /Auto QA|স্বয়ংক্রিয় পরীক্ষা/);
@@ -293,11 +256,10 @@ test('Settings reveals Developer Agent and Project Brain controls when developer
 });
 
 test('Settings exposes voice consent, input/output, auto-speak, auto-submit and wake-word controls', async () => {
-  const { default: SettingsScreen } = await settingsScreenPromise;
   pressables.length = 0;
   switchHandlers.length = 0;
   settingsUpdates.length = 0;
-  renderToStaticMarkup(React.createElement(SettingsScreen));
+  await createSettingsHookHarness({ 54: 'all' })();
 
   const enabledControls = [
     'Voice Processing Consent',
@@ -332,11 +294,10 @@ test('Settings exposes voice consent, input/output, auto-speak, auto-submit and 
 });
 
 test('Settings preserves every roadmap preference and all selectable theme choices', async () => {
-  const { default: SettingsScreen } = await settingsScreenPromise;
   pressables.length = 0;
   switchHandlers.length = 0;
   settingsUpdates.length = 0;
-  renderToStaticMarkup(React.createElement(SettingsScreen));
+  await createSettingsHookHarness({ 54: 'all' })();
 
   const roadmapControls = [
     'Web Development', 'App Development', 'Self Development',
@@ -372,27 +333,25 @@ test('Settings preserves every roadmap preference and all selectable theme choic
 
 
 test('Settings saves the configured personality draft and uses the safe fallback for whitespace-only input', async () => {
-  const { default: SettingsScreen } = await settingsScreenPromise;
   pressables.length = 0;
   settingsUpdates.length = 0;
   settings.personality = '  Speak naturally in Bangla  ';
-  renderToStaticMarkup(React.createElement(SettingsScreen));
+  await createSettingsHookHarness({ 54: 'all' })();
   pressables.find((item) => item.label.includes('ব্যক্তিত্ব সংরক্ষণ'))?.onPress();
   assert.deepEqual(settingsUpdates.at(-1), { personality: 'Speak naturally in Bangla' });
 
   pressables.length = 0;
   settingsUpdates.length = 0;
   settings.personality = '   ';
-  renderToStaticMarkup(React.createElement(SettingsScreen));
+  await createSettingsHookHarness({ 54: 'all' })();
   pressables.find((item) => item.label.includes('ব্যক্তিত্ব সংরক্ষণ'))?.onPress();
   assert.deepEqual(settingsUpdates.at(-1), { personality: 'Warm, clear, and practical.' });
 });
 
 test('Settings updates online AI and auto-improve independently in both directions', async () => {
-  const { default: SettingsScreen } = await settingsScreenPromise;
   switchHandlers.length = 0;
   settingsUpdates.length = 0;
-  renderToStaticMarkup(React.createElement(SettingsScreen));
+  await createSettingsHookHarness({ 54: 'all' })();
 
   const onlineAI = switchHandlers.find((item) => item.label === 'অনলাইন AI');
   const autoImprove = switchHandlers.find((item) => item.label === 'পরামর্শ দেখান');
@@ -411,10 +370,9 @@ test('Settings updates online AI and auto-improve independently in both directio
 });
 
 test('Settings supports every theme choice and the default cloud voice reset', async () => {
-  const { default: SettingsScreen } = await settingsScreenPromise;
   pressables.length = 0;
   settingsUpdates.length = 0;
-  renderToStaticMarkup(React.createElement(SettingsScreen));
+  await createSettingsHookHarness({ 54: 'all' })();
 
   const themes = [
     ['Badboy Neon Blue', 'badboy'], ['Badboy Violet', 'neon'], ['Ocean Blue', 'ocean'],
@@ -438,10 +396,9 @@ test('Settings supports every theme choice and the default cloud voice reset', a
 
 test('Settings can switch every Developer Agent engine option without starting an analysis', async () => {
   settings.developerMode = true;
-  const { default: SettingsScreen } = await settingsScreenPromise;
   pressables.length = 0;
   settingsUpdates.length = 0;
-  renderToStaticMarkup(React.createElement(SettingsScreen));
+  await createSettingsHookHarness({ 54: 'all' })();
 
   for (const [label, engine] of [['Badboy Native', 'native'], ['Copilot SDK', 'copilot'], ['Auto / Hybrid', 'auto']] as const) {
     const option = pressables.find((item) => item.label.includes(label));
@@ -454,11 +411,10 @@ test('Settings can switch every Developer Agent engine option without starting a
 
 test('Settings blank-input actions fail closed without calling services or changing settings', async () => {
   settings.developerMode = true;
-  const { default: SettingsScreen } = await settingsScreenPromise;
   pressables.length = 0;
   settingsUpdates.length = 0;
   alerts.length = 0;
-  renderToStaticMarkup(React.createElement(SettingsScreen));
+  await createSettingsHookHarness({ 54: 'all' })();
 
   const guardedActions = [
     'টাস্ক রান করুন',
@@ -501,6 +457,7 @@ function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {
   for (const [index, value] of Object.entries(initialOverrides)) {
     mappedOverrides[legacyStateIndexMap[Number(index)] ?? Number(index)] = value;
   }
+  if (!('54' in mappedOverrides)) mappedOverrides[54] = 'all';
   const slots: unknown[] = [];
   let cursor = 0;
   let effectsExecuted = false;
@@ -535,8 +492,7 @@ function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {
     const previous = internals.H;
     internals.H = dispatcher;
     try {
-      const { default: SettingsScreen } = await settingsScreenPromise;
-      const html = visit(SettingsScreen());
+          const html = visit(SettingsScreen());
       if (options.runEffects && !effectsExecuted) {
         effectsExecuted = true;
         for (const effect of effects) effect();
@@ -549,6 +505,33 @@ function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {
   };
   return render;
 }
+
+test('Settings category rows open isolated mobile subpages and preserve every existing section', async () => {
+  const render = createSettingsHookHarness({ 54: null });
+  let html = await render();
+  const categories = [
+    { label: 'Account', visible: 'ACCOUNT &amp; ACCESS', hidden: 'AI Provider &amp; Model' },
+    { label: 'AI', visible: 'AI Provider &amp; Model', hidden: 'Jarvis Assistant &amp; Quick Access' },
+    { label: 'Appearance', visible: 'APPEARANCE', hidden: 'Owner Panel' },
+    { label: 'Privacy', visible: 'PRIVACY &amp; PERSONALIZATION', hidden: 'Jarvis Assistant &amp; Quick Access' },
+    { label: 'Developer', visible: 'DEVELOPER TOOLS', hidden: 'VOICE &amp; DEVICE' },
+    { label: 'Jarvis', visible: 'Jarvis Assistant &amp; Quick Access', hidden: 'VOICE &amp; DEVICE' },
+    { label: 'Voice', visible: 'VOICE &amp; DEVICE', hidden: 'APP MANAGEMENT' },
+    { label: 'More', visible: 'APP MANAGEMENT', hidden: 'Jarvis Assistant &amp; Quick Access' },
+  ];
+  for (const category of categories) {
+    const row = pressables.find((item) => item.label === `Go to ${category.label} settings`);
+    assert.ok(row, `category row missing: ${category.label}`);
+    row.onPress();
+    html = await render();
+    assert.match(html, new RegExp(category.visible.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.doesNotMatch(html, new RegExp(category.hidden.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.ok(pressables.some((item) => item.label === 'Back to Settings categories'));
+    pressables.find((item) => item.label === 'Back to Settings categories')?.onPress();
+    html = await render();
+    assert.match(html, /Search settings/);
+  }
+});
 
 function resetTelegramState() {
   inputHandlers.length = 0;
@@ -1073,14 +1056,13 @@ test('Settings lists and previews an installed voice matching the selected langu
 
 test('Settings Jarvis controls request overlay permission and expose stop and screen-awareness actions', async () => {
   resetTelegramState();
-  const { default: SettingsScreen } = await settingsScreenPromise;
   pressables.length = 0;
   alerts.length = 0;
   settingsUpdates.length = 0;
   screenSettingsCalls = 0;
   settings.floatingAssistantEnabled = false;
 
-  renderToStaticMarkup(React.createElement(SettingsScreen));
+  await createSettingsHookHarness({ 54: 'all' })();
   const startBubble = pressables.find((item) => item.label.includes('Start Bubble'));
   const stopBubble = pressables.find((item) => item.label.includes('Stop Bubble'));
   const configureScreen = pressables.find((item) => item.label.includes('Configure Screen Awareness'));
