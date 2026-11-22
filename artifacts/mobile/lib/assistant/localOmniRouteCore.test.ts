@@ -87,6 +87,42 @@ test('Local OmniRoute executes Planner, Tool Calling, Executor, Reviewer and Syn
   assert.deepEqual(output, ['উত্তর ৪']);
 });
 
+test('Planner retries without response_format only when the router explicitly rejects it', async () => {
+  let plannerCalls = 0;
+  const plan = JSON.stringify({
+    goal: 'উত্তর তৈরি করা',
+    steps: [{ id: 'step-1', task: 'অনুরোধ বিশ্লেষণ', success_criteria: 'সঠিক উত্তর' }],
+    risks: [],
+  });
+  let finalText = '';
+  await runLocalAgenticWorkflow({
+    message: 'একটি ছোট উত্তর দাও',
+    personality: 'precise',
+    developerMode: false,
+    voiceLanguage: 'bn-BD',
+    history: [],
+    memoryContext: '',
+    skillContext: '',
+    enabledPlugins: [],
+    attachments: [],
+    requestCompletion: async (messages, options) => {
+      const system = String(messages[0]?.content ?? '');
+      if (system.includes('Badboy Planner')) {
+        plannerCalls += 1;
+        if (options?.responseFormat === 'json_object') throw new Error('400 response_format is not supported');
+        return { content: plan, toolCalls: [] };
+      }
+      if (system.includes('Badboy Tool Calling Agent')) return { content: 'No tools needed.', toolCalls: [] };
+      return { content: 'review passed', toolCalls: [] };
+    },
+    executeTool: async () => ({ ok: true, result: {} }),
+    onChunk: (chunk) => { finalText += chunk; },
+    streamFinal: async (_messages, onText) => onText('সম্পন্ন'),
+  });
+  assert.equal(plannerCalls, 2);
+  assert.equal(finalText, 'সম্পন্ন');
+});
+
 test('Local OmniRoute exposes executed-tool count so a failed workflow is never replayed on fallback', async () => {
   let executorRequests = 0;
   let executedTools = 0;
