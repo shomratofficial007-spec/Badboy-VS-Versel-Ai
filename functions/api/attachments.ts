@@ -233,7 +233,9 @@ export async function handleAttachmentRequest(
         return json({ code: 'ATTACHMENT_NOT_FOUND', error: 'Attachment was not found for this owner.' }, 404);
       }
       const bytes = contentBytes(record);
-      return new Response(bytes, {
+      const responseBody = new ArrayBuffer(bytes.byteLength);
+      new Uint8Array(responseBody).set(bytes);
+      return new Response(responseBody, {
         status: 200,
         headers: {
           'Content-Type': record.mime_type,
