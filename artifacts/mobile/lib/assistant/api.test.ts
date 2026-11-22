@@ -249,6 +249,7 @@ test('streamAgenticReply runs every Agentic stage directly through Local OmniRou
   };
   const chunks: string[] = [];
   const statuses: any[] = [];
+  const stages: any[] = [];
   await streamAgenticReply('2 + 2 কত?', {
     localOmniRouteEnabled: true,
     localOmniRouteBaseUrl: 'http://127.0.0.1:8765/v1',
@@ -266,6 +267,7 @@ test('streamAgenticReply runs every Agentic stage directly through Local OmniRou
   }], (status) => statuses.push(status));
   assert.deepEqual(chunks, ['Local ', 'answer']);
   assert.deepEqual(statuses, [{ route: 'local' }]);
+  assert.deepEqual(stages.filter((item) => item.status === 'started').map((item) => item.stage), ['planner', 'tool-calling', 'executor', 'tool-calling', 'reviewer', 'synthesizer']);
   const userMessage = requests[0].body.messages.find((item: any) => item.role === 'user');
   assert.ok(Array.isArray(userMessage.content));
   assert.deepEqual(userMessage.content[1], { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' } });
