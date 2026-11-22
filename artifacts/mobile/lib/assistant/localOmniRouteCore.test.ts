@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   LocalAgenticWorkflowError,
+  evaluateSafeExpression,
   isFreeOpenRouterModel,
   normalizeLocalOmniRouteBaseUrl,
   runLocalAgenticWorkflow,
@@ -24,6 +25,13 @@ test('local OmniRoute accepts loopback/private HTTP and public HTTPS only', () =
   ]) {
     assert.throws(() => normalizeLocalOmniRouteBaseUrl(value), value);
   }
+});
+
+test('local calculator evaluates safe arithmetic and rejects code or division by zero', () => {
+  assert.equal(evaluateSafeExpression('2 + 3 * (4 - 1)'), 11);
+  assert.equal(evaluateSafeExpression('-8 / 2 + 1'), -3);
+  assert.throws(() => evaluateSafeExpression('globalThis.process'));
+  assert.throws(() => evaluateSafeExpression('1 / 0'));
 });
 
 test('free fallback accepts only explicit OpenRouter free model identifiers', () => {

@@ -89,6 +89,62 @@ export function isFreeOpenRouterModel(value: string): boolean {
     (model === 'openrouter/free' || model.endsWith(':free'));
 }
 
+export function evaluateSafeExpression(input: string): number {
+  const source = input.trim();
+  if (!source || source.length > 120) throw new Error('Expression must contain 1–120 characters.');
+  const tokens: string[] = [];
+  const pattern = /\\s*(\\d+(?:\\.\\d*)?|\\.\\d+|[()+\\-*/%])/y;
+  let offset = 0;
+  while (offset < source.length) {
+    pattern.lastIndex = offset;
+    const match = pattern.exec(source);
+    if (!match) throw new Error('Only numbers, parentheses and + - * / % operators are supported.');
+    tokens.push(match[1]);
+    offset = pattern.lastIndex;
+  }
+  let cursor = 0;
+  const peek = () => tokens[cursor];
+  const take = () => tokens[cursor++];
+  const primary = (): number => {
+    if (peek() === '+' || peek() === '-') {
+      const sign = take();
+      const value = primary();
+      return sign === '-' ? -value : value;
+    }
+    if (peek() === '(') {
+      take();
+      const value = addition();
+      if (take() !== ')') throw new Error('Missing closing parenthesis.');
+      return value;
+    }
+    const token = take();
+    if (!token || !/^\\d+(?:\\.\\d*)?$|^\\.\\d+$/.test(token)) throw new Error('Expected a number.');
+    return Number(token);
+  };
+  const multiplication = (): number => {
+    let value = primary();
+    while (peek() === '*' || peek() === '/' || peek() === '%') {
+      const operator = take();
+      const right = primary();
+      if ((operator === '/' || operator === '%') && right === 0) throw new Error('Division by zero is not allowed.');
+      value = operator === '*' ? value * right : operator === '/' ? value / right : value % right;
+    }
+    return value;
+  };
+  const addition = (): number => {
+    let value = multiplication();
+    while (peek() === '+' || peek() === '-') {
+      const operator = take();
+      const right = multiplication();
+      value = operator === '+' ? value + right : value - right;
+    }
+    return value;
+  };
+  const result = addition();
+  if (cursor !== tokens.length || !Number.isFinite(result)) throw new Error('Invalid or out-of-range arithmetic expression.');
+  return Number(result.toPrecision(12));
+}
+
 const TOOL_DEFINITIONS = [
   {
     type: 'function',
