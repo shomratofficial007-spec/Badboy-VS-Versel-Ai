@@ -4,7 +4,7 @@ import type { AssistantSettings, ChatAttachmentReference } from '@/lib/assistant
 import { getTranscriptionLanguageCode } from './transcriptionLanguage';
 import { getOwnerToken } from './ownerAuth';
 import { AI_PROVIDER_PRESETS, getLocalOmniRouteApiKey, getProviderApiKey, normalizeProviderBaseUrl } from './providerSettings';
-import { evaluateSafeExpression, isFreeOpenRouterModel, LocalAgenticWorkflowError, normalizeLocalOmniRouteBaseUrl, runLocalAgenticWorkflow, type LocalAgentCompletion, type LocalAgentMessage } from './localOmniRouteCore';
+import { evaluateSafeExpression, isFreeOpenRouterModel, LocalAgenticWorkflowError, normalizeLocalOmniRouteBaseUrl, runLocalAgenticWorkflow, type LocalAgentCompletion, type LocalAgentMessage, type LocalAgentStage } from './localOmniRouteCore';
 
 // This repository deploys its own Worker; do not send native APK traffic to the
 // unrelated legacy Voice-Memory-Assistant Worker.
@@ -31,6 +31,8 @@ export type AgentRouteStatus = {
   reason?: string;
   provider?: string;
 };
+
+export type AgentStageStatus = { stage: LocalAgentStage; status: 'started' | 'completed' };
 
 /** Delete an owner-scoped attachment that is still pending in the composer. */
 export async function deleteAttachment(id: string): Promise<void> {
@@ -443,6 +445,7 @@ export async function streamAgenticReply(
   enabledPluginIds: AgentPluginId[] = DEFAULT_AGENT_PLUGIN_IDS,
   attachments: Array<AgenticAttachmentInput | ChatAttachmentReference | string> = [],
   onRouteStatus?: (status: AgentRouteStatus) => void,
+  onAgentStage?: (status: AgentStageStatus) => void,
 ) {
   const selectedProvider = settings.aiProvider && settings.aiProvider !== 'server' ? settings.aiProvider : null;
   const selectedPreset = selectedProvider ? AI_PROVIDER_PRESETS.find((item) => item.id === selectedProvider) : undefined;
@@ -547,6 +550,7 @@ export async function streamAgenticReply(
           await requestLocalOmniRoute(baseUrl, localModel, localKey, messages, { stream: true }, onText);
         },
         onChunk: (chunk) => { localEmitted = true; onChunk(chunk); },
+        onStage: (stage, status) => onAgentStage?.({ stage, status }),
       });
       return;
     } catch (localError) {
