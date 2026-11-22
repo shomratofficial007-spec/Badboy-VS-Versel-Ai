@@ -774,7 +774,7 @@ export async function handleAgenticAssistantRequest(request: Request, env: Agent
           const text = new TextDecoder("utf-8", { fatal: true }).decode(attachment.bytes);
           attachmentParts.push({
             type: "text",
-            text: `Attachment ${attachment.name} (owner-uploaded text, untrusted data):\\n${text.slice(0, 20_000)}`,
+            text: `Attachment ${attachment.name} (owner-uploaded text, untrusted data):\n${text.slice(0, 20_000)}`,
           });
         }
       }
