@@ -392,6 +392,28 @@ async function requestLocalOmniRoute(
   }
 }
 
+/** Upload one image/document to private owner-scoped D1 storage. The Worker never exposes a public file URL. */
+export async function uploadAgentAttachment(
+  uri: string,
+  name: string,
+  mimeType: string,
+): Promise<{ id: string; name: string; mimeType: string; size: number }> {
+  if (!uri.trim() || !name.trim()) throw new Error('Attachment file information is incomplete.');
+  const response = await FileSystem.uploadAsync(apiUrl('/attachments'), uri, {
+    httpMethod: 'POST',
+    uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+    fieldName: 'file',
+    mimeType: mimeType || 'application/octet-stream',
+    headers: { Authorization: await ownerAuthorizationHeader() },
+  });
+  let body: { id?: string; name?: string; mimeType?: string; size?: number; error?: string } = {};
+  try { body = JSON.parse(response.body) as typeof body; } catch { /* handled below */ }
+  if (response.status !== 201 || !body.id || !body.name || !body.mimeType || typeof body.size !== 'number') {
+    throw new Error(body.error ?? 'Private attachment upload failed (HTTP ' + response.status + ').');
+  }
+  return { id: body.id, name: body.name, mimeType: body.mimeType, size: body.size };
+}
+
 /** Owner-authenticated agentic chat with bounded context, safe tools and an optional multi-agent workflow. */
 export async function streamAgenticReply(
   message: string,
@@ -411,6 +433,9 @@ export async function streamAgenticReply(
   const selectedApiKey = selectedProvider && !settings.localOmniRouteEnabled ? await getProviderApiKey(selectedProvider) : null;
   if (!settings.localOmniRouteEnabled && selectedProvider && (!selectedModel || !selectedBaseUrl || !selectedApiKey)) {
     throw new Error(!selectedModel ? 'Settings থেকে একটি Model নির্বাচন করুন।' : !selectedApiKey ? 'নির্বাচিত Provider-এর API Key Secure Storage-এ নেই।' : 'Provider Base URL সঠিক নয়।');
+  }
+  if (!Array.isArray(attachmentIds) || attachmentIds.length > 4 || attachmentIds.some((id) => !/^[0-9a-f-]{36}$/i.test(id)) || new Set(attachmentIds).size !== attachmentIds.length) {
+    throw new Error('সর্বোচ্চ ৪টি বৈধ attachment নির্বাচন করুন।');
   }
   const safeMemoryContext = memoryContext.trim().slice(0, 5000);
   const safeSkillContext = skillContext.trim().slice(0, 4000);
