@@ -465,11 +465,6 @@ export async function streamAgenticReply(
       typeof reference.size !== 'number' || reference.size <= 0 || reference.size > 1_000_000) {
       throw new Error('Attachment metadata সঠিক নয়।');
     }
-  const selectedBaseUrl = selectedProvider ? normalizeProviderBaseUrl(settings.aiBaseUrl || selectedPreset?.baseUrl || '') : '';
-  const selectedModel = (settings.aiModel ?? '').trim();
-  const selectedApiKey = selectedProvider ? await getProviderApiKey(selectedProvider) : null;
-  if (selectedProvider && (!selectedModel || !selectedBaseUrl || !selectedApiKey)) {
-    throw new Error(!selectedModel ? 'Settings থেকে একটি Model নির্বাচন করুন।' : !selectedApiKey ? 'নির্বাচিত Provider-এর API Key Secure Storage-এ নেই।' : 'Provider Base URL সঠিক নয়।');
   }
   const safeMemoryContext = memoryContext.trim().slice(0, 5000);
   const safeSkillContext = skillContext.trim().slice(0, 4000);
