@@ -110,6 +110,7 @@ export function ProviderManagerSection() {
     try {
       await saveProviderApiKey(providerId, keyDraft);
       setKeyConfigured(true);
+      if (providerId === 'openrouter') setFreeBackupKeyConfigured(true);
       setKeyDraft('');
       Alert.alert('সংরক্ষিত', 'API Key ফোনের Secure Storage-এ সংরক্ষণ হয়েছে।');
     } catch (cause) {
@@ -124,6 +125,7 @@ export function ProviderManagerSection() {
     try {
       await deleteProviderApiKey(providerId);
       setKeyConfigured(false);
+      if (providerId === 'openrouter') setFreeBackupKeyConfigured(false);
       setKeyDraft('');
       Alert.alert('মুছে ফেলা হয়েছে', 'এই Provider-এর API Key সরানো হয়েছে।');
     } catch (cause) {
