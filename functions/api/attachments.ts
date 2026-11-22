@@ -37,6 +37,7 @@ function json(body: unknown, status = 200): Response {
 }
 
 function sanitizeFileName(value: string): string {
+  // eslint-disable-next-line no-control-regex -- Strip control characters from untrusted filenames.
   const clean = value.replace(/[\u0000-\u001f\u007f/\\]/g, '_').replace(/^\.+/, '').trim().slice(0, 120);
   return clean || 'attachment';
 }
