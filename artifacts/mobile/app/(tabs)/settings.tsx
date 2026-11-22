@@ -1154,6 +1154,28 @@ export default function SettingsScreen() {
         />
       </View>
 
+
+        ) : null}
+        {expertReviewError ? <Text style={[styles.smallNote, { color: colors.destructive }]}>{expertReviewError}</Text> : null}
+        {expertReviewReport ? (
+          <View style={[styles.infoCard, { borderColor: colors.border, backgroundColor: colors.background }]}>
+            <Text style={[styles.label, { color: colors.foreground }]}>বিশ্লেষণ রিপোর্ট</Text>
+            <Text selectable style={[styles.body, { color: colors.foreground, lineHeight: 21 }]}>{expertReviewReport}</Text>
+            <Pressable onPress={() => void handleShareExpertReport()} style={[styles.primaryButton, { backgroundColor: colors.secondary, marginTop: 8 }]}>
+              <Feather name="share-2" size={15} color={colors.secondaryForeground} />
+              <Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>রিপোর্ট শেয়ার করুন</Text>
+            </Pressable>
+          </View>
+        ) : null}
+      </View>
+
+
+        </>
+      ) : null}
+
+{activeSettingsCategory === 'all' || activeSettingsCategory === 'developer' ? (
+        <>
+      <Text onLayout={recordSettingsSection('developer')} style={[styles.eyebrow, { color: colors.primary }]}>DEVELOPER TOOLS</Text>
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
           <Feather name="clipboard" size={17} color={colors.primary} />
@@ -1187,27 +1209,6 @@ export default function SettingsScreen() {
               Repository: {expertReviewEvidence.status.toUpperCase()} · {expertReviewEvidence.filePaths.length} file path · {expertReviewEvidence.note}
             </Text>
           </View>
-        ) : null}
-        {expertReviewError ? <Text style={[styles.smallNote, { color: colors.destructive }]}>{expertReviewError}</Text> : null}
-        {expertReviewReport ? (
-          <View style={[styles.infoCard, { borderColor: colors.border, backgroundColor: colors.background }]}>
-            <Text style={[styles.label, { color: colors.foreground }]}>বিশ্লেষণ রিপোর্ট</Text>
-            <Text selectable style={[styles.body, { color: colors.foreground, lineHeight: 21 }]}>{expertReviewReport}</Text>
-            <Pressable onPress={() => void handleShareExpertReport()} style={[styles.primaryButton, { backgroundColor: colors.secondary, marginTop: 8 }]}>
-              <Feather name="share-2" size={15} color={colors.secondaryForeground} />
-              <Text style={{ color: colors.secondaryForeground, fontWeight: '700' }}>রিপোর্ট শেয়ার করুন</Text>
-            </Pressable>
-          </View>
-        ) : null}
-      </View>
-
-
-        </>
-      ) : null}
-
-{activeSettingsCategory === 'all' || activeSettingsCategory === 'developer' ? (
-        <>
-      <Text onLayout={recordSettingsSection('developer')} style={[styles.eyebrow, { color: colors.primary }]}>DEVELOPER TOOLS</Text>
       {/* Developer Control Center */}
       <View style={[styles.section, sectionCard]}>
         <View style={styles.sectionTitleRow}>
