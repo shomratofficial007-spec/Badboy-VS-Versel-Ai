@@ -1,6 +1,7 @@
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -33,7 +34,7 @@ import { useOwnerAuth } from '@/context/OwnerAuthContext';
 import { isOwnerLoginRequiredError } from '@/lib/assistant/ownerAuth';
 import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
-import { searchAgentMemory, streamAgenticReply, streamReply, transcribeRecordedAudio } from '@/lib/assistant/api';
+import { searchAgentMemory, streamAgenticReply, streamReply, transcribeRecordedAudio, uploadAgentAttachment } from '@/lib/assistant/api';
 import { listDeveloperProjects } from '@/lib/assistant/developerData';
 import {
   dictateOnce,
@@ -108,6 +109,8 @@ export default function ChatScreen() {
   const [wakeDetected, setWakeDetected] = useState(false);
   const [selectedLang, setSelectedLang] = useState<string>(settings.voiceLanguage);
   const [error, setError] = useState<string | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<ChatMessage['attachments']>([]);
+  const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [awaitingSongName, setAwaitingSongName] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const stopDictationRef = useRef<(() => void) | null>(null);
@@ -265,6 +268,36 @@ export default function ChatScreen() {
     }
   }, []);
 
+  const pickChatImage = useCallback(async () => {
+    if (attachmentBusy || (pendingAttachments?.length ?? 0) >= 4) return;
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        setError('ছবি সংযুক্ত করতে Photos permission প্রয়োজন।');
+        return;
+      }
+      const picked = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsMultipleSelection: false,
+        quality: 0.85,
+      });
+      if (picked.canceled || !picked.assets[0]) return;
+      const asset = picked.assets[0];
+      setAttachmentBusy(true);
+      setError(null);
+      const uploaded = await uploadAgentAttachment(
+        asset.uri,
+        asset.fileName || 'image-' + Date.now() + '.jpg',
+        asset.mimeType || 'image/jpeg',
+      );
+      setPendingAttachments((current) => [...(current ?? []), uploaded].slice(0, 4));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'ছবি সংযুক্ত করা যায়নি।');
+    } finally {
+      setAttachmentBusy(false);
+    }
+  }, [attachmentBusy, pendingAttachments?.length]);
+
   const sendMessage = useCallback(async (rawText: string) => {
     const text = rawText.trim();
     if (!text || busy) return;
@@ -340,6 +373,14 @@ export default function ChatScreen() {
       return;
     }
 
+    const attachmentsToSend = pendingAttachments ?? [];
+    if (attachmentsToSend.length) {
+      userMessage.attachments = attachmentsToSend;
+      working = [...messages, userMessage, answer];
+      setMessages(working);
+      setPendingAttachments([]);
+    }
+
     try {
       // Pull only owner-scoped, non-sensitive project notes. Memory lookup is
       // best-effort: an unavailable D1/API must never prevent ordinary chat.
@@ -388,8 +429,10 @@ export default function ChatScreen() {
       memoryContext,
       skillContext,
       enabledPluginIds,
+      attachmentsToSend.map((attachment) => attachment.id),
       );
     } catch (cause) {
+      if (attachmentsToSend.length) setPendingAttachments((current) => [...attachmentsToSend, ...(current ?? [])].slice(0, 4));
       working = working.filter((message) => message.id !== answer.id);
       setMessages(working);
       setError(
@@ -417,7 +460,7 @@ export default function ChatScreen() {
         });
       }
     }
-  }, [awaitingSongName, busy, messages, resumeWakeWord, selectedLang, setError, setMessages, settings, speakVoiceReply, voiceMode]);
+  }, [awaitingSongName, busy, messages, pendingAttachments, resumeWakeWord, selectedLang, setError, setMessages, settings, speakVoiceReply, voiceMode]);
 
   const requestImprovement = useCallback(async () => {
     const lastUserMessage = [...messages].reverse().find((item) => item.role === 'user');
@@ -869,6 +912,16 @@ export default function ChatScreen() {
           <Text selectable style={{ color: isUser ? colors.primaryForeground : colors.foreground, fontSize: 15, lineHeight: 22 }}>
             {item.content || (busy && item.role === 'assistant' ? 'Badboy ভাবছে…' : '')}
           </Text>
+          {item.attachments?.length ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+              {item.attachments.map((attachment) => (
+                <View key={attachment.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5, backgroundColor: isUser ? 'rgba(255,255,255,0.16)' : colors.secondary }}>
+                  <Feather name="paperclip" size={12} color={isUser ? colors.primaryForeground : colors.mutedForeground} />
+                  <Text numberOfLines={1} style={{ maxWidth: 150, color: isUser ? colors.primaryForeground : colors.foreground, fontSize: 11 }}>{attachment.name}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
           {ytIntent ? (
             <Pressable
               onPress={() => void openYouTubeUrl(ytIntent.url, ytIntent.appUrl)}
@@ -1289,6 +1342,15 @@ export default function ChatScreen() {
           },
         ]}
       >
+        <Pressable
+          onPress={() => void pickChatImage()}
+          disabled={attachmentBusy || (pendingAttachments?.length ?? 0) >= 4 || busy}
+          accessibilityRole="button"
+          accessibilityLabel="ছবি সংযুক্ত করুন"
+          style={[styles.roundButton, { backgroundColor: colors.secondary, opacity: attachmentBusy || busy ? 0.5 : 1 }]}
+        >
+          {attachmentBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <Feather name="paperclip" size={17} color={colors.foreground} />}
+        </Pressable>
         <TextInput
           value={draft}
           onChangeText={setDraft}
@@ -1321,10 +1383,10 @@ export default function ChatScreen() {
         </Pressable>
         <Pressable
           onPress={() => void sendMessage(draft)}
-          disabled={!draft.trim() || busy}
+          disabled={(!draft.trim() && !(pendingAttachments?.length ?? 0)) || busy}
           accessibilityRole="button"
           accessibilityLabel="পাঠান"
-          style={[styles.roundButton, { backgroundColor: colors.primary, opacity: !draft.trim() || busy ? 0.4 : 1 }]}
+          style={[styles.roundButton, { backgroundColor: colors.primary, opacity: (!draft.trim() && !(pendingAttachments?.length ?? 0)) || busy ? 0.4 : 1 }]}
         >
           {busy ? <ActivityIndicator size="small" color={colors.primaryForeground} /> : <Feather name="arrow-up" size={20} color={colors.primaryForeground} />}
         </Pressable>
