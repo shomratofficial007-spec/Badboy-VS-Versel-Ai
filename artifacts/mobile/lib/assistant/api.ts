@@ -307,47 +307,34 @@ async function executeLocalAgentTool(name: string, rawArguments: string): Promis
       return { ok: true, result: { words: text ? text.split(/\s+/u).length : 0, characters: args.text.length, charactersWithoutWhitespace: args.text.replace(/\s/gu, '').length } };
     }
 
-    let pathname = '';
-    let method: 'GET' | 'POST' = 'GET';
-    let body: string | undefined;
     if (name === 'web_research') {
       requireExactKeys(args, ['query']);
       if (typeof args.query !== 'string' || !args.query.trim() || args.query.length > 500) throw new Error('web_research requires a query containing 1–500 characters.');
-      pathname = '/research/search';
-      method = 'POST';
-      body = JSON.stringify({ query: args.query.trim(), maxResults: 5 });
-    } else if (name === 'home_assistant_states') {
+      return { ok: true, result: await searchWebResearch(args.query.trim()) };
+    }
+    if (name === 'home_assistant_states') {
       requireExactKeys(args, []);
-      pathname = '/integrations/home-assistant/states';
-    } else if (name === 'slack_history') {
+      return { ok: true, result: await getHomeAssistantStates() };
+    }
+    if (name === 'slack_history') {
       requireExactKeys(args, ['channel']);
       if (typeof args.channel !== 'string' || !/^[A-Z0-9]{6,32}$/.test(args.channel)) throw new Error('slack_history requires a valid channel ID.');
-      pathname = '/integrations/slack/history?channel=' + encodeURIComponent(args.channel);
-    } else if (name === 'discord_history') {
+      return { ok: true, result: await getSlackMessages(args.channel) };
+    }
+    if (name === 'discord_history') {
       requireExactKeys(args, ['channel']);
-      if (typeof args.channel !== 'string' || !/^\d{17,20}$/.test(args.channel)) throw new Error('discord_history requires a valid channel ID.');
-      pathname = '/integrations/discord/messages?channel=' + encodeURIComponent(args.channel);
-    } else if (name === 'google_calendar_events') {
+      if (typeof args.channel !== 'string' || !/^\\d{17,20}$/.test(args.channel)) throw new Error('discord_history requires a valid channel ID.');
+      return { ok: true, result: await getDiscordMessages(args.channel) };
+    }
+    if (name === 'google_calendar_events') {
       requireExactKeys(args, ['timeMin']);
       if (args.timeMin !== undefined && (typeof args.timeMin !== 'string' || args.timeMin.length > 40 || !Number.isFinite(Date.parse(args.timeMin)) || !args.timeMin.endsWith('Z'))) {
         throw new Error('google_calendar_events accepts only an optional UTC ISO-8601 timeMin.');
       }
-      pathname = '/integrations/google-calendar/events?timeMin=' + encodeURIComponent(typeof args.timeMin === 'string' ? args.timeMin : new Date().toISOString());
-    } else {
-      throw new Error('Tool is not in the Badboy allowlist.');
+      return { ok: true, result: await getCalendarEvents(typeof args.timeMin === 'string' ? args.timeMin : new Date().toISOString()) };
     }
+    throw new Error('Tool is not in the Badboy allowlist.');
 
-    const response = await expoFetch(apiUrl(pathname), {
-      method,
-      headers: {
-        Accept: 'application/json',
-        Authorization: await ownerAuthorizationHeader(),
-        ...(body ? { 'Content-Type': 'application/json' } : {}),
-      },
-      ...(body ? { body } : {}),
-    });
-    const result = await response.json().catch(() => ({ error: 'Integration returned an invalid response.' }));
-    return { ok: response.ok, result };
   } catch (error) {
     return { ok: false, result: { error: error instanceof Error ? error.message : 'Invalid tool arguments.' } };
   }
