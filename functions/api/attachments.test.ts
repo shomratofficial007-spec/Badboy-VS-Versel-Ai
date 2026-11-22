@@ -90,8 +90,8 @@ test('private attachment upload rejects unsupported MIME, spoofed images and ove
 test('private attachment owner quota is rechecked atomically when concurrent uploads race', async () => {
   const db = new AttachmentD1();
   db.quotaQueue = [
-    { attachment_count: 99, total_bytes: 24 * 1024 * 1024 },
-    { attachment_count: 100, total_bytes: 24 * 1024 * 1024 + 5 },
+    { attachment_count: 99, total_bytes: 24_000_000 },
+    { attachment_count: 100, total_bytes: 25_000_005 },
   ];
   db.insertChanges = 0;
   const response = await handleAttachmentRequest(
