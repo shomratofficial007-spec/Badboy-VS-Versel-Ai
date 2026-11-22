@@ -236,7 +236,7 @@ test('streamAgenticReply runs every Agentic stage directly through Local OmniRou
     if (system.includes('Badboy Planner')) {
       return jsonResponse({ choices: [{ message: { content: JSON.stringify({ goal: 'হিসাব', steps: [{ id: '1', task: 'হিসাব', success_criteria: 'ফল পাওয়া' }], risks: [] }) } }] });
     }
-    if (system.includes('Badboy Executor')) {
+    if (system.includes('Badboy Tool Calling Agent')) {
       if (body.messages.some((item: any) => item.role === 'tool')) {
         return jsonResponse({ choices: [{ message: { content: 'ফলাফল ৪' } }] });
       }
@@ -264,7 +264,7 @@ test('streamAgenticReply runs every Agentic stage directly through Local OmniRou
   }, {
     reference: { id: '123e4567-e89b-12d3-a456-426614174001', name: 'notes.md', mimeType: 'text/markdown', size: 14 },
     text: '# Notes\nhello',
-  }], (status) => statuses.push(status));
+  }], (status) => statuses.push(status), (status) => stages.push(status));
   assert.deepEqual(chunks, ['Local ', 'answer']);
   assert.deepEqual(statuses, [{ route: 'local' }]);
   assert.deepEqual(stages.filter((item) => item.status === 'started').map((item) => item.stage), ['planner', 'tool-calling', 'executor', 'tool-calling', 'reviewer', 'synthesizer']);
