@@ -1,7 +1,7 @@
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { File } from 'expo-file-system';
+import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -277,9 +277,10 @@ export default function ChatScreen() {
     setAttachmentBusy(true);
     setError(null);
     try {
-      const picked = await File.pickFileAsync({
-        multipleFiles: true,
-        mimeTypes: ['image/*', 'text/plain', 'text/markdown', 'text/csv', 'application/json'],
+      const picked = await DocumentPicker.getDocumentAsync({
+        multiple: true,
+        copyToCacheDirectory: true,
+        type: ['image/*', 'text/plain', 'text/markdown', 'text/csv', 'application/json'],
       });
       if (picked.canceled) return;
       const available = Math.max(0, 4 - (pendingAttachments?.length ?? 0));
@@ -289,14 +290,14 @@ export default function ChatScreen() {
         txt: 'text/plain', md: 'text/markdown', markdown: 'text/markdown',
         csv: 'text/csv', json: 'application/json',
       };
-      for (const file of picked.result.slice(0, available)) {
+      for (const file of picked.assets.slice(0, available)) {
         if (typeof file.size !== 'number' || file.size <= 0 || file.size > 1_000_000) {
           setError(file.name + ': ফাইলের আকার ১ MB-এর মধ্যে হতে হবে।');
           continue;
         }
         const extension = file.name.toLowerCase().split('.').pop() ?? '';
-        const mimeType = file.type && file.type !== 'application/octet-stream'
-          ? file.type
+        const mimeType = file.mimeType && file.mimeType !== 'application/octet-stream'
+          ? file.mimeType
           : extensionMime[extension] ?? '';
         const isImage = ['image/png', 'image/jpeg', 'image/webp'].includes(mimeType);
         const isText = ['text/plain', 'text/markdown', 'text/csv', 'application/json'].includes(mimeType);
@@ -307,7 +308,7 @@ export default function ChatScreen() {
         const base64 = isImage
           ? await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 })
           : undefined;
-        const text = isText ? (await file.text()).slice(0, 20_000) : undefined;
+        const text = isText ? (await FileSystem.readAsStringAsync(file.uri)).slice(0, 20_000) : undefined;
         const uploaded = await uploadAgentAttachment(file.uri, file.name, mimeType);
         setPendingAttachments((current) => [...(current ?? []), { reference: uploaded, ...(base64 ? { base64 } : {}), ...(text !== undefined ? { text } : {}) }].slice(0, 4));
       }
