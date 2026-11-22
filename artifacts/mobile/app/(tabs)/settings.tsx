@@ -825,10 +825,6 @@ export default function SettingsScreen() {
       lastAutoScrolledSection.current = requestedSection;
       const targetY = event.nativeEvent.layout.y;
       setTimeout(() => settingsScrollRef.current?.scrollTo({ y: targetY, animated: true }), 0);
-  const recordSettingsSection = (key: string) => (event: { nativeEvent: { layout: { y: number } } }) => {
-    settingsSectionOffsets.current[key] = event.nativeEvent.layout.y;
-    if (requestedSection === key) {
-      setTimeout(() => settingsScrollRef.current?.scrollTo({ y: event.nativeEvent.layout.y, animated: true }), 0);
     }
   };
   const scrollToSettingsSection = (key: string) => () => {
