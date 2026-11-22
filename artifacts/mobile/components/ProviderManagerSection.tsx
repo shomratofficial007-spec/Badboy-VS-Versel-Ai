@@ -224,6 +224,7 @@ export function ProviderManagerSection() {
         </View>
         <TextInput value={localUrl} onChangeText={setLocalUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="http://127.0.0.1:20128/v1" placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 11, padding: 10, color: colors.foreground, fontSize: 12 }} />
         <TextInput value={localModel} onChangeText={setLocalModel} autoCapitalize="none" autoCorrect={false} placeholder="Local model ID" placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 11, padding: 10, color: colors.foreground, fontSize: 12 }} />
+        <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>OmniRoute-এর /v1/models থেকে exact Model ID দিন; ছবি বুঝতে vision-capable model লাগবে।</Text>
         <TextInput value={localKeyDraft} onChangeText={setLocalKeyDraft} secureTextEntry autoCapitalize="none" autoCorrect={false} placeholder={localKeyConfigured ? 'Local OmniRoute Bearer Key saved · replace if needed' : 'Required OmniRoute Bearer API Key'} placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 11, padding: 10, color: colors.foreground, fontSize: 12 }} />
         <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>OmniRoute-এর Authorization: Bearer key প্রয়োজন; Key শুধু এই ফোনের Secure Storage-এ থাকবে।</Text>
         <View style={{ flexDirection: 'row', gap: 7 }}>
