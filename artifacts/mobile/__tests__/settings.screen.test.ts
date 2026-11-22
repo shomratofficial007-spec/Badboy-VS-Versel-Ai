@@ -232,7 +232,7 @@ test('Settings opens with a searchable, compact category index', async () => {
   assert.match(html, /BADBOY|Badboy/);
   assert.match(html, /Settings|সেটিংস/);
   assert.match(html, /Customize your Badboy AI experience/);
-  assert.match(html, /Search settings/);
+  assert.ok(inputHandlers.some((item) => item.placeholder === 'Search settings'));
   assert.doesNotMatch(html, /AI Provider &amp; Model|Owner Panel|Jarvis Assistant &amp; Quick Access/);
   for (const category of ['Account', 'AI', 'Appearance', 'Privacy', 'Developer', 'Jarvis', 'Voice', 'More']) {
     assert.ok(pressables.some((item) => item.label === `Go to ${category} settings`), `missing Settings category: ${category}`);
@@ -457,7 +457,7 @@ function createSettingsHookHarness(initialOverrides: Record<number, unknown> = {
   for (const [index, value] of Object.entries(initialOverrides)) {
     mappedOverrides[legacyStateIndexMap[Number(index)] ?? Number(index)] = value;
   }
-  if (!('54' in mappedOverrides)) mappedOverrides[55] = 'all';
+  if (!('55' in mappedOverrides)) mappedOverrides[55] = 'all';
   const slots: unknown[] = [];
   let cursor = 0;
   let effectsExecuted = false;
@@ -530,7 +530,7 @@ test('Settings category rows open isolated mobile subpages and preserve every ex
     assert.ok(pressables.some((item) => item.label === 'Back to Settings categories'));
     pressables.find((item) => item.label === 'Back to Settings categories')?.onPress();
     html = await render();
-    assert.match(html, /Search settings/);
+    assert.ok(inputHandlers.some((item) => item.placeholder === 'Search settings'));
   }
 });
 
