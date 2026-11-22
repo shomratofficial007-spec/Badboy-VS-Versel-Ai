@@ -1,7 +1,7 @@
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
+import { File } from 'expo-file-system';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -34,7 +34,7 @@ import { useOwnerAuth } from '@/context/OwnerAuthContext';
 import { isOwnerLoginRequiredError } from '@/lib/assistant/ownerAuth';
 import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
-import { deleteAttachment, searchAgentMemory, streamAgenticReply, streamReply, transcribeRecordedAudio, uploadAgentAttachment, type AgenticAttachmentInput } from '@/lib/assistant/api';
+import { deleteAttachment, searchAgentMemory, streamAgenticReply, streamReply, transcribeRecordedAudio, uploadAgentAttachment, type AgenticAttachmentInput, type AgentRouteStatus } from '@/lib/assistant/api';
 import { listDeveloperProjects } from '@/lib/assistant/developerData';
 import {
   dictateOnce,
@@ -111,6 +111,7 @@ export default function ChatScreen() {
   const [error, setError] = useState<string | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<AgenticAttachmentInput[]>([]);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
+  const [agentRouteStatus, setAgentRouteStatus] = useState<AgentRouteStatus | null>(null);
   const [awaitingSongName, setAwaitingSongName] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const stopDictationRef = useRef<(() => void) | null>(null);
@@ -268,34 +269,47 @@ export default function ChatScreen() {
     }
   }, []);
 
-  const pickChatImage = useCallback(async () => {
+  const pickChatAttachment = useCallback(async () => {
     if (attachmentBusy || (pendingAttachments?.length ?? 0) >= 4) return;
+    setAttachmentBusy(true);
+    setError(null);
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        setError('ছবি সংযুক্ত করতে Photos permission প্রয়োজন।');
-        return;
+      const picked = await File.pickFileAsync({
+        multipleFiles: true,
+        mimeTypes: ['image/*', 'text/plain', 'text/markdown', 'text/csv', 'application/json'],
+      });
+      if (picked.canceled) return;
+      const available = Math.max(0, 4 - (pendingAttachments?.length ?? 0));
+      if (picked.result.length > available) setError('একবারে সর্বোচ্চ ৪টি attachment রাখা যাবে।');
+      const extensionMime: Record<string, string> = {
+        png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp',
+        txt: 'text/plain', md: 'text/markdown', markdown: 'text/markdown',
+        csv: 'text/csv', json: 'application/json',
+      };
+      for (const file of picked.result.slice(0, available)) {
+        if (typeof file.size !== 'number' || file.size <= 0 || file.size > 1_000_000) {
+          setError(file.name + ': ফাইলের আকার ১ MB-এর মধ্যে হতে হবে।');
+          continue;
+        }
+        const extension = file.name.toLowerCase().split('.').pop() ?? '';
+        const mimeType = file.type && file.type !== 'application/octet-stream'
+          ? file.type
+          : extensionMime[extension] ?? '';
+        const isImage = ['image/png', 'image/jpeg', 'image/webp'].includes(mimeType);
+        const isText = ['text/plain', 'text/markdown', 'text/csv', 'application/json'].includes(mimeType);
+        if (!isImage && !isText) {
+          setError(file.name + ': PNG, JPEG, WebP, TXT, Markdown, CSV বা JSON ফাইল ব্যবহার করুন।');
+          continue;
+        }
+        const base64 = isImage
+          ? await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 })
+          : undefined;
+        const text = isText ? (await file.text()).slice(0, 20_000) : undefined;
+        const uploaded = await uploadAgentAttachment(file.uri, file.name, mimeType);
+        setPendingAttachments((current) => [...(current ?? []), { reference: uploaded, ...(base64 ? { base64 } : {}), ...(text !== undefined ? { text } : {}) }].slice(0, 4));
       }
-      const picked = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsMultipleSelection: false,
-        quality: 0.85,
-      });
-      if (picked.canceled || !picked.assets[0]) return;
-      const asset = picked.assets[0];
-      setAttachmentBusy(true);
-      setError(null);
-      const base64 = await FileSystem.readAsStringAsync(asset.uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      const uploaded = await uploadAgentAttachment(
-        asset.uri,
-        asset.fileName || 'image-' + Date.now() + '.jpg',
-        asset.mimeType || 'image/jpeg',
-      );
-      setPendingAttachments((current) => [...(current ?? []), { reference: uploaded, base64 }].slice(0, 4));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'ছবি সংযুক্ত করা যায়নি।');
+      setError(cause instanceof Error ? cause.message : 'ফাইল সংযুক্ত করা যায়নি।');
     } finally {
       setAttachmentBusy(false);
     }
@@ -307,6 +321,7 @@ export default function ChatScreen() {
     Keyboard.dismiss();
     setDraft('');
     setError(null);
+    setAgentRouteStatus(null);
 
     const userMessage = newMessage('user', text || 'এই সংযুক্তিগুলো বিশ্লেষণ করো।');
     let answer = newMessage('assistant');
@@ -435,6 +450,7 @@ export default function ChatScreen() {
         skillContext,
         enabledPluginIds,
         attachmentsToSend,
+        setAgentRouteStatus,
       );
     } catch (cause) {
       if (attachmentsToSend.length) setPendingAttachments((current) => [...attachmentsToSend, ...(current ?? [])].slice(0, 4));
@@ -1058,7 +1074,7 @@ export default function ChatScreen() {
           <Feather name="hexagon" size={18} color={colors.primary} />
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={[styles.providerLabel, { color: colors.mutedForeground }]}>PROVIDER</Text>
-            <Text numberOfLines={1} style={[styles.providerValue, { color: colors.foreground }]}>OpenRouter</Text>
+            <Text numberOfLines={1} style={[styles.providerValue, { color: colors.foreground }]}>{settings.localOmniRouteEnabled ? 'Local OmniRoute' : settings.aiProvider && settings.aiProvider !== 'server' ? settings.aiProvider : 'Server AI'}</Text>
           </View>
           <Feather name="chevron-down" size={13} color={colors.primary} />
         </Pressable>
@@ -1067,7 +1083,7 @@ export default function ChatScreen() {
           <Feather name="cpu" size={18} color={colors.primary} />
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={[styles.providerLabel, { color: colors.mutedForeground }]}>MODEL</Text>
-            <Text numberOfLines={1} style={[styles.providerValue, { color: colors.foreground }]}>Auto Free Model</Text>
+            <Text numberOfLines={1} style={[styles.providerValue, { color: colors.foreground }]}>{settings.localOmniRouteEnabled ? settings.localOmniRouteModel || 'Model not set' : settings.aiModel || 'Auto Free Model'}</Text>
           </View>
           <Feather name="chevron-down" size={13} color={colors.primary} />
         </Pressable>
@@ -1313,6 +1329,15 @@ export default function ChatScreen() {
         />
       )}
 
+      {agentRouteStatus ? (
+        <View style={{ paddingHorizontal: 14, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+          <Feather name={agentRouteStatus.route === 'local' ? 'smartphone' : agentRouteStatus.route === 'free-fallback' ? 'cloud' : 'server'} size={13} color={agentRouteStatus.route === 'free-fallback' ? '#d97706' : colors.mutedForeground} />
+          <Text numberOfLines={2} style={{ flex: 1, color: colors.mutedForeground, fontSize: 11 }}>
+            {agentRouteStatus.route === 'local' ? 'Local OmniRoute · on-device' : agentRouteStatus.route === 'free-fallback' ? 'Free API backup · ' + (agentRouteStatus.reason ?? 'Local router unavailable') : (agentRouteStatus.provider ?? 'Server AI')}
+          </Text>
+        </View>
+      ) : null}
+
       {error ? (
         <View style={[styles.errorBox, { backgroundColor: colors.destructive }]}>
           <Feather name="alert-triangle" size={16} color={colors.destructiveForeground} />
@@ -1348,10 +1373,10 @@ export default function ChatScreen() {
         ]}
       >
         <Pressable
-          onPress={() => void pickChatImage()}
+          onPress={() => void pickChatAttachment()}
           disabled={attachmentBusy || (pendingAttachments?.length ?? 0) >= 4 || busy}
           accessibilityRole="button"
-          accessibilityLabel="ছবি সংযুক্ত করুন"
+          accessibilityLabel="ছবি বা ফাইল সংযুক্ত করুন"
           style={[styles.roundButton, { backgroundColor: colors.secondary, opacity: attachmentBusy || busy ? 0.5 : 1 }]}
         >
           {attachmentBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <Feather name="paperclip" size={17} color={colors.foreground} />}
