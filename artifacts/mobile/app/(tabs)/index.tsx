@@ -849,7 +849,10 @@ export default function ChatScreen() {
         settings.developerMode ? getDeveloperModeSkillContext() : '',
         await loadEnabledPluginIds().catch(() => []),
         previousUser.attachments ?? [],
-        setAgentRouteStatus,
+        (status) => {
+          setAgentRouteStatus(status);
+          if (status.route !== 'local') setAgentStageStatus(null);
+        },
         setAgentStageStatus,
       );
     } catch (cause) {
