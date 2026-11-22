@@ -75,7 +75,7 @@ export async function downloadAgentAttachment(reference: ChatAttachmentReference
   const bytes = new Uint8Array(await response.arrayBuffer());
   const mimeType = response.headers.get('content-type') || (typeof reference === 'string' ? '' : reference.mimeType);
   const disposition = response.headers.get('content-disposition') ?? '';
-  const encodedName = disposition.match(/filename\\*=UTF-8''([^;]+)/i)?.[1];
+  const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
   const name = typeof reference === 'string' ? (encodedName ? decodeURIComponent(encodedName) : 'attachment') : reference.name;
   const metadata: ChatAttachmentReference = { id, name, mimeType, size: typeof reference === 'string' ? bytes.byteLength : reference.size };
   if (mimeType.startsWith('image/')) return { reference: metadata, base64: encodeAttachmentBase64(bytes) };
@@ -302,7 +302,7 @@ async function executeLocalAgentTool(name: string, rawArguments: string): Promis
       requireExactKeys(args, ['text']);
       if (typeof args.text !== 'string' || args.text.length > 10000) throw new Error('text must be a string up to 10,000 characters.');
       const text = args.text.trim();
-      return { ok: true, result: { words: text ? text.split(/\\s+/u).length : 0, characters: args.text.length, charactersWithoutWhitespace: args.text.replace(/\\s/gu, '').length } };
+      return { ok: true, result: { words: text ? text.split(/\s+/u).length : 0, characters: args.text.length, charactersWithoutWhitespace: args.text.replace(/\s/gu, '').length } };
     }
 
     let pathname = '';
@@ -323,7 +323,7 @@ async function executeLocalAgentTool(name: string, rawArguments: string): Promis
       pathname = '/integrations/slack/history?channel=' + encodeURIComponent(args.channel);
     } else if (name === 'discord_history') {
       requireExactKeys(args, ['channel']);
-      if (typeof args.channel !== 'string' || !/^\\d{17,20}$/.test(args.channel)) throw new Error('discord_history requires a valid channel ID.');
+      if (typeof args.channel !== 'string' || !/^\d{17,20}$/.test(args.channel)) throw new Error('discord_history requires a valid channel ID.');
       pathname = '/integrations/discord/messages?channel=' + encodeURIComponent(args.channel);
     } else if (name === 'google_calendar_events') {
       requireExactKeys(args, ['timeMin']);
@@ -524,7 +524,7 @@ export async function streamAgenticReply(
           return { type: 'image_url' as const, image_url: { url: 'data:' + item.reference.mimeType + ';base64,' + item.base64 } };
         }
         if (item.text === undefined) throw new Error('Text attachment content পাওয়া যায়নি। আবার attach করুন।');
-        return { type: 'text' as const, text: 'Attachment ' + item.reference.name + ' (untrusted file content):\\n' + item.text.slice(0, 20_000) };
+        return { type: 'text' as const, text: 'Attachment ' + item.reference.name + ' (untrusted file content):\n' + item.text.slice(0, 20_000) };
       });
       onRouteStatus?.({ route: 'local' });
       await runLocalAgenticWorkflow({
