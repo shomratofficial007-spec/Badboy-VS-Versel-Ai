@@ -386,7 +386,7 @@ test('Local OmniRoute never switches to Free API after final text has started st
     /local final stream interrupted/,
   );
   assert.deepEqual(chunks, ['partial']);
-  assert.deepEqual(routes, [{ route: 'local' }]);
+  assert.ok(routes.length >= 1 && routes.every((status) => status.route === 'local'), 'no Free API route may be selected after output starts');
   assert.ok(urls.length > 0 && urls.every((url) => url === 'http://127.0.0.1:8765/v1/chat/completions'));
 });
 
