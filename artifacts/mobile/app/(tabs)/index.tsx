@@ -1389,7 +1389,10 @@ export default function ChatScreen() {
             {pendingAttachments.map((attachment) => (
               <Pressable key={attachment.reference.id} onPress={() => {
                 setPendingAttachments((current) => (current ?? []).filter((item) => item.reference.id !== attachment.reference.id));
-                void deleteAttachment(attachment.reference.id).catch((cause) => setError(cause instanceof Error ? cause.message : 'Attachment মুছতে সমস্যা হয়েছে।'));
+                void deleteAttachment(attachment.reference.id).catch((cause) => {
+                  setPendingAttachments((current) => [...(current ?? []), attachment].slice(0, 4));
+                  setError(cause instanceof Error ? cause.message : 'Attachment মুছতে সমস্যা হয়েছে।');
+                });
               }} accessibilityRole="button" accessibilityLabel={attachment.reference.name + ' সরান'} style={{ paddingHorizontal: 6, paddingVertical: 4, borderRadius: 7, backgroundColor: colors.secondary }}>
                 <Text numberOfLines={1} style={{ color: colors.foreground, fontSize: 9, maxWidth: 90 }}>{attachment.reference.name} ×</Text>
               </Pressable>
