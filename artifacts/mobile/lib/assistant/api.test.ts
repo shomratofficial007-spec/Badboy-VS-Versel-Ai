@@ -176,6 +176,23 @@ test('uploadAgentAttachment uses owner-authenticated multipart upload and valida
   await assert.rejects(uploadAgentAttachment('file:///photo.png', 'photo.png', 'image/png'), /storage unavailable/);
 });
 
+test('downloadAgentAttachment tolerates malformed percent-encoding in filename headers', async () => {
+  const { downloadAgentAttachment } = await apiPromise;
+  fetchHandler = async (_input, init) => {
+    assert.equal(authFrom(init), 'Bearer owner-token-test');
+    return new Response(new TextEncoder().encode('safe attachment text'), {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/plain',
+        'Content-Disposition': "attachment; filename*=UTF-8''bad%ZZname.txt",
+      },
+    });
+  };
+  const downloaded = await downloadAgentAttachment('123e4567-e89b-12d3-a456-426614174000');
+  assert.equal(downloaded.reference.name, 'attachment');
+  assert.equal(downloaded.text, 'safe attachment text');
+});
+
 test('streamAgenticReply sends only validated owner attachment references to the Agentic Worker', async () => {
   const { streamAgenticReply } = await apiPromise;
   let sent: any;
