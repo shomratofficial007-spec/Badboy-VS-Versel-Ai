@@ -1072,7 +1072,7 @@ test('Settings lists and previews an installed voice matching the selected langu
 
 test('Settings category index shows Jarvis Assistant first and opens its dedicated controls', async () => {
   resetTelegramState();
-  const render = createSettingsHookHarness();
+  const render = createSettingsHookHarness({ 52: null });
   let html = await render();
   assert.match(html, /Jarvis Assistant/);
   assert.ok(pressables.some((item) => item.label === 'Go to Jarvis settings'));
