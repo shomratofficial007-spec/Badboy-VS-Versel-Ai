@@ -1069,6 +1069,24 @@ test('Settings lists and previews an installed voice matching the selected langu
   settings.voiceLanguage = 'bn-BD';
 });
 
+
+test('Settings category index shows Jarvis Assistant first and opens its dedicated controls', async () => {
+  resetTelegramState();
+  const render = createSettingsHookHarness();
+  let html = await render();
+  assert.match(html, /Jarvis Assistant/);
+  assert.ok(pressables.some((item) => item.label === 'Go to Jarvis settings'));
+  const jarvisIndex = html.indexOf('Jarvis Assistant');
+  const accountIndex = html.indexOf('Account &amp; Security');
+  assert.ok(jarvisIndex >= 0 && accountIndex >= 0 && jarvisIndex < accountIndex,
+    'Jarvis Assistant is the first category so it is visible without scrolling');
+  pressables.find((item) => item.label === 'Go to Jarvis settings')?.onPress();
+  html = await render();
+  assert.match(html, /Jarvis Assistant &amp; Quick Access/);
+  assert.ok(pressables.some((item) => item.label.includes('Start Bubble')));
+  assert.ok(pressables.some((item) => item.label.includes('Stop Bubble')));
+});
+
 test('Settings Jarvis controls request overlay permission and expose stop and screen-awareness actions', async () => {
   resetTelegramState();
   pressables.length = 0;
