@@ -1083,7 +1083,7 @@ test('Settings category index shows Jarvis Assistant first and opens its dedicat
     'Jarvis Assistant is the first category so it is visible without scrolling');
   pressables.find((item) => item.label === 'Go to Jarvis settings')?.onPress();
   html = await render();
-  assert.match(html, /Jarvis Assistant &amp; Quick Access/);
+  assert.ok(html.includes('Jarvis Assistant & Quick Access'));
   assert.ok(pressables.some((item) => item.label.includes('Start Bubble')));
   assert.ok(pressables.some((item) => item.label.includes('Stop Bubble')));
 });
