@@ -831,12 +831,12 @@ export default function SettingsScreen() {
   const [settingsSearchQuery, setSettingsSearchQuery] = useState('');
 
   const settingsCategories = [
+    { id: 'jarvis', label: 'Jarvis Assistant', description: 'Floating Bubble and Screen Awareness permissions', keywords: 'jarvis bubble floating assistant screen awareness accessibility', icon: 'aperture' },
     { id: 'account', label: 'Account & Security', description: 'Owner login, token access and chat history', keywords: 'owner login token security access sign out history', icon: 'user' },
     { id: 'ai', label: 'AI & Models', description: 'AI provider, model, fallback and agent tools', keywords: 'provider model api fallback smart agent online ai', icon: 'cpu' },
     { id: 'appearance', label: 'Appearance', description: 'Theme, colors and visual preferences', keywords: 'theme color dark light appearance', icon: 'sliders' },
     { id: 'privacy', label: 'Privacy & Personalization', description: 'Online AI, memory, personality and data controls', keywords: 'privacy data memory personality online ai consent', icon: 'shield' },
     { id: 'developer', label: 'Developer Mode', description: 'Agent, repository, project brain, QA and integrations', keywords: 'developer github repository agent project brain qa code review', icon: 'code' },
-    { id: 'jarvis', label: 'Jarvis Assistant', description: 'Floating Bubble and Screen Awareness permissions', keywords: 'jarvis bubble floating assistant screen awareness accessibility', icon: 'aperture' },
     { id: 'voice', label: 'Voice & Device', description: 'Voice input/output, wake word and Android actions', keywords: 'voice microphone speech wake word device reminder calendar', icon: 'mic' },
     { id: 'management', label: 'More Settings', description: 'Roadmap, Telegram and app integrations', keywords: 'more roadmap telegram integrations bot automation', icon: 'layers' },
   ] as const;
