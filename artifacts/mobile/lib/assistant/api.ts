@@ -389,7 +389,7 @@ async function requestLocalOmniRoute(
   onChunk?: (chunk: string) => void,
 ): Promise<LocalAgentCompletion | void> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.stream ? 120_000 : 60_000);
+  const connectTimeout = setTimeout(() => controller.abort(), options.stream ? 8_000 : 60_000);
   try {
     const response = await expoFetch(baseUrl + '/chat/completions', {
       method: 'POST',
@@ -408,8 +408,14 @@ async function requestLocalOmniRoute(
       }),
       signal: controller.signal,
     });
+    clearTimeout(connectTimeout);
     if (options.stream) {
-      await streamOpenAICompatibleResponse(response, onChunk ?? (() => undefined));
+      const streamTimeout = setTimeout(() => controller.abort(), 120_000);
+      try {
+        await streamOpenAICompatibleResponse(response, onChunk ?? (() => undefined));
+      } finally {
+        clearTimeout(streamTimeout);
+      }
       return;
     }
     if (!response.ok) {
@@ -436,7 +442,7 @@ async function requestLocalOmniRoute(
     if (controller.signal.aborted) throw new Error('Local OmniRoute request timed out or stopped responding.');
     throw error;
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(connectTimeout);
   }
 }
 
