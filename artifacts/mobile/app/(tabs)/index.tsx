@@ -444,28 +444,48 @@ export default function ChatScreen() {
         // Corrupt or unavailable plugin settings fail closed: no integration tools are enabled.
       }
       const history = messages.slice(-6).map(({ role, content }) => ({ role, content: content.slice(0, 2000) }));
-      const onChunk = (chunk: string) => {
+      let queuedStreamText = '';
+      let streamFrame: number | null = null;
+      const flushStreamText = () => {
+        if (!queuedStreamText) return;
+        const chunk = queuedStreamText;
+        queuedStreamText = '';
         answer = { ...answer, content: answer.content + chunk };
         working = working.map((message) =>
           message.id === answer.id ? answer : message,
         );
         setMessages(working);
       };
-      await streamAgenticReply(
-        text,
-        settings,
-        history,
-        onChunk,
-        memoryContext,
-        skillContext,
-        enabledPluginIds,
-        attachmentsToSend,
-        (status) => {
-          setAgentRouteStatus(status);
-          if (status.route !== 'local') setAgentStageStatus(null);
-        },
-        setAgentStageStatus,
-      );
+      const onChunk = (chunk: string) => {
+        queuedStreamText += chunk;
+        if (streamFrame === null) {
+          streamFrame = requestAnimationFrame(() => {
+            streamFrame = null;
+            flushStreamText();
+          });
+        }
+      };
+      try {
+        await streamAgenticReply(
+          text,
+          settings,
+          history,
+          onChunk,
+          memoryContext,
+          skillContext,
+          enabledPluginIds,
+          attachmentsToSend,
+          (status) => {
+            setAgentRouteStatus(status);
+            if (status.route !== 'local') setAgentStageStatus(null);
+          },
+          setAgentStageStatus,
+        );
+      } finally {
+        if (streamFrame !== null) cancelAnimationFrame(streamFrame);
+        streamFrame = null;
+        flushStreamText();
+      }
     } catch (cause) {
       if (attachmentsToSend.length) setPendingAttachments((current) => [...attachmentsToSend, ...(current ?? [])].slice(0, 4));
       working = working.filter((message) => message.id !== answer.id);
