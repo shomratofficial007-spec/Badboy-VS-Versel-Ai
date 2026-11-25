@@ -28,7 +28,7 @@ async function run(): Promise<void> {
     }
     if (url.hostname === "generativelanguage.googleapis.com") {
       return new Response(
-        'data: {"candidates":[{"content":{"parts":[{"text":"Gemini fallback"}]}}]}\\n\\n',
+        'data: {"candidates":[{"content":{"parts":[{"text":"Gemini fallback"}]}}]}\n\n',
         { status: 200, headers: { "Content-Type": "text/event-stream" } },
       );
     }
@@ -53,7 +53,7 @@ async function run(): Promise<void> {
       assert.equal(body.model, "openai/gpt-oss-20b");
       assert.equal(body.stream, true);
       return new Response(
-        'data: {"choices":[{"delta":{"content":"Groq fallback"}}]}\\n\\ndata: [DONE]\\n\\n',
+        'data: {"choices":[{"delta":{"content":"Groq fallback"}}]}\n\ndata: [DONE]\n\n',
         { status: 200, headers: { "Content-Type": "text/event-stream" } },
       );
     }
@@ -89,7 +89,7 @@ async function run(): Promise<void> {
     if (url.hostname === "generativelanguage.googleapis.com") throw new Error("Gemini network failure");
     if (url.hostname === "api.groq.com") {
       return new Response(
-        'data: {"choices":[{"delta":{"content":"Groq after Gemini network error"}}]}\\n\\ndata: [DONE]\\n\\n',
+        'data: {"choices":[{"delta":{"content":"Groq after Gemini network error"}}]}\n\ndata: [DONE]\n\n',
         { status: 200, headers: { "Content-Type": "text/event-stream" } },
       );
     }
@@ -108,7 +108,7 @@ async function run(): Promise<void> {
     if (url.hostname === "openrouter.ai") throw new Error("OpenRouter network failure");
     if (url.hostname === "generativelanguage.googleapis.com") {
       return new Response(
-        'data: {"candidates":[{"content":{"parts":[{"text":"Gemini after OpenRouter network error"}]}}]}\\n\\n',
+        'data: {"candidates":[{"content":{"parts":[{"text":"Gemini after OpenRouter network error"}]}}]}\n\n',
         { status: 200, headers: { "Content-Type": "text/event-stream" } },
       );
     }
