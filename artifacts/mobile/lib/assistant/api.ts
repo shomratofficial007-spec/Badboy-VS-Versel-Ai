@@ -377,7 +377,7 @@ async function requestLocalOmniRoute(
   model: string,
   apiKey: string | null,
   messages: LocalAgentMessage[],
-  options: { tools?: readonly unknown[]; responseFormat?: 'json_object'; stream?: boolean },
+  options: { tools?: readonly unknown[]; responseFormat?: 'json_object'; stream?: boolean; maxTokens?: number },
   onChunk?: (chunk: string) => void,
 ): Promise<LocalAgentCompletion | void> {
   const controller = new AbortController();
@@ -393,6 +393,7 @@ async function requestLocalOmniRoute(
       body: JSON.stringify({
         model,
         messages,
+        max_tokens: options.maxTokens ?? (options.stream ? 1400 : 1000),
         stream: options.stream === true,
         ...(options.tools ? { tools: options.tools, tool_choice: 'auto', parallel_tool_calls: false } : {}),
         ...(options.responseFormat ? { response_format: { type: options.responseFormat } } : {}),
