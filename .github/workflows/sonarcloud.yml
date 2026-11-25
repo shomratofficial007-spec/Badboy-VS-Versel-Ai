@@ -78,6 +78,8 @@ jobs:
           functions/api/agentMemory.test.ts
           functions/api/integrationHub.test.ts
           &&
+          node --experimental-strip-types scripts/chat-provider-coverage.test.ts
+          &&
           pnpm --filter @workspace/mobile test
           '
 
