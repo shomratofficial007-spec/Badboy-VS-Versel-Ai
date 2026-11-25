@@ -490,7 +490,8 @@ export async function streamAgenticReply(
         memoryContext: safeMemoryContext,
         skillContext: safeSkillContext,
         developerMode: settings.developerMode,
-        mode: 'multi',
+        // Keep ordinary chat on the two-call single-agent path; reserve the full planner/reviewer workflow for Developer Mode.
+        mode: settings.developerMode ? 'multi' : 'single',
         enabledPlugins: enabledPluginIds,
         attachments: attachmentIds,
         history: history.slice(-8).map(({ role, content }) => ({
