@@ -501,11 +501,12 @@ export function selectAgentModels(messages: ChatMessage[]): string[] {
 async function requestCompletion(
   apiKey: string,
   messages: ChatMessage[],
-  options: { tools?: boolean; toolDefinitions?: readonly unknown[]; stream?: boolean; maxTokens?: number; responseFormat?: "json_object"; signal?: AbortSignal; timeoutMs?: number; modelOverride?: string } = {},
+  options: { tools?: boolean; toolDefinitions?: readonly unknown[]; stream?: boolean; maxTokens?: number; responseFormat?: "json_object"; signal?: AbortSignal; timeoutMs?: number; modelOverride?: string; maxAttempts?: number } = {},
   provider?: AgenticPayload["provider"],
 ): Promise<Response> {
   let lastStatus = 503;
-  const models = options.modelOverride ? [options.modelOverride] : provider ? [provider.model] : selectAgentModels(messages);
+  const models = (options.modelOverride ? [options.modelOverride] : provider ? [provider.model] : selectAgentModels(messages))
+    .slice(0, options.maxAttempts ?? 5);
   const endpoint = provider ? provider.baseUrl + "/chat/completions" : OPENROUTER_URL;
   for (const model of models) {
     // Only the dynamic free router and explicitly free model IDs are allowed.
@@ -551,8 +552,16 @@ async function requestCompletion(
   return jsonResponse({ code: "AGENT_MODELS_UNAVAILABLE", error: `No configured free model is available (last HTTP ${lastStatus}).` }, lastStatus === 429 ? 429 : lastStatus === 504 ? 504 : 502);
 }
 
-async function completeText(apiKey: string, messages: ChatMessage[], tools = false, toolDefinitions?: readonly unknown[], responseFormat?: "json_object", signal?: AbortSignal, provider?: AgenticPayload["provider"]): Promise<{ content: string; messages: ChatMessage[] }> {
-  const response = await requestCompletion(apiKey, messages, { tools, toolDefinitions, responseFormat, maxTokens: 1200, signal, timeoutMs: 20_000 }, provider);
+async function completeText(apiKey: string, messages: ChatMessage[], tools = false, toolDefinitions?: readonly unknown[], responseFormat?: "json_object", signal?: AbortSignal, provider?: AgenticPayload["provider"], fastMode = false): Promise<{ content: string; messages: ChatMessage[] }> {
+  const response = await requestCompletion(apiKey, messages, {
+    tools,
+    toolDefinitions,
+    responseFormat,
+    maxTokens: 1200,
+    signal,
+    timeoutMs: fastMode ? 8_000 : 20_000,
+    ...(fastMode ? { maxAttempts: 2 } : {}),
+  }, provider);
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as CompletionResponse;
     throw new Error(modelErrorMessage(body, response.status));
@@ -594,6 +603,7 @@ async function runToolAgent(
   enabledPlugins: AgentPluginId[],
   signal?: AbortSignal,
   provider?: AgenticPayload["provider"],
+  fastMode = false,
 ): Promise<string> {
   const toolPluginMap: Record<string, AgentPluginId> = {
     web_research: "web-research",
@@ -609,7 +619,7 @@ async function runToolAgent(
   let current = [...messages];
   let totalCalls = 0;
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-    const result = await completeText(apiKey, current, true, enabledToolDefinitions, undefined, signal, provider);
+    const result = await completeText(apiKey, current, true, enabledToolDefinitions, undefined, signal, provider, fastMode);
     current = result.messages;
     const assistant = current[current.length - 1];
     const calls = assistant.tool_calls ?? [];
@@ -1002,7 +1012,7 @@ export async function handleAgenticAssistantRequest(request: Request, env: Agent
             ...baseMessages.slice(1),
             ...(mode === "multi" ? [{ role: "assistant" as const, content: "পরিকল্পনা:\n" + plan }] : []),
           ];
-          execution = await runToolAgent(apiKey, executorMessages, send, env, enabledPlugins, requestSignal, provider);
+          execution = await runToolAgent(apiKey, executorMessages, send, env, enabledPlugins, requestSignal, provider, mode === "tools");
           send({ type: "agent", agent: "executor", status: "completed" });
         }
 
