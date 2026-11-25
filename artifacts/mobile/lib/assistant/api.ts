@@ -256,21 +256,29 @@ async function streamConfiguredProviderReply(message: string, settings: Assistan
   const attempt = async (id: Exclude<typeof providerId, 'server'>, endpoint: string, selectedModel: string, onText: (chunk: string) => void) => {
     const apiKey = await getProviderApiKey(id);
     if (!apiKey) throw new Error('Provider ' + id + ' এর API Key Secure Storage-এ নেই।');
-    const response = await expoFetch(apiUrl('/assistant/provider-chat'), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'text/event-stream',
-        Authorization: await ownerAuthorizationHeader(),
-        'X-Provider-Key': apiKey,
-      },
-      body: JSON.stringify({
-        providerId: id,
-        baseUrl: endpoint,
-        model: selectedModel,
-        messages,
-      }),
-    });
+    const connectController = new AbortController();
+    const connectTimeout = setTimeout(() => connectController.abort(), 8_000);
+    let response: Response;
+    try {
+      response = await expoFetch(apiUrl('/assistant/provider-chat'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+          Authorization: await ownerAuthorizationHeader(),
+          'X-Provider-Key': apiKey,
+        },
+        body: JSON.stringify({
+          providerId: id,
+          baseUrl: endpoint,
+          model: selectedModel,
+          messages,
+        }),
+        signal: connectController.signal,
+      });
+    } finally {
+      clearTimeout(connectTimeout);
+    }
     await streamOpenAICompatibleResponse(response, onText);
   };
   let primaryEmitted = false;
