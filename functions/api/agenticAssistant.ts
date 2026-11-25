@@ -764,7 +764,17 @@ async function streamFinalAnswer(
           const consume = (event: string) => {
             const parsed = parseOpenRouterDeltas(event);
             for (const content of parsed.content) {
-              if (!emittedContent) firstTokenMs = Date.now() - startedAt;
+              if (!emittedContent) {
+                firstTokenMs = Date.now() - startedAt;
+                recordModelFirstToken(model, firstTokenMs);
+                console.info(JSON.stringify({
+                  component: "badboy-fast-chat",
+                  event: "first_token",
+                  model,
+                  attempt: candidateIndex + 1,
+                  firstTokenMs,
+                }));
+              }
               emittedContent = true;
               send({ content });
             }
@@ -812,14 +822,6 @@ async function streamFinalAnswer(
           if (pending.trim()) consume(pending);
           if (!receivedDone) throw new Error("Agent response stream ended before the completion marker.");
           if (!emittedContent) throw new Error("Agent provider returned an empty final answer.");
-          if (firstTokenMs !== null) recordModelFirstToken(model, firstTokenMs);
-          console.info(JSON.stringify({
-            component: "badboy-fast-chat",
-            event: "first_token",
-            model,
-            attempt: candidateIndex + 1,
-            firstTokenMs,
-          }));
           close();
           return;
         } catch (error) {
