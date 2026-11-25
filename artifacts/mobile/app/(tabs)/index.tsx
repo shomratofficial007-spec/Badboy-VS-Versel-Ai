@@ -408,24 +408,26 @@ export default function ChatScreen() {
     }
 
     try {
-      // Pull only owner-scoped, non-sensitive project notes. Memory lookup is
-      // best-effort: an unavailable D1/API must never prevent ordinary chat.
+      // Project memory is a Developer Mode feature. Do not spend network
+      // requests or prompt tokens searching developer projects during fast chat.
       let memoryContext = '';
-      try {
-        const projects = await listDeveloperProjects(20);
-        const matches = await Promise.all(projects.slice(0, 10).map(async (project) => {
-          try {
-            const memories = await searchAgentMemory(project.project_id, text, 3);
-            return memories.map((memory) => ({ project: project.name, ...memory }));
-          } catch {
-            return [];
-          }
-        }));
-        memoryContext = matches.flat().slice(0, 8).map((memory) =>
-          `[${memory.project} / ${memory.category}] ${memory.content.slice(0, 900)}`,
-        ).join('\n').slice(0, 5000);
-      } catch {
-        // Keep the existing chat path available when project memory is offline.
+      if (settings.developerMode) {
+        try {
+          const projects = await listDeveloperProjects(20);
+          const matches = await Promise.all(projects.slice(0, 10).map(async (project) => {
+            try {
+              const memories = await searchAgentMemory(project.project_id, text, 3);
+              return memories.map((memory) => ({ project: project.name, ...memory }));
+            } catch {
+              return [];
+            }
+          }));
+          memoryContext = matches.flat().slice(0, 8).map((memory) =>
+            `[${memory.project} / ${memory.category}] ${memory.content.slice(0, 900)}`,
+          ).join('\n').slice(0, 5000);
+        } catch {
+          // Keep the existing chat path available when project memory is offline.
+        }
       }
       let skillContext = '';
       try {
