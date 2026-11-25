@@ -558,7 +558,7 @@ test("onRequestPost - falls back from all OpenRouter 429 models to Gemini stream
       attemptedOpenRouterModels.push(JSON.parse(String(init?.body)).model);
       return new Response(JSON.stringify({ error: { message: "Rate limit reached" } }), { status: 429 });
     }
-    if (target.includes("generativelanguage.googleapis.com")) {
+    if (new URL(target).hostname === "generativelanguage.googleapis.com") {
       geminiCalled = true;
       assert.equal(new Headers(init?.headers).get("x-goog-api-key"), "test-gemini-key");
       return new Response(
@@ -594,7 +594,7 @@ test("onRequestPost - falls back from rate-limited Gemini to Groq OpenAI-compati
   let groqCalled = false;
   globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
     const target = String(url);
-    if (target.includes("generativelanguage.googleapis.com")) {
+    if (new URL(target).hostname === "generativelanguage.googleapis.com") {
       geminiCalled = true;
       return new Response(JSON.stringify({ error: { message: "Gemini quota exceeded" } }), { status: 429 });
     }
@@ -632,7 +632,7 @@ test("onRequestPost - falls back from rate-limited Gemini to Groq OpenAI-compati
 test("onRequestPost - supports Gemini-only chat without requiring OpenRouter", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (url: string | URL) => {
-    assert.match(String(url), /generativelanguage.googleapis.com/);
+    assert.equal(new URL(String(url)).hostname, "generativelanguage.googleapis.com");
     return new Response(
       'data: {"candidates":[{"content":{"parts":[{"text":"Gemini-only response"}]}}]}\n\n',
       { status: 200, headers: { "Content-Type": "text/event-stream" } },
