@@ -274,7 +274,7 @@ export interface LocalAgenticWorkflowInput {
     options?: { tools?: readonly unknown[]; responseFormat?: 'json_object' },
   ) => Promise<LocalAgentCompletion>;
   executeTool: (name: string, rawArguments: string) => Promise<LocalAgentToolOutcome>;
-  streamFinal: (messages: LocalAgentMessage[], onChunk: (chunk: string) => void) => Promise<void>;
+  streamFinal: (messages: LocalAgentMessage[], onChunk: (chunk: string) => void, maxTokens?: number) => Promise<void>;
   onChunk: (chunk: string) => void;
   onStage?: (stage: LocalAgentStage, status: 'started' | 'completed' | 'failed') => void;
 }
@@ -304,7 +304,7 @@ export async function runLocalAgenticWorkflow(input: LocalAgenticWorkflowInput):
     if (workflowMode === 'single') {
       stage = 'synthesizer';
       notify(stage, 'started');
-      await input.streamFinal(baseMessages, input.onChunk);
+      await input.streamFinal(baseMessages, input.onChunk, 1400);
       notify(stage, 'completed');
       return;
     }
@@ -426,7 +426,7 @@ export async function runLocalAgenticWorkflow(input: LocalAgenticWorkflowInput):
           { role: "system", content: system + "\n\nYou are the final synthesizer in a multi-agent workflow. Answer the user's original request directly. Incorporate valid reviewer corrections, do not mention internal orchestration unless asked, and do not claim actions that were not performed." },
           { role: 'user', content: 'Original request:\n' + input.message + '\n\nPlan:\n' + plan + '\n\nExecutor result (including any tool findings):\n' + execution + '\n\nReviewer notes:\n' + review + '\n\nWrite the final answer in Bangla unless English was explicitly requested.' },
         ];
-    await input.streamFinal(finalMessages, input.onChunk);
+    await input.streamFinal(finalMessages, input.onChunk, workflowMode === 'tools' ? 1800 : 2400);
     notify(stage, 'completed');
   } catch (error) {
     notify(stage, 'failed');
