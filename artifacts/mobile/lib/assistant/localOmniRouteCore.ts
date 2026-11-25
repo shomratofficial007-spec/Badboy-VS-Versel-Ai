@@ -335,7 +335,7 @@ export async function runLocalAgenticWorkflow(input: LocalAgenticWorkflowInput):
           { role: 'assistant', content: planned.content.slice(0, 3000) },
           { role: 'user', content: 'Your previous plan was not valid structured JSON. Return a valid JSON object with goal, steps (1-8 task/success_criteria objects), and risks only.' },
         ], { responseFormat: 'json_object' });
-        plan = normalizeStructuredAgentPlan(repaired.content);
+        plan = normalizeStructuredAgentPlan(repaired.content) ?? '';
       } catch {
         plan = '';
       }
