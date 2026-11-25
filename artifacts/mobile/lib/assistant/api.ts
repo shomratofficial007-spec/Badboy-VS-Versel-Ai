@@ -99,6 +99,7 @@ export async function downloadAgentAttachment(reference: ChatAttachmentReference
 async function streamSseResponse(
   response: Response,
   onChunk: (chunk: string) => void,
+  requestStartedAt = Date.now(),
 ) {
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as {
@@ -117,6 +118,7 @@ async function streamSseResponse(
   let buffer = '';
   let complete = false;
   let emittedContent = false;
+  let firstTokenMs: number | null = null;
   const processLine = (line: string) => {
     if (!line.startsWith('data: ')) return;
     const payload = line.slice(6).trim();
@@ -126,7 +128,18 @@ async function streamSseResponse(
     }
     const event = JSON.parse(payload) as { content?: string; error?: string };
     if (event.error) throw new Error(event.error);
-    if (event.content) { emittedContent = true; onChunk(event.content); }
+    if (event.content) {
+      if (!emittedContent) {
+        firstTokenMs = Date.now() - requestStartedAt;
+        console.info(JSON.stringify({
+          component: 'badboy-mobile-agent-stream',
+          event: 'first_token',
+          firstTokenMs,
+        }));
+      }
+      emittedContent = true;
+      onChunk(event.content);
+    }
   };
 
   try {
@@ -150,6 +163,12 @@ async function streamSseResponse(
     }
     if (!complete) throw new Error('The assistant stream ended before its completion marker.');
     if (!emittedContent) throw new Error('The assistant returned an empty response.');
+    console.info(JSON.stringify({
+      component: 'badboy-mobile-agent-stream',
+      event: 'response_complete',
+      totalResponseMs: Date.now() - requestStartedAt,
+      firstTokenMs,
+    }));
   } catch (error) {
     await reader.cancel(error).catch(() => undefined);
     throw error;
@@ -538,6 +557,7 @@ export async function streamAgenticReply(
     apiKey: string | null,
     onText: (chunk: string) => void,
   ) => {
+    const requestStartedAt = Date.now();
     const response = await expoFetch(apiUrl('/assistant/agent'), {
       method: 'POST',
       headers: {
@@ -563,7 +583,7 @@ export async function streamAgenticReply(
         })),
       }),
     });
-    await streamSseResponse(response, onText);
+    await streamSseResponse(response, onText, requestStartedAt);
   };
 
   if (settings.localOmniRouteEnabled) {
