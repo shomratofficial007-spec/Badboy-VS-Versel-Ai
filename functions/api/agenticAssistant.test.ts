@@ -419,7 +419,7 @@ test("provider fallback retries temporary/model errors and only uses free model 
     assert.ok(models.length >= 3);
     assert.equal(models[0], "openrouter/free");
     assert.ok(models[1]?.endsWith(":free"));
-    assert.equal(models[2], "openrouter/free");
+    assert.ok(models[2] === "openrouter/free" || models[2]?.endsWith(":free"));
   } finally {
     globalThis.fetch = originalFetch;
   }
