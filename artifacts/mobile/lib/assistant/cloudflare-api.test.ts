@@ -130,6 +130,83 @@ test("chat forwards a valid request and returns real streamed content in client 
   assert.equal(streamText.includes("test-secret"), false);
 });
 
+
+test("chat falls back from OpenRouter 429 to Gemini streaming", async () => {
+  const attemptedModels: string[] = [];
+  let geminiCalled = false;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    if (url.hostname === "openrouter.ai") {
+      attemptedModels.push(JSON.parse(String(init?.body)).model);
+      return new Response(JSON.stringify({ error: { message: "rate limited" } }), { status: 429 });
+    }
+    if (url.hostname === "generativelanguage.googleapis.com") {
+      geminiCalled = true;
+      return new Response(
+        'data: {"candidates":[{"content":{"parts":[{"text":"Gemini fallback"}]}}]}\n\n',
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      );
+    }
+    throw new Error("Unexpected provider host: " + url.hostname);
+  }) as typeof fetch;
+
+  const response = await handleApiRequest(
+    request("/api/assistant/chat", "POST", { message: "হ্যালো" }),
+    { OPENROUTER_API_KEY: "test-openrouter-key", GEMINI_API_KEY: "test-gemini-key" },
+  );
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /Gemini fallback/);
+  assert.equal(attemptedModels.length, 5);
+  assert.equal(geminiCalled, true);
+});
+
+test("chat falls back from Gemini 429 to Groq streaming", async () => {
+  let groqCalled = false;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    if (url.hostname === "generativelanguage.googleapis.com") {
+      return new Response(JSON.stringify({ error: { message: "Gemini quota exceeded" } }), { status: 429 });
+    }
+    if (url.hostname === "api.groq.com") {
+      groqCalled = true;
+      assert.equal(new Headers(init?.headers).get("Authorization"), "Bearer test-groq-key");
+      const body = JSON.parse(String(init?.body));
+      assert.equal(body.model, "openai/gpt-oss-20b");
+      assert.equal(body.stream, true);
+      return new Response(
+        'data: {"choices":[{"delta":{"content":"Groq fallback"}}]}\n\ndata: [DONE]\n\n',
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      );
+    }
+    throw new Error("Unexpected provider host: " + url.hostname);
+  }) as typeof fetch;
+
+  const response = await handleApiRequest(
+    request("/api/assistant/chat", "POST", { message: "হ্যালো" }),
+    { GEMINI_API_KEY: "test-gemini-key", GROQ_API_KEY: "test-groq-key" },
+  );
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /Groq fallback/);
+  assert.equal(groqCalled, true);
+});
+
+test("chat works with Gemini only when OpenRouter is not configured", async () => {
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    assert.equal(new URL(String(input)).hostname, "generativelanguage.googleapis.com");
+    return new Response(
+      'data: {"candidates":[{"content":{"parts":[{"text":"Gemini only"}]}}]}\n\n',
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    );
+  }) as typeof fetch;
+
+  const response = await handleApiRequest(
+    request("/api/assistant/chat", "POST", { message: "হ্যালো" }),
+    { GEMINI_API_KEY: "test-gemini-key" },
+  );
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /Gemini only/);
+});
+
 test("chat converts provider rate limits into a clear 429 response", async () => {
   globalThis.fetch = (async () =>
     new Response(JSON.stringify({ error: "provider details must not leak" }), {
