@@ -337,10 +337,10 @@ export async function runLocalAgenticWorkflow(input: LocalAgenticWorkflowInput):
         ], { responseFormat: 'json_object' });
         plan = normalizeStructuredAgentPlan(repaired.content);
       } catch {
-        plan = null;
+        plan = '';
       }
     }
-    plan ??= JSON.stringify({
+    if (!plan) plan = JSON.stringify({
       goal: input.message.slice(0, 500),
       steps: [{ id: 'step-1', task: 'অনুরোধ বিশ্লেষণ করে নিরাপদ উত্তর তৈরি করা', success_criteria: 'মূল অনুরোধের উত্তর দেওয়া এবং অনুমানকে সত্য হিসেবে না বলা' }],
       risks: ['কোনো বাহ্যিক side effect অনুমোদন ছাড়া করা যাবে না'],
