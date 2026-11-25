@@ -653,12 +653,13 @@ async function streamFinalAnswer(
   const encoder = new TextEncoder();
   const firstTokenTimeoutMs = 5_000;
   const candidates = provider ? [provider.model] : selectAgentModels(messages).slice(0, 2);
+  let closed = false;
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      let closed = false;
       const send = (value: unknown) => {
         if (closed) return;
-        try { controller.enqueue(encoder.encode("data: " + JSON.stringify(value) + "\n\n")); }
+        const body = typeof value === "string" ? value : JSON.stringify(value);
+        try { controller.enqueue(encoder.encode("data: " + body + "\n\n")); }
         catch { closed = true; }
       };
       const close = () => {
