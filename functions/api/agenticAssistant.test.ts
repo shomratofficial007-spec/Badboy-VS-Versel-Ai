@@ -96,6 +96,7 @@ test("agentic request validates object, message, personality, mode, and bounded 
   assert.equal(validateAgenticPayload({ message: "hello", personality: 42 }).ok, false);
   assert.equal(validateAgenticPayload({ message: "hello", personality: "x".repeat(1001) }).ok, false);
   assert.equal(validateAgenticPayload({ message: "hello", developerMode: "yes" }).ok, false);
+  assert.equal(validateAgenticPayload({ message: "hello", mode: "tools" }).ok, true);
   assert.equal(validateAgenticPayload({ message: "hello", mode: "autonomous" }).ok, false);
   assert.equal(validateAgenticPayload({ message: "hello", enabledPlugins: ["run-shell"] }).ok, false);
   assert.equal(validateAgenticPayload({ message: "hello", enabledPlugins: ["web-research", "web-research"] }).ok, false);
@@ -365,7 +366,7 @@ test("agent retries an empty model response and reports a recoverable tool failu
     return completion("Reviewed recovered answer");
   };
   try {
-    const response = await handleAgenticAssistantRequest(agentRequest({ message: "answer safely", mode: "single" }), {
+    const response = await handleAgenticAssistantRequest(agentRequest({ message: "answer safely", mode: "tools" }), {
       OPENROUTER_API_KEY: "server-key",
     });
     const body = await response.text();
@@ -377,20 +378,21 @@ test("agent retries an empty model response and reports a recoverable tool failu
   }
 });
 
-test("single-agent mode skips planner and reviewer but still streams synthesis", async () => {
+test("single-pass mode streams an answer with exactly one model completion", async () => {
   let count = 0;
   globalThis.fetch = async (_input, init) => {
     count += 1;
     const payload = JSON.parse(String(init?.body)) as { stream: boolean };
-    return payload.stream ? finalStream() : completion("এক ধাপের উত্তর");
+    assert.equal(payload.stream, true);
+    return finalStream();
   };
   try {
     const response = await handleAgenticAssistantRequest(agentRequest({ message: "হ্যালো", mode: "single" }), {
       OPENROUTER_API_KEY: "server-key",
     });
     const body = await response.text();
-    assert.equal(count, 2);
-    assert.doesNotMatch(body, /reviewer/);
+    assert.equal(count, 1);
+    assert.doesNotMatch(body, /planner|executor|reviewer/);
     assert.match(body, /synthesizer/);
     assert.match(body, /\[DONE\]/);
   } finally {
@@ -408,7 +410,7 @@ test("provider fallback retries temporary/model errors and only uses free model 
     return completion("fallback plan");
   };
   try {
-    const response = await handleAgenticAssistantRequest(agentRequest({ message: "test", mode: "single" }), {
+    const response = await handleAgenticAssistantRequest(agentRequest({ message: "test", mode: "tools" }), {
       OPENROUTER_API_KEY: "server-key",
     });
     assert.equal(response.status, 200);
@@ -495,7 +497,7 @@ test("agentic executor can call bounded public web research and returns HTTPS so
     return completion("গবেষণার সূত্র পাওয়া গেছে।");
   };
   try {
-    const response = await handleAgenticAssistantRequest(agentRequest({ message: "Cloudflare-এর সর্বশেষ পরিবর্তন খুঁজে দাও", mode: "single" }), {
+    const response = await handleAgenticAssistantRequest(agentRequest({ message: "Cloudflare-এর সর্বশেষ পরিবর্তন খুঁজে দাও", mode: "tools" }), {
       OPENROUTER_API_KEY: "server-openrouter-key",
       TAVILY_API_KEY: "server-tavily-key",
     });
@@ -537,7 +539,7 @@ test("disabled owner plugins are omitted from tool definitions and cannot execut
   };
   try {
     const response = await handleAgenticAssistantRequest(
-      agentRequest({ message: "research this", mode: "single", enabledPlugins: [] }),
+      agentRequest({ message: "research this", mode: "tools", enabledPlugins: [] }),
       { OPENROUTER_API_KEY: "server-key", TAVILY_API_KEY: "tavily-key" },
     );
     assert.equal(response.status, 200);
@@ -563,7 +565,7 @@ test("agentic integration tools fail closed when providers are not configured", 
     return completion("Provider configuration is missing.");
   };
   try {
-    const response = await handleAgenticAssistantRequest(agentRequest({ message: "research this", mode: "single" }), {
+    const response = await handleAgenticAssistantRequest(agentRequest({ message: "research this", mode: "tools" }), {
       OPENROUTER_API_KEY: "server-openrouter-key",
     });
     assert.equal(response.status, 200);
@@ -624,7 +626,7 @@ test("agentic tools can read bounded Discord history and Google Calendar events"
   };
   try {
     const response = await handleAgenticAssistantRequest(
-      agentRequest({ message: "Discord update এবং calendar event দেখাও", mode: "single" }),
+      agentRequest({ message: "Discord update এবং calendar event দেখাও", mode: "tools" }),
       { OPENROUTER_API_KEY: "openrouter-secret", DISCORD_BOT_TOKEN: "discord-secret", GOOGLE_CALENDAR_ACCESS_TOKEN: "calendar-secret" },
     );
     assert.equal(response.status, 200);
