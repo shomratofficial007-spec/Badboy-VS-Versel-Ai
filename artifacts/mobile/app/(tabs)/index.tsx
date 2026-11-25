@@ -54,6 +54,7 @@ import { getActiveCustomSkillContext } from '@/lib/assistant/skillStorage';
 import { loadEnabledPluginIds } from '@/lib/assistant/pluginStorage';
 import { getDeveloperModeSkillContext } from '@/lib/assistant/developerModeSkill';
 import { createStreamChunkBuffer } from '@/lib/assistant/streamChunkBuffer';
+import { createChatLatencyTracker } from '@/lib/assistant/chatLatencyMetrics';
 import { buildDeveloperMemoryContext } from '@/lib/assistant/developerMemoryContext';
 import { listDeveloperProjects } from '@/lib/assistant/developerData';
 import { readVisibleScreenText } from '@/lib/assistant/jarvis';
@@ -402,6 +403,9 @@ export default function ChatScreen() {
     }
 
     const attachmentsToSend = pendingAttachments ?? [];
+    const latencyTracker = createChatLatencyTracker(Date.now(), (metric) => {
+      console.info(JSON.stringify({ component: 'badboy-mobile-chat', ...metric }));
+    });
     if (attachmentsToSend.length) {
       userMessage.attachments = attachmentsToSend.map((item) => item.reference);
       working = [...messages, userMessage, answer];
@@ -434,6 +438,7 @@ export default function ChatScreen() {
       const history = messages.slice(-6).map(({ role, content }) => ({ role, content: content.slice(0, 2000) }));
       const streamBuffer = createStreamChunkBuffer(
         (chunk) => {
+          latencyTracker.markFirstUiUpdate();
           answer = { ...answer, content: answer.content + chunk };
           working = working.map((message) =>
             message.id === answer.id ? answer : message,
@@ -459,6 +464,7 @@ export default function ChatScreen() {
           },
           setAgentStageStatus,
         );
+        latencyTracker.markComplete();
       } finally {
         streamBuffer.flush();
       }
