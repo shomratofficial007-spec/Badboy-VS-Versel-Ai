@@ -492,6 +492,7 @@ async function requestCompletion(
         ...(options.tools ? { tools: options.toolDefinitions ?? TOOL_DEFINITIONS, tool_choice: "auto", parallel_tool_calls: false } : {}),
         ...(options.responseFormat ? { response_format: { type: options.responseFormat } } : {}),
         stream: options.stream === true,
+        ...(options.stream && !provider ? { stream_options: { include_usage: true } } : {}),
         }),
       });
     } catch (cause) {
@@ -622,15 +623,24 @@ async function readRequestBody(request: Request): Promise<unknown | Response> {
   }
 }
 
-function parseOpenRouterDeltas(event: string): { content: string[]; done: boolean } {
+function parseOpenRouterDeltas(event: string): {
+  content: string[];
+  done: boolean;
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+} {
   const content: string[] = [];
   let done = false;
+  let usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined;
   for (const line of event.split("\n")) {
     if (!line.startsWith("data:")) continue;
     const data = line.slice(5).trim();
     if (data === "[DONE]") { done = true; continue; }
     if (!data) continue;
-    let parsed: { error?: unknown; choices?: Array<{ delta?: { content?: unknown } }> };
+    let parsed: {
+      error?: unknown;
+      choices?: Array<{ delta?: { content?: unknown } }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+    };
     try {
       parsed = JSON.parse(data) as typeof parsed;
     } catch {
@@ -639,8 +649,9 @@ function parseOpenRouterDeltas(event: string): { content: string[]; done: boolea
     if (parsed.error) throw new Error("Agent provider returned an upstream stream error.");
     const chunk = parsed.choices?.[0]?.delta?.content;
     if (typeof chunk === "string" && chunk) content.push(chunk);
+    if (parsed.usage && typeof parsed.usage === "object") usage = parsed.usage;
   }
-  return { content, done };
+  return { content, done, ...(usage ? { usage } : {}) };
 }
 
 async function streamFinalAnswer(
@@ -701,6 +712,16 @@ async function streamFinalAnswer(
               if (!emittedContent) firstTokenMs = Date.now() - startedAt;
               emittedContent = true;
               send({ content });
+            }
+            if (parsed.usage) {
+              console.info(JSON.stringify({
+                component: "badboy-fast-chat",
+                event: "token_usage",
+                model,
+                promptTokens: parsed.usage.prompt_tokens ?? null,
+                completionTokens: parsed.usage.completion_tokens ?? null,
+                totalTokens: parsed.usage.total_tokens ?? null,
+              }));
             }
             if (parsed.done) receivedDone = true;
           };
