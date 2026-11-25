@@ -506,7 +506,7 @@ export async function streamAgenticReply(
   }
   const safeMemoryContext = memoryContext.trim().slice(0, 5000);
   const safeSkillContext = skillContext.trim().slice(0, 4000);
-  const toolIntent = /(?:\b(?:search the web|web search|look up|latest|current news|weather|calendar|events|schedule|discord|slack|home assistant|calculate|compute|count words|current time|what time is it)\b|(?:\d+(?:\.\d+)?\s*[+*/%-]\s*\d+(?:\.\d+)?))/i.test(message);
+  const toolIntent = /(?:\b(?:search the web|web search|look up|latest|today|now|current news|current price|market|stock|crypto|forex|weather|calendar|events|schedule|discord|slack|home assistant|calculate|compute|count words|current time|what time is it)\b|(?:খুঁজে|সার্চ|সর্বশেষ|আজকের খবর|আবহাওয়া|আবহাওয়া|ওয়েদার|ক্যালেন্ডার|ইভেন্ট|ডিসকর্ড|স্ল্যাক|হোম অ্যাসিস্ট্যান্ট|হিসাব|গণনা|বর্তমান সময়|এখন কয়টা|কয়টা বাজে|বাজারদর|শেয়ার|শেয়ার|ক্রিপ্টো|দাম কত)|(?:\d+(?:\.\d+)?\s*[+*/%-]\s*\d+(?:\.\d+)?))/i.test(message);
   const workflowMode: 'single' | 'tools' | 'multi' = settings.developerMode ? 'multi' : toolIntent ? 'tools' : 'single';
   const sendAgenticRequest = async (
     providerId: typeof selectedProvider,
