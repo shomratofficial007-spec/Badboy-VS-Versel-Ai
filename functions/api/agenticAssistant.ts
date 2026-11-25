@@ -16,6 +16,45 @@ const MAX_TOOL_CALLS = 6;
 const MAX_HISTORY_MESSAGES = 8;
 const MAX_TOOL_RESULT_CHARS = 4_000;
 
+type ModelLatencyObservation = { averageFirstTokenMs: number; samples: number; failures: number };
+const recentModelLatency = new Map<string, ModelLatencyObservation>();
+
+export function rankFastModelCandidates(
+  preferred: string[],
+  observations: ReadonlyMap<string, ModelLatencyObservation>,
+): string[] {
+  return preferred
+    .map((model, index) => {
+      const observation = observations.get(model);
+      const score = observation
+        ? observation.averageFirstTokenMs + observation.failures * 5_000
+        : 8_000;
+      return { model, index, score };
+    })
+    .sort((a, b) => a.score - b.score || a.index - b.index)
+    .map((item) => item.model);
+}
+
+function recordModelFirstToken(model: string, firstTokenMs: number): void {
+  const previous = recentModelLatency.get(model);
+  recentModelLatency.set(model, {
+    averageFirstTokenMs: previous
+      ? previous.averageFirstTokenMs * 0.7 + firstTokenMs * 0.3
+      : firstTokenMs,
+    samples: (previous?.samples ?? 0) + 1,
+    failures: previous?.failures ?? 0,
+  });
+}
+
+function recordModelFailure(model: string): void {
+  const previous = recentModelLatency.get(model);
+  recentModelLatency.set(model, {
+    averageFirstTokenMs: previous?.averageFirstTokenMs ?? 8_000,
+    samples: previous?.samples ?? 0,
+    failures: (previous?.failures ?? 0) + 1,
+  });
+}
+
 type ChatRole = "system" | "user" | "assistant" | "tool";
 type ChatContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
 type ChatMessage = {
@@ -673,7 +712,9 @@ async function streamFinalAnswer(
 ): Promise<Response> {
   const encoder = new TextEncoder();
   const firstTokenTimeoutMs = 5_000;
-  const candidates = provider ? [provider.model] : selectAgentModels(messages).slice(0, 2);
+  const candidates = provider
+    ? [provider.model]
+    : rankFastModelCandidates(selectAgentModels(messages).slice(0, 3), recentModelLatency);
   let closed = false;
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -711,6 +752,7 @@ async function streamFinalAnswer(
           if (!upstream.ok || !upstream.body) {
             const body = await upstream.json().catch(() => ({})) as CompletionResponse;
             lastError = modelErrorMessage(body, upstream.status);
+            recordModelFailure(model);
             if (![400, 404, 408, 429, 500, 502, 503, 504].includes(upstream.status)) break;
             continue;
           }
@@ -767,6 +809,7 @@ async function streamFinalAnswer(
           if (pending.trim()) consume(pending);
           if (!receivedDone) throw new Error("Agent response stream ended before the completion marker.");
           if (!emittedContent) throw new Error("Agent provider returned an empty final answer.");
+          if (firstTokenMs !== null) recordModelFirstToken(model, firstTokenMs);
           console.info(JSON.stringify({
             component: "badboy-fast-chat",
             event: "first_token",
@@ -789,6 +832,7 @@ async function streamFinalAnswer(
             closed = true;
             return;
           }
+          recordModelFailure(model);
           console.warn(JSON.stringify({
             component: "badboy-fast-chat",
             event: "model_fallback",
