@@ -174,7 +174,7 @@ async function fetchGroqChat(
  * fallbacks run first; Gemini and Groq are separate provider-level fallbacks.
  * A provider is switched only before any response bytes reach the client.
  */
-async function fetchChatWithProviderFallbacks(
+export async function fetchChatWithProviderFallbacks(
   env: Env,
   messages: Array<{ role: "system" | "user"; content: string }>,
   signal?: AbortSignal,
