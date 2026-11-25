@@ -461,11 +461,11 @@ export function selectAgentModels(messages: ChatMessage[]): string[] {
 async function requestCompletion(
   apiKey: string,
   messages: ChatMessage[],
-  options: { tools?: boolean; toolDefinitions?: readonly unknown[]; stream?: boolean; maxTokens?: number; responseFormat?: "json_object"; signal?: AbortSignal; timeoutMs?: number } = {},
+  options: { tools?: boolean; toolDefinitions?: readonly unknown[]; stream?: boolean; maxTokens?: number; responseFormat?: "json_object"; signal?: AbortSignal; timeoutMs?: number; modelOverride?: string } = {},
   provider?: AgenticPayload["provider"],
 ): Promise<Response> {
   let lastStatus = 503;
-  const models = provider ? [provider.model] : selectAgentModels(messages);
+  const models = options.modelOverride ? [options.modelOverride] : provider ? [provider.model] : selectAgentModels(messages);
   const endpoint = provider ? provider.baseUrl + "/chat/completions" : OPENROUTER_URL;
   for (const model of models) {
     // Only the dynamic free router and explicitly free model IDs are allowed.
