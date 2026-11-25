@@ -99,6 +99,7 @@ export async function downloadAgentAttachment(reference: ChatAttachmentReference
 async function streamSseResponse(
   response: Response,
   onChunk: (chunk: string) => void,
+  requestStartedAt = Date.now(),
 ) {
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as {
@@ -117,6 +118,7 @@ async function streamSseResponse(
   let buffer = '';
   let complete = false;
   let emittedContent = false;
+  let firstTokenMs: number | null = null;
   const processLine = (line: string) => {
     if (!line.startsWith('data: ')) return;
     const payload = line.slice(6).trim();
@@ -126,7 +128,18 @@ async function streamSseResponse(
     }
     const event = JSON.parse(payload) as { content?: string; error?: string };
     if (event.error) throw new Error(event.error);
-    if (event.content) { emittedContent = true; onChunk(event.content); }
+    if (event.content) {
+      if (!emittedContent) {
+        firstTokenMs = Date.now() - requestStartedAt;
+        console.info(JSON.stringify({
+          component: 'badboy-mobile-agent-stream',
+          event: 'first_token',
+          firstTokenMs,
+        }));
+      }
+      emittedContent = true;
+      onChunk(event.content);
+    }
   };
 
   try {
@@ -150,6 +163,12 @@ async function streamSseResponse(
     }
     if (!complete) throw new Error('The assistant stream ended before its completion marker.');
     if (!emittedContent) throw new Error('The assistant returned an empty response.');
+    console.info(JSON.stringify({
+      component: 'badboy-mobile-agent-stream',
+      event: 'response_complete',
+      totalResponseMs: Date.now() - requestStartedAt,
+      firstTokenMs,
+    }));
   } catch (error) {
     await reader.cancel(error).catch(() => undefined);
     throw error;
@@ -160,8 +179,14 @@ async function streamSseResponse(
 
 async function streamOpenAICompatibleResponse(response: Response, onChunk: (chunk: string) => void): Promise<void> {
   if (!response.ok) {
-    await response.text().catch(() => '');
-    throw new Error('নির্বাচিত AI Provider request গ্রহণ করেনি (HTTP ' + response.status + ')। API Key, Model ও Base URL যাচাই করুন।');
+    const payload = await response.json().catch(() => ({})) as {
+      error?: { message?: string } | string;
+      message?: string;
+    };
+    const message = typeof payload.error === 'string'
+      ? payload.error
+      : payload.error?.message ?? payload.message;
+    throw new Error(message?.slice(0, 240) || 'নির্বাচিত AI Provider request গ্রহণ করেনি (HTTP ' + response.status + ')। API Key, Model ও Base URL যাচাই করুন।');
   }
   const reader = response.body?.getReader();
   if (!reader) throw new Error('AI Provider response stream পাওয়া যায়নি।');
@@ -169,6 +194,8 @@ async function streamOpenAICompatibleResponse(response: Response, onChunk: (chun
   let buffer = '';
   let complete = false;
   let emittedContent = false;
+  const startedAt = Date.now();
+  let firstTokenMs: number | null = null;
   const emitLine = (line: string) => {
     if (!line.startsWith('data:')) return;
     const payload = line.slice(5).trim();
@@ -185,14 +212,35 @@ async function streamOpenAICompatibleResponse(response: Response, onChunk: (chun
     }
     if (event.error) throw new Error('AI Provider stream error.');
     const content = event.choices?.[0]?.delta?.content;
-    if (typeof content === 'string' && content) { emittedContent = true; onChunk(content); }
+    if (typeof content === 'string' && content) {
+      if (!emittedContent) {
+        firstTokenMs = Date.now() - startedAt;
+        console.info(JSON.stringify({ component: 'badboy-mobile-stream', event: 'first_token', firstTokenMs }));
+      }
+      emittedContent = true;
+      onChunk(content);
+    }
   };
 
   try {
     while (!complete) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+      let result: ReadableStreamReadResult<Uint8Array>;
+      if (!emittedContent) {
+        const remaining = 5_000 - (Date.now() - startedAt);
+        if (remaining <= 0) throw new Error('AI Provider did not emit a first token within 5 seconds.');
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const outcome = await Promise.race([
+          reader.read().then((value) => ({ kind: 'read' as const, value })),
+          new Promise<{ kind: 'timeout' }>((resolve) => { timer = setTimeout(() => resolve({ kind: 'timeout' }), remaining); }),
+        ]);
+        if (timer) clearTimeout(timer);
+        if (outcome.kind === 'timeout') throw new Error('AI Provider did not emit a first token within 5 seconds.');
+        result = outcome.value;
+      } else {
+        result = await reader.read();
+      }
+      if (result.done) break;
+      buffer += decoder.decode(result.value, { stream: true }).replace(/\r\n/g, '\n');
       const lines = buffer.split('\n');
       buffer = lines.pop() ?? '';
       for (const line of lines) {
@@ -233,21 +281,29 @@ async function streamConfiguredProviderReply(message: string, settings: Assistan
   const attempt = async (id: Exclude<typeof providerId, 'server'>, endpoint: string, selectedModel: string, onText: (chunk: string) => void) => {
     const apiKey = await getProviderApiKey(id);
     if (!apiKey) throw new Error('Provider ' + id + ' এর API Key Secure Storage-এ নেই।');
-    const response = await expoFetch(apiUrl('/assistant/provider-chat'), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'text/event-stream',
-        Authorization: await ownerAuthorizationHeader(),
-        'X-Provider-Key': apiKey,
-      },
-      body: JSON.stringify({
-        providerId: id,
-        baseUrl: endpoint,
-        model: selectedModel,
-        messages,
-      }),
-    });
+    const connectController = new AbortController();
+    const connectTimeout = setTimeout(() => connectController.abort(), 8_000);
+    let response: Response;
+    try {
+      response = await expoFetch(apiUrl('/assistant/provider-chat'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+          Authorization: await ownerAuthorizationHeader(),
+          'X-Provider-Key': apiKey,
+        },
+        body: JSON.stringify({
+          providerId: id,
+          baseUrl: endpoint,
+          model: selectedModel,
+          messages,
+        }),
+        signal: connectController.signal,
+      });
+    } finally {
+      clearTimeout(connectTimeout);
+    }
     await streamOpenAICompatibleResponse(response, onText);
   };
   let primaryEmitted = false;
@@ -354,11 +410,11 @@ async function requestLocalOmniRoute(
   model: string,
   apiKey: string | null,
   messages: LocalAgentMessage[],
-  options: { tools?: readonly unknown[]; responseFormat?: 'json_object'; stream?: boolean },
+  options: { tools?: readonly unknown[]; responseFormat?: 'json_object'; stream?: boolean; maxTokens?: number; timeoutMs?: number },
   onChunk?: (chunk: string) => void,
 ): Promise<LocalAgentCompletion | void> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.stream ? 120_000 : 60_000);
+  const connectTimeout = setTimeout(() => controller.abort(), options.timeoutMs ?? (options.stream ? 8_000 : 60_000));
   try {
     const response = await expoFetch(baseUrl + '/chat/completions', {
       method: 'POST',
@@ -370,6 +426,7 @@ async function requestLocalOmniRoute(
       body: JSON.stringify({
         model,
         messages,
+        max_tokens: options.maxTokens ?? (options.stream ? 1400 : 1000),
         stream: options.stream === true,
         ...(options.tools ? { tools: options.tools, tool_choice: 'auto', parallel_tool_calls: false } : {}),
         ...(options.responseFormat ? { response_format: { type: options.responseFormat } } : {}),
@@ -377,7 +434,13 @@ async function requestLocalOmniRoute(
       signal: controller.signal,
     });
     if (options.stream) {
-      await streamOpenAICompatibleResponse(response, onChunk ?? (() => undefined));
+      clearTimeout(connectTimeout);
+      const streamTimeout = setTimeout(() => controller.abort(), 120_000);
+      try {
+        await streamOpenAICompatibleResponse(response, onChunk ?? (() => undefined));
+      } finally {
+        clearTimeout(streamTimeout);
+      }
       return;
     }
     if (!response.ok) {
@@ -404,7 +467,7 @@ async function requestLocalOmniRoute(
     if (controller.signal.aborted) throw new Error('Local OmniRoute request timed out or stopped responding.');
     throw error;
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(connectTimeout);
   }
 }
 
@@ -431,6 +494,23 @@ export async function uploadAgentAttachment(
 }
 
 /** Owner-authenticated agentic chat with bounded context, safe tools and an optional multi-agent workflow. */
+const TOOL_INTENT_PHRASES = [
+  'search the web', 'web search', 'look up', 'latest', 'today', 'current news',
+  'current price', 'market', 'stock', 'crypto', 'forex', 'weather', 'calendar',
+  'events', 'schedule', 'discord', 'slack', 'home assistant', 'calculate',
+  'compute', 'count words', 'current time', 'what time is it',
+  'খুঁজে', 'সার্চ', 'সর্বশেষ', 'আজকের খবর', 'আবহাওয়া', 'আবহাওয়া', 'ওয়েদার',
+  'ক্যালেন্ডার', 'ইভেন্ট', 'ডিসকর্ড', 'স্ল্যাক', 'হোম অ্যাসিস্ট্যান্ট',
+  'হিসাব', 'গণনা', 'বর্তমান সময়', 'এখন কয়টা', 'কয়টা বাজে', 'বাজারদর',
+  'শেয়ার', 'শেয়ার', 'ক্রিপ্টো', 'দাম কত',
+] as const;
+
+export function isToolIntentMessage(message: string): boolean {
+  const normalized = message.toLocaleLowerCase();
+  return TOOL_INTENT_PHRASES.some((phrase) => normalized.includes(phrase)) ||
+    /\d+(?:\.\d+)?\s*[+*/%-]\s*\d+(?:\.\d+)?/.test(message);
+}
+
 export async function streamAgenticReply(
   message: string,
   settings: AssistantSettings,
@@ -468,6 +548,8 @@ export async function streamAgenticReply(
   }
   const safeMemoryContext = memoryContext.trim().slice(0, 5000);
   const safeSkillContext = skillContext.trim().slice(0, 4000);
+  const toolIntent = isToolIntentMessage(message);
+  const workflowMode: 'single' | 'tools' | 'multi' = settings.developerMode ? 'multi' : toolIntent ? 'tools' : 'single';
   const sendAgenticRequest = async (
     providerId: typeof selectedProvider,
     baseUrl: string,
@@ -475,6 +557,7 @@ export async function streamAgenticReply(
     apiKey: string | null,
     onText: (chunk: string) => void,
   ) => {
+    const requestStartedAt = Date.now();
     const response = await expoFetch(apiUrl('/assistant/agent'), {
       method: 'POST',
       headers: {
@@ -490,17 +573,17 @@ export async function streamAgenticReply(
         memoryContext: safeMemoryContext,
         skillContext: safeSkillContext,
         developerMode: settings.developerMode,
-        // Keep ordinary chat on the two-call single-agent path; reserve the full planner/reviewer workflow for Developer Mode.
-        mode: settings.developerMode ? 'multi' : 'single',
+        // Ordinary chat is single-pass; explicit tool intents keep tool calling without planner/reviewer. Developer Mode retains all stages.
+        mode: workflowMode,
         enabledPlugins: enabledPluginIds,
         attachments: attachmentIds,
-        history: history.slice(-8).map(({ role, content }) => ({
+        history: history.slice(-6).map(({ role, content }) => ({
           role,
-          content: content.slice(0, 3000),
+          content: content.slice(0, 2000),
         })),
       }),
     });
-    await streamSseResponse(response, onText);
+    await streamSseResponse(response, onText, requestStartedAt);
   };
 
   if (settings.localOmniRouteEnabled) {
@@ -533,6 +616,7 @@ export async function streamAgenticReply(
         personality: settings.personality,
         voiceLanguage: settings.voiceLanguage,
         developerMode: settings.developerMode,
+        mode: workflowMode,
         history,
         memoryContext: safeMemoryContext,
         skillContext: safeSkillContext,
@@ -544,8 +628,8 @@ export async function streamAgenticReply(
           return result;
         },
         executeTool: executeLocalAgentTool,
-        streamFinal: async (messages, onText) => {
-          await requestLocalOmniRoute(baseUrl, localModel, localKey, messages, { stream: true }, onText);
+        streamFinal: async (messages, onText, maxTokens) => {
+          await requestLocalOmniRoute(baseUrl, localModel, localKey, messages, { stream: true, maxTokens }, onText);
         },
         onChunk: (chunk) => { localEmitted = true; onChunk(chunk); },
         onStage: (stage, status) => onAgentStage?.({ stage, status }),
@@ -575,7 +659,12 @@ export async function streamAgenticReply(
       const fallbackPreset = AI_PROVIDER_PRESETS.find((item) => item.id === 'openrouter');
       if (!fallbackPreset) throw new Error('OpenRouter free backup endpoint is unavailable.');
       onRouteStatus?.({ route: 'free-fallback', provider: 'OpenRouter', reason });
-      await sendAgenticRequest('openrouter', normalizeProviderBaseUrl(fallbackPreset.baseUrl), fallbackModel, fallbackKey, onChunk);
+      try {
+        await sendAgenticRequest('openrouter', normalizeProviderBaseUrl(fallbackPreset.baseUrl), fallbackModel, fallbackKey, onChunk);
+      } catch (fallbackError) {
+        const fallbackReason = fallbackError instanceof Error ? fallbackError.message : 'OpenRouter free fallback failed.';
+        throw new Error('Local OmniRoute failed (' + reason + '). OpenRouter free fallback also failed: ' + fallbackReason);
+      }
       return;
     }
   }

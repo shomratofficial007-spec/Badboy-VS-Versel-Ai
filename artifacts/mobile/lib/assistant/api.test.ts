@@ -144,6 +144,45 @@ test('streamReply rejects a selected-provider stream that ends without its compl
   );
 });
 
+test('selected provider falls back when it accepts a request but does not emit a first token', async () => {
+  const { streamReply } = await apiPromise;
+  const providers: string[] = [];
+  fetchHandler = async (_input, init) => {
+    const body = JSON.parse(String(init?.body));
+    providers.push(body.providerId);
+    if (body.providerId === 'openai') {
+      const delayed = new ReadableStream<Uint8Array>({
+        start(controller) {
+          setTimeout(() => {
+            try {
+              controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"late primary"}}]}\n\ndata: [DONE]\n\n'));
+              controller.close();
+            } catch { /* The timed-out provider stream may already be cancelled. */ }
+          }, 6_000);
+        },
+      });
+      return new Response(delayed, { headers: { 'Content-Type': 'text/event-stream' } });
+    }
+    return streamResponse([
+      'data: {"choices":[{"delta":{"content":"fast fallback"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]);
+  };
+  const chunks: string[] = [];
+  await streamReply('hello', {
+    aiProvider: 'openai',
+    aiModel: 'primary-model',
+    aiBaseUrl: 'https://api.openai.com/v1',
+    aiFallbackProvider: 'groq',
+    aiFallbackModel: 'fallback-model',
+    personality: 'helpful',
+    voiceLanguage: 'en-US',
+    developerMode: false,
+  } as any, (chunk) => chunks.push(chunk));
+  assert.deepEqual(providers, ['openai', 'groq']);
+  assert.deepEqual(chunks, ['fast fallback']);
+});
+
 test('streamAgenticReply sends selected provider configuration to the full agentic Worker workflow', async () => {
   const { streamAgenticReply } = await apiPromise;
   let sent: any;
@@ -165,6 +204,37 @@ test('streamAgenticReply sends selected provider configuration to the full agent
   assert.deepEqual(sent.provider, { providerId: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' });
   assert.equal(sent.mode, 'multi');
   assert.deepEqual(chunks, ['orchestrated']);
+});
+
+test('chat routing uses single-pass by default and lightweight tools for Bengali live-data requests', async () => {
+  const { streamAgenticReply } = await apiPromise;
+  const modes: string[] = [];
+  const metrics: string[] = [];
+  const originalInfo = console.info;
+  console.info = ((...args: unknown[]) => { metrics.push(String(args[0])); }) as typeof console.info;
+  fetchHandler = async (_input, init) => {
+    const body = JSON.parse(String(init?.body));
+    modes.push(body.mode);
+    return streamResponse(['data: {"content":"ok"}\n\n', 'data: [DONE]\n\n']);
+  };
+  const settings = {
+    aiProvider: 'openai',
+    aiModel: 'gpt-4o-mini',
+    aiBaseUrl: 'https://api.openai.com/v1',
+    personality: 'helpful',
+    voiceLanguage: 'bn-BD',
+    developerMode: false,
+  } as any;
+  try {
+    await streamAgenticReply('হ্যালো', settings, [], () => {});
+    await streamAgenticReply('আজকের আবহাওয়া খুঁজে দাও', settings, [], () => {});
+  } finally {
+    console.info = originalInfo;
+  }
+  assert.deepEqual(modes, ['single', 'tools']);
+  const parsedMetrics = metrics.map((entry) => JSON.parse(entry) as { event?: string; firstTokenMs?: number; totalResponseMs?: number });
+  assert.ok(parsedMetrics.some((item) => item.event === 'first_token' && typeof item.firstTokenMs === 'number'));
+  assert.ok(parsedMetrics.some((item) => item.event === 'response_complete' && typeof item.totalResponseMs === 'number'));
 });
 
 test('uploadAgentAttachment uses owner-authenticated multipart upload and validates the stored reference', async () => {
@@ -293,7 +363,7 @@ test('streamAgenticReply runs every Agentic stage directly through Local OmniRou
   }], (status) => statuses.push(status), (status) => stages.push(status));
   assert.deepEqual(chunks, ['Local ', 'answer']);
   assert.deepEqual(statuses, [{ route: 'local' }]);
-  assert.deepEqual(stages.filter((item) => item.status === 'started').map((item) => item.stage), ['planner', 'tool-calling', 'executor', 'tool-calling', 'reviewer', 'synthesizer']);
+  assert.deepEqual(stages.filter((item) => item.status === 'started').map((item) => item.stage), ['tool-calling', 'executor', 'tool-calling', 'synthesizer']);
   const userMessage = requests[0].body.messages.find((item: any) => item.role === 'user');
   assert.ok(Array.isArray(userMessage.content));
   assert.deepEqual(userMessage.content[1], { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' } });

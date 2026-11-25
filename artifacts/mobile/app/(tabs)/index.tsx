@@ -35,7 +35,6 @@ import { useOwnerAuth } from '@/context/OwnerAuthContext';
 import { isOwnerLoginRequiredError } from '@/lib/assistant/ownerAuth';
 import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
 import { deleteAttachment, searchAgentMemory, streamAgenticReply, streamReply, transcribeRecordedAudio, uploadAgentAttachment, type AgenticAttachmentInput, type AgentRouteStatus, type AgentStageStatus } from '@/lib/assistant/api';
-import { listDeveloperProjects } from '@/lib/assistant/developerData';
 import {
   dictateOnce,
   getVoiceErrorMessage,
@@ -54,6 +53,10 @@ import { getOfflineWakeWordStatus, startOfflineWakeWord, stopOfflineWakeWord, su
 import { getActiveCustomSkillContext } from '@/lib/assistant/skillStorage';
 import { loadEnabledPluginIds } from '@/lib/assistant/pluginStorage';
 import { getDeveloperModeSkillContext } from '@/lib/assistant/developerModeSkill';
+import { createStreamChunkBuffer } from '@/lib/assistant/streamChunkBuffer';
+import { createChatLatencyTracker } from '@/lib/assistant/chatLatencyMetrics';
+import { buildDeveloperMemoryContext } from '@/lib/assistant/developerMemoryContext';
+import { listDeveloperProjects } from '@/lib/assistant/developerData';
 import { readVisibleScreenText } from '@/lib/assistant/jarvis';
 import { normalizeVisibleScreenText } from '@/lib/assistant/screenContextCore';
 
@@ -400,6 +403,9 @@ export default function ChatScreen() {
     }
 
     const attachmentsToSend = pendingAttachments ?? [];
+    const latencyTracker = createChatLatencyTracker(Date.now(), (metric) => {
+      console.info(JSON.stringify({ component: 'badboy-mobile-chat', ...metric }));
+    });
     if (attachmentsToSend.length) {
       userMessage.attachments = attachmentsToSend.map((item) => item.reference);
       working = [...messages, userMessage, answer];
@@ -408,25 +414,13 @@ export default function ChatScreen() {
     }
 
     try {
-      // Pull only owner-scoped, non-sensitive project notes. Memory lookup is
-      // best-effort: an unavailable D1/API must never prevent ordinary chat.
-      let memoryContext = '';
-      try {
-        const projects = await listDeveloperProjects(20);
-        const matches = await Promise.all(projects.slice(0, 10).map(async (project) => {
-          try {
-            const memories = await searchAgentMemory(project.project_id, text, 3);
-            return memories.map((memory) => ({ project: project.name, ...memory }));
-          } catch {
-            return [];
-          }
-        }));
-        memoryContext = matches.flat().slice(0, 8).map((memory) =>
-          `[${memory.project} / ${memory.category}] ${memory.content.slice(0, 900)}`,
-        ).join('\n').slice(0, 5000);
-      } catch {
-        // Keep the existing chat path available when project memory is offline.
-      }
+      // Project memory is a Developer Mode feature; fast chat makes no project-memory requests.
+      const memoryContext = await buildDeveloperMemoryContext(
+        settings.developerMode,
+        text,
+        listDeveloperProjects,
+        searchAgentMemory,
+      );
       let skillContext = '';
       try {
         const activeCustomSkill = await getActiveCustomSkillContext() ?? '';
@@ -441,29 +435,39 @@ export default function ChatScreen() {
       } catch {
         // Corrupt or unavailable plugin settings fail closed: no integration tools are enabled.
       }
-      const history = messages.slice(-8).map(({ role, content }) => ({ role, content }));
-      const onChunk = (chunk: string) => {
-        answer = { ...answer, content: answer.content + chunk };
-        working = working.map((message) =>
-          message.id === answer.id ? answer : message,
-        );
-        setMessages(working);
-      };
-      await streamAgenticReply(
-        text,
-        settings,
-        history,
-        onChunk,
-        memoryContext,
-        skillContext,
-        enabledPluginIds,
-        attachmentsToSend,
-        (status) => {
-          setAgentRouteStatus(status);
-          if (status.route !== 'local') setAgentStageStatus(null);
+      const history = messages.slice(-6).map(({ role, content }) => ({ role, content: content.slice(0, 2000) }));
+      const streamBuffer = createStreamChunkBuffer(
+        (chunk) => {
+          answer = { ...answer, content: answer.content + chunk };
+          working = working.map((message) =>
+            message.id === answer.id ? answer : message,
+          );
+          setMessages(working);
+          latencyTracker.markFirstUiUpdate();
         },
-        setAgentStageStatus,
+        requestAnimationFrame,
+        cancelAnimationFrame,
       );
+      try {
+        await streamAgenticReply(
+          text,
+          settings,
+          history,
+          streamBuffer.push,
+          memoryContext,
+          skillContext,
+          enabledPluginIds,
+          attachmentsToSend,
+          (status) => {
+            setAgentRouteStatus(status);
+            if (status.route !== 'local') setAgentStageStatus(null);
+          },
+          setAgentStageStatus,
+        );
+      } finally {
+        streamBuffer.flush();
+      }
+      latencyTracker.markComplete();
     } catch (cause) {
       if (attachmentsToSend.length) setPendingAttachments((current) => [...attachmentsToSend, ...(current ?? [])].slice(0, 4));
       working = working.filter((message) => message.id !== answer.id);
