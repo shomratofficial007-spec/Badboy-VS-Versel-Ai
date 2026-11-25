@@ -169,6 +169,8 @@ async function streamOpenAICompatibleResponse(response: Response, onChunk: (chun
   let buffer = '';
   let complete = false;
   let emittedContent = false;
+  const startedAt = Date.now();
+  let firstTokenMs: number | null = null;
   const emitLine = (line: string) => {
     if (!line.startsWith('data:')) return;
     const payload = line.slice(5).trim();
@@ -185,14 +187,35 @@ async function streamOpenAICompatibleResponse(response: Response, onChunk: (chun
     }
     if (event.error) throw new Error('AI Provider stream error.');
     const content = event.choices?.[0]?.delta?.content;
-    if (typeof content === 'string' && content) { emittedContent = true; onChunk(content); }
+    if (typeof content === 'string' && content) {
+      if (!emittedContent) {
+        firstTokenMs = Date.now() - startedAt;
+        console.info(JSON.stringify({ component: 'badboy-mobile-stream', event: 'first_token', firstTokenMs }));
+      }
+      emittedContent = true;
+      onChunk(content);
+    }
   };
 
   try {
     while (!complete) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+      let result: ReadableStreamReadResult<Uint8Array>;
+      if (!emittedContent) {
+        const remaining = 5_000 - (Date.now() - startedAt);
+        if (remaining <= 0) throw new Error('AI Provider did not emit a first token within 5 seconds.');
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const outcome = await Promise.race([
+          reader.read().then((value) => ({ kind: 'read' as const, value })),
+          new Promise<{ kind: 'timeout' }>((resolve) => { timer = setTimeout(() => resolve({ kind: 'timeout' }), remaining); }),
+        ]);
+        if (timer) clearTimeout(timer);
+        if (outcome.kind === 'timeout') throw new Error('AI Provider did not emit a first token within 5 seconds.');
+        result = outcome.value;
+      } else {
+        result = await reader.read();
+      }
+      if (result.done) break;
+      buffer += decoder.decode(result.value, { stream: true }).replace(/\r\n/g, '\n');
       const lines = buffer.split('\n');
       buffer = lines.pop() ?? '';
       for (const line of lines) {
