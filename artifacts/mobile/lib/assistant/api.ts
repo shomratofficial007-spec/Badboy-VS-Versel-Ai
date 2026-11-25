@@ -160,8 +160,14 @@ async function streamSseResponse(
 
 async function streamOpenAICompatibleResponse(response: Response, onChunk: (chunk: string) => void): Promise<void> {
   if (!response.ok) {
-    await response.text().catch(() => '');
-    throw new Error('নির্বাচিত AI Provider request গ্রহণ করেনি (HTTP ' + response.status + ')। API Key, Model ও Base URL যাচাই করুন।');
+    const payload = await response.json().catch(() => ({})) as {
+      error?: { message?: string } | string;
+      message?: string;
+    };
+    const message = typeof payload.error === 'string'
+      ? payload.error
+      : payload.error?.message ?? payload.message;
+    throw new Error(message?.slice(0, 240) || 'নির্বাচিত AI Provider request গ্রহণ করেনি (HTTP ' + response.status + ')। API Key, Model ও Base URL যাচাই করুন।');
   }
   const reader = response.body?.getReader();
   if (!reader) throw new Error('AI Provider response stream পাওয়া যায়নি।');
