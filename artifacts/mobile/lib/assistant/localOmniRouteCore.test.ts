@@ -106,9 +106,10 @@ test('fast local chat streams one completion without planner, tools, or reviewer
     attachments: [],
     requestCompletion: async () => { completions += 1; throw new Error('single-pass must not use non-streaming completion'); },
     executeTool: async () => { throw new Error('single-pass must not execute tools'); },
-    streamFinal: async (messages, onChunk) => {
+    streamFinal: async (messages, onChunk, maxTokens) => {
       streams += 1;
       assert.equal(messages.at(-1)?.content, 'হ্যালো');
+      assert.equal(maxTokens, 1400);
       onChunk('দ্রুত উত্তর');
     },
     onChunk: (chunk) => output.push(chunk),
@@ -144,8 +145,9 @@ test('local tools mode keeps tool calling but skips planner and reviewer', async
       return { content: 'ফলাফল ৪', toolCalls: [] };
     },
     executeTool: async () => ({ ok: true, result: { value: 4 } }),
-    streamFinal: async (messages, onChunk) => {
+    streamFinal: async (messages, onChunk, maxTokens) => {
       assert.match(String(messages.at(-1)?.content), /Tool findings:[\s\S]*ফলাফল ৪/);
+      assert.equal(maxTokens, 1800);
       onChunk('উত্তর ৪');
     },
     onChunk: (chunk) => output.push(chunk),
