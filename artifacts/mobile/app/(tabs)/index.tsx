@@ -443,7 +443,7 @@ export default function ChatScreen() {
       } catch {
         // Corrupt or unavailable plugin settings fail closed: no integration tools are enabled.
       }
-      const history = messages.slice(-8).map(({ role, content }) => ({ role, content }));
+      const history = messages.slice(-6).map(({ role, content }) => ({ role, content: content.slice(0, 2000) }));
       const onChunk = (chunk: string) => {
         answer = { ...answer, content: answer.content + chunk };
         working = working.map((message) =>
