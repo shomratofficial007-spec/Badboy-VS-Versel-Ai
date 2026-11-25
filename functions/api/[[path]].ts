@@ -4,7 +4,7 @@ import { buildDeveloperAnalysisMessages, resolveDeveloperAnalysisEngine, validat
 import { authenticatePersonalOwner } from "./personalAuth.ts";
 import { handleDeveloperDataRequest } from "./developerData.ts";
 import { createAgentStorage, type D1Database } from "./agentStorage.ts";
-import { attemptGeminiChatFallback, getGeminiModel } from "./geminiProvider.ts";
+import { attemptGeminiChatFallback, fetchGeminiChat, getGeminiModel } from "./geminiProvider.ts";
 import { handleAgenticAssistantRequest } from "./agenticAssistant.ts";
 import { handleAgentMemorySearchRequest } from "./agentMemory.ts";
 import { handleIntegrationRequest, type IntegrationEnv } from "./integrationHub.ts";
