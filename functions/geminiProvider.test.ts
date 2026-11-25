@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { fetchChatWithProviderFallbacks, handleApiRequest } from "./api/[[path]].ts";
 import {
   adaptGeminiStreamToOpenAI,
+  attemptGeminiChatFallback,
   fetchGeminiChat,
   getGeminiModel,
 } from "./api/geminiProvider.ts";
@@ -200,6 +201,91 @@ describe("server chat cross-provider fallback (Node coverage suite)", () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+});
+
+
+
+describe("Gemini chat fallback adapter", () => {
+  const messages = [
+    { role: "system" as const, content: "Be concise." },
+    { role: "user" as const, content: "Hello." },
+  ];
+
+  it("returns a streaming success result", async () => {
+    const response = new Response(
+      'data: {"candidates":[{"content":{"parts":[{"text":"Gemini adapter success"}]}}]}\n\n',
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    );
+    const result = await attemptGeminiChatFallback(
+      "test-gemini-key",
+      messages,
+      "gemini-3.5-flash-lite",
+      undefined,
+      undefined,
+      async () => response,
+    );
+    assert.equal(result.kind, "success");
+    if (result.kind === "success") assert.equal(result.response.status, 200);
+  });
+
+  it("returns a retryable fallback result and cancels the response body", async () => {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("rate limited"));
+      },
+      cancel() { cancelled = true; },
+    });
+    const response = new Response(body, { status: 429 });
+    const result = await attemptGeminiChatFallback(
+      "test-gemini-key",
+      messages,
+      "gemini-3.5-flash-lite",
+      undefined,
+      undefined,
+      async () => response,
+    );
+    assert.equal(result.kind, "fallback");
+    assert.equal(cancelled, true);
+  });
+
+  it("returns a terminal result for non-retryable provider errors", async () => {
+    const result = await attemptGeminiChatFallback(
+      "test-gemini-key",
+      messages,
+      "gemini-3.5-flash-lite",
+      undefined,
+      () => false,
+      async () => new Response(JSON.stringify({ error: "bad request" }), { status: 400 }),
+    );
+    assert.equal(result.kind, "terminal");
+    if (result.kind === "terminal") assert.equal(result.response.status, 400);
+  });
+
+  it("returns a network error result when Gemini cannot be reached", async () => {
+    const result = await attemptGeminiChatFallback(
+      "test-gemini-key",
+      messages,
+      "gemini-3.5-flash-lite",
+      undefined,
+      undefined,
+      async () => { throw new Error("Gemini network failure"); },
+    );
+    assert.equal(result.kind, "network_error");
+    if (result.kind === "network_error") assert.match(String(result.error), /Gemini network failure/);
+  });
+
+  it("skips Gemini when the key is missing or the request is already aborted", async () => {
+    const missingKey = await attemptGeminiChatFallback("", messages, "gemini-3.5-flash-lite");
+    const aborted = await attemptGeminiChatFallback(
+      "test-gemini-key",
+      messages,
+      "gemini-3.5-flash-lite",
+      AbortSignal.abort(),
+    );
+    assert.equal(missingKey.kind, "skipped");
+    assert.equal(aborted.kind, "skipped");
   });
 });
 
