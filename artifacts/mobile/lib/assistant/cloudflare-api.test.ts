@@ -37,10 +37,32 @@ test("health reports AI unavailable when the secret is missing", async () => {
     status: "degraded",
     aiConfigured: false,
     capabilities: { chat: false, transcription: false, serverSpeech: false },
-    providers: { openrouter: false, groqTranscription: false },
+    providers: { openrouter: false, geminiChat: false, groqChat: false, groqTranscription: false },
     model: "openrouter/free",
     fallbackCount: 4,
   });
+});
+
+test("health reports Groq as a chat provider when only its key is configured", async () => {
+  const response = await handleApiRequest(request("/api/healthz"), {
+    GROQ_API_KEY: "test-groq-key",
+  });
+  assert.equal(response.status, 200);
+  const payload = await response.json() as {
+    aiConfigured: boolean;
+    capabilities: { chat: boolean; transcription: boolean; serverSpeech: boolean };
+    providers: { openrouter: boolean; geminiChat: boolean; groqChat: boolean; groqTranscription: boolean };
+    model: string;
+  };
+  assert.equal(payload.aiConfigured, true);
+  assert.deepEqual(payload.capabilities, { chat: true, transcription: true, serverSpeech: false });
+  assert.deepEqual(payload.providers, {
+    openrouter: false,
+    geminiChat: false,
+    groqChat: true,
+    groqTranscription: true,
+  });
+  assert.equal(payload.model, "openai/gpt-oss-20b");
 });
 
 test("health treats whitespace-only secrets as missing", async () => {
@@ -121,6 +143,6 @@ test("chat converts provider rate limits into a clear 429 response", async () =>
   );
   assert.equal(response.status, 429);
   const payload = await response.json() as { code: string; error: string };
-  assert.equal(payload.code, "OPENROUTER_RATE_LIMIT");
+  assert.equal(payload.code, "AI_PROVIDER_RATE_LIMIT");
   assert.equal(payload.error.includes("provider details"), false);
 });
