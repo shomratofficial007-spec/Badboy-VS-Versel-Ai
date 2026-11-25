@@ -510,10 +510,11 @@ async function requestCompletion(
   for (const model of models) {
     // Only the dynamic free router and explicitly free model IDs are allowed.
     if (!provider && model !== "openrouter/free" && !model.endsWith(":free")) continue;
-    const timeoutSignal = AbortSignal.timeout(options.timeoutMs ?? 20_000);
+    const timeoutController = new AbortController();
+    const timeoutHandle = setTimeout(() => timeoutController.abort(), options.timeoutMs ?? 20_000);
     const signal = options.signal
-      ? AbortSignal.any([options.signal, timeoutSignal])
-      : timeoutSignal;
+      ? AbortSignal.any([options.signal, timeoutController.signal])
+      : timeoutController.signal;
     let response: Response;
     try {
       response = await fetch(endpoint, {
@@ -539,6 +540,8 @@ async function requestCompletion(
       if (options.signal?.aborted) throw cause;
       lastStatus = 504;
       continue;
+    } finally {
+      clearTimeout(timeoutHandle);
     }
     if (response.ok && response.body) return response;
     lastStatus = response.status;
