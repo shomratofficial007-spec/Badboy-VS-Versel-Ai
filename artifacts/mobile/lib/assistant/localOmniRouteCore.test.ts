@@ -88,6 +88,73 @@ test('Local OmniRoute executes Planner, Tool Calling, Executor, Reviewer and Syn
   assert.deepEqual(output, ['উত্তর ৪']);
 });
 
+test('fast local chat streams one completion without planner, tools, or reviewer', async () => {
+  const stages: string[] = [];
+  const output: string[] = [];
+  let completions = 0;
+  let streams = 0;
+  await runLocalAgenticWorkflow({
+    message: 'হ্যালো',
+    personality: 'helpful',
+    voiceLanguage: 'bn-BD',
+    developerMode: false,
+    mode: 'single',
+    history: [],
+    memoryContext: '',
+    skillContext: '',
+    enabledPlugins: [],
+    attachments: [],
+    requestCompletion: async () => { completions += 1; throw new Error('single-pass must not use non-streaming completion'); },
+    executeTool: async () => { throw new Error('single-pass must not execute tools'); },
+    streamFinal: async (messages, onChunk) => {
+      streams += 1;
+      assert.equal(messages.at(-1)?.content, 'হ্যালো');
+      onChunk('দ্রুত উত্তর');
+    },
+    onChunk: (chunk) => output.push(chunk),
+    onStage: (stage, status) => { if (status === 'started') stages.push(stage); },
+  });
+  assert.equal(completions, 0);
+  assert.equal(streams, 1);
+  assert.deepEqual(output, ['দ্রুত উত্তর']);
+  assert.deepEqual(stages, ['synthesizer']);
+});
+
+test('local tools mode keeps tool calling but skips planner and reviewer', async () => {
+  const stages: string[] = [];
+  const output: string[] = [];
+  let toolRequests = 0;
+  await runLocalAgenticWorkflow({
+    message: '2 + 2 কত?',
+    personality: 'helpful',
+    voiceLanguage: 'bn-BD',
+    developerMode: false,
+    mode: 'tools',
+    history: [],
+    memoryContext: '',
+    skillContext: '',
+    enabledPlugins: [],
+    attachments: [],
+    requestCompletion: async (messages) => {
+      assert.doesNotMatch(String(messages[0]?.content), /Badboy Planner|Badboy Reviewer/);
+      toolRequests += 1;
+      if (toolRequests === 1) {
+        return { content: '', toolCalls: [{ id: 'calc-1', type: 'function', function: { name: 'calculator', arguments: '{"expression":"2 + 2"}' } }] };
+      }
+      return { content: 'ফলাফল ৪', toolCalls: [] };
+    },
+    executeTool: async () => ({ ok: true, result: { value: 4 } }),
+    streamFinal: async (messages, onChunk) => {
+      assert.match(String(messages.at(-1)?.content), /Tool findings:[\s\S]*ফলাফল ৪/);
+      onChunk('উত্তর ৪');
+    },
+    onChunk: (chunk) => output.push(chunk),
+    onStage: (stage, status) => { if (status === 'started') stages.push(stage); },
+  });
+  assert.deepEqual(stages, ['tool-calling', 'executor', 'tool-calling', 'synthesizer']);
+  assert.deepEqual(output, ['উত্তর ৪']);
+});
+
 test('Planner retries without response_format only when the router explicitly rejects it', async () => {
   let plannerCalls = 0;
   const plan = JSON.stringify({
