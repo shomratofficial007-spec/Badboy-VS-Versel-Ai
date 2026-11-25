@@ -1332,7 +1332,9 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
             ? OPENROUTER_MODEL_ID
             : geminiConfigured
               ? getGeminiModel(env.GEMINI_MODEL)
-              : getGroqModel(env.GROQ_MODEL),
+              : groqConfigured
+                ? getGroqModel(env.GROQ_MODEL)
+                : OPENROUTER_MODEL_ID,
           fallbackCount: OPENROUTER_FREE_FALLBACKS.length,
         },
         anyCapabilityConfigured ? 200 : 503,
