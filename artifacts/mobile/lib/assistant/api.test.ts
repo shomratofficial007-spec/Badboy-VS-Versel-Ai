@@ -209,6 +209,9 @@ test('streamAgenticReply sends selected provider configuration to the full agent
 test('chat routing uses single-pass by default and lightweight tools for Bengali live-data requests', async () => {
   const { streamAgenticReply } = await apiPromise;
   const modes: string[] = [];
+  const metrics: string[] = [];
+  const originalInfo = console.info;
+  console.info = ((...args: unknown[]) => { metrics.push(String(args[0])); }) as typeof console.info;
   fetchHandler = async (_input, init) => {
     const body = JSON.parse(String(init?.body));
     modes.push(body.mode);
@@ -222,9 +225,16 @@ test('chat routing uses single-pass by default and lightweight tools for Bengali
     voiceLanguage: 'bn-BD',
     developerMode: false,
   } as any;
-  await streamAgenticReply('হ্যালো', settings, [], () => {});
-  await streamAgenticReply('আজকের আবহাওয়া খুঁজে দাও', settings, [], () => {});
+  try {
+    await streamAgenticReply('হ্যালো', settings, [], () => {});
+    await streamAgenticReply('আজকের আবহাওয়া খুঁজে দাও', settings, [], () => {});
+  } finally {
+    console.info = originalInfo;
+  }
   assert.deepEqual(modes, ['single', 'tools']);
+  const parsedMetrics = metrics.map((entry) => JSON.parse(entry) as { event?: string; firstTokenMs?: number; totalResponseMs?: number });
+  assert.ok(parsedMetrics.some((item) => item.event === 'first_token' && typeof item.firstTokenMs === 'number'));
+  assert.ok(parsedMetrics.some((item) => item.event === 'response_complete' && typeof item.totalResponseMs === 'number'));
 });
 
 test('uploadAgentAttachment uses owner-authenticated multipart upload and validates the stored reference', async () => {
