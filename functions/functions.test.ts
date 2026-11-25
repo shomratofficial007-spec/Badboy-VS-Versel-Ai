@@ -102,7 +102,7 @@ test("onRequestGet - health check endpoint without leading /api prefix returns s
     status: "degraded",
     aiConfigured: false,
     capabilities: { chat: false, transcription: false, serverSpeech: false },
-    providers: { openrouter: false, groqTranscription: false },
+    providers: { openrouter: false, geminiChat: false, groqChat: false, groqTranscription: false },
     model: "openrouter/free",
     fallbackCount: 4,
   });
@@ -161,7 +161,7 @@ test("onRequestGet - health check endpoint with trailing slash returns status ok
     status: "degraded",
     aiConfigured: false,
     capabilities: { chat: false, transcription: false, serverSpeech: false },
-    providers: { openrouter: false, groqTranscription: false },
+    providers: { openrouter: false, geminiChat: false, groqChat: false, groqTranscription: false },
     model: "openrouter/free",
     fallbackCount: 4,
   });
@@ -562,7 +562,7 @@ test("onRequestPost - falls back from all OpenRouter 429 models to Gemini stream
       geminiCalled = true;
       assert.equal(new Headers(init?.headers).get("x-goog-api-key"), "test-gemini-key");
       return new Response(
-        'data: {"candidates":[{"content":{"parts":[{"text":"Gemini fallback stream"}]}}]}\\n\\n',
+        'data: {"candidates":[{"content":{"parts":[{"text":"Gemini fallback stream"}]}}]}\n\n',
         { status: 200, headers: { "Content-Type": "text/event-stream" } },
       );
     }
@@ -580,7 +580,7 @@ test("onRequestPost - falls back from all OpenRouter 429 models to Gemini stream
     assert.equal(response.status, 200);
     const output = await response.text();
     assert.match(output, /Gemini fallback stream/);
-    assert.match(output, /data: \\[DONE\\]/);
+    assert.match(output, /data: \[DONE\]/);
     assert.equal(geminiCalled, true);
     assert.equal(attemptedOpenRouterModels.length, 5);
   } finally {
@@ -605,7 +605,7 @@ test("onRequestPost - falls back from rate-limited Gemini to Groq OpenAI-compati
       assert.equal(body.model, "openai/gpt-oss-20b");
       assert.equal(body.stream, true);
       return new Response(
-        'data: {"choices":[{"delta":{"content":"Groq fallback stream"}}]}\\n\\ndata: [DONE]\\n\\n',
+        'data: {"choices":[{"delta":{"content":"Groq fallback stream"}}]}\n\ndata: [DONE]\n\n',
         { status: 200, headers: { "Content-Type": "text/event-stream" } },
       );
     }
@@ -634,7 +634,7 @@ test("onRequestPost - supports Gemini-only chat without requiring OpenRouter", a
   globalThis.fetch = (async (url: string | URL) => {
     assert.match(String(url), /generativelanguage.googleapis.com/);
     return new Response(
-      'data: {"candidates":[{"content":{"parts":[{"text":"Gemini-only response"}]}}]}\\n\\n',
+      'data: {"candidates":[{"content":{"parts":[{"text":"Gemini-only response"}]}}]}\n\n',
       { status: 200, headers: { "Content-Type": "text/event-stream" } },
     );
   }) as typeof globalThis.fetch;
@@ -680,7 +680,7 @@ test("onRequestPost - returns final error when all fallback models fail with 500
     const response = await onRequestPost(context);
     assert.strictEqual(response.status, 502);
     const json = (await response.json()) as any;
-    assert.strictEqual(json.code, "OPENROUTER_REQUEST_FAILED");
+    assert.strictEqual(json.code, "AI_PROVIDER_REQUEST_FAILED");
 
     // Must have attempted all 5 models in sequence
     assert.deepStrictEqual(attemptedModels, [
@@ -1053,7 +1053,7 @@ test("onRequestPost - stops fallback when an upstream returns HTTP 200 without a
     const response = await onRequestPost(context);
     assert.strictEqual(response.status, 502);
     const json = await response.json() as any;
-    assert.strictEqual(json.code, "OPENROUTER_REQUEST_FAILED");
+    assert.strictEqual(json.code, "AI_PROVIDER_REQUEST_FAILED");
     assert.deepStrictEqual(attemptedModels, ["openrouter/free"]);
   } finally {
     globalThis.fetch = originalFetch;
@@ -1855,7 +1855,7 @@ test("assistant chat reports empty, truncated and malformed upstream streams wit
       assert.equal(response.status, 200, scenario.name);
       const stream = await response.text();
       assert.match(stream, scenario.expected, scenario.name);
-      if (scenario.name !== "empty") assert.doesNotMatch(stream, /data: \\[DONE\\]/, scenario.name);
+      if (scenario.name !== "empty") assert.doesNotMatch(stream, /data: \[DONE\]/, scenario.name);
     }
   } finally {
     globalThis.fetch = originalFetch;
@@ -1920,7 +1920,7 @@ test("assistant chat converts an upstream provider error event into a stream err
     assert.equal(response.status, 200);
     const stream = await response.text();
     assert.match(stream, /OpenRouter stream interrupted/);
-    assert.doesNotMatch(stream, /data: \\[DONE\\]/);
+    assert.doesNotMatch(stream, /data: \[DONE\]/);
   } finally {
     globalThis.fetch = originalFetch;
   }
