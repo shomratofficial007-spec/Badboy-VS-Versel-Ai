@@ -45,6 +45,7 @@ type ModelMessage = {
 type CompletionResponse = {
   choices?: Array<{ message?: ModelMessage }>;
   error?: { message?: string };
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 };
 
 type AgentPluginId = "web-research" | "home-assistant" | "slack-history" | "discord-history" | "google-calendar";
@@ -509,12 +510,21 @@ async function requestCompletion(
 }
 
 async function completeText(apiKey: string, messages: ChatMessage[], tools = false, toolDefinitions?: readonly unknown[], responseFormat?: "json_object", signal?: AbortSignal, provider?: AgenticPayload["provider"]): Promise<{ content: string; messages: ChatMessage[] }> {
-  const response = await requestCompletion(apiKey, messages, { tools, toolDefinitions, responseFormat, maxTokens: 1800, signal, timeoutMs: 20_000 }, provider);
+  const response = await requestCompletion(apiKey, messages, { tools, toolDefinitions, responseFormat, maxTokens: 1200, signal, timeoutMs: 12_000 }, provider);
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as CompletionResponse;
     throw new Error(modelErrorMessage(body, response.status));
   }
   const body = await response.json() as CompletionResponse;
+  if (body.usage) {
+    console.info(JSON.stringify({
+      component: "badboy-agent",
+      event: "token_usage",
+      promptTokens: body.usage.prompt_tokens ?? null,
+      completionTokens: body.usage.completion_tokens ?? null,
+      totalTokens: body.usage.total_tokens ?? null,
+    }));
+  }
   const message = body.choices?.[0]?.message;
   if (!message) throw new Error("The AI provider returned an empty completion.");
   const assistantContent = typeof message.content === "string" ? message.content : "";
