@@ -492,7 +492,7 @@ export async function streamAgenticReply(
   }
   const safeMemoryContext = memoryContext.trim().slice(0, 5000);
   const safeSkillContext = skillContext.trim().slice(0, 4000);
-  const toolIntent = /(?:\b(?:search the web|web search|look up|latest|current news|weather|calendar|events|schedule|discord|slack|home assistant|calculate|compute|count words|current time|what time is it)\b|(?:\d+(?:\.\d+)?\s*[+*/%\-]\s*\d+(?:\.\d+)?))/i.test(message);
+  const toolIntent = /(?:\b(?:search the web|web search|look up|latest|current news|weather|calendar|events|schedule|discord|slack|home assistant|calculate|compute|count words|current time|what time is it)\b|(?:\d+(?:\.\d+)?\s*[+*/%-]\s*\d+(?:\.\d+)?))/i.test(message);
   const workflowMode: 'single' | 'tools' | 'multi' = settings.developerMode ? 'multi' : toolIntent ? 'tools' : 'single';
   const sendAgenticRequest = async (
     providerId: typeof selectedProvider,
