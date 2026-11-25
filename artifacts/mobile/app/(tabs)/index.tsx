@@ -438,12 +438,12 @@ export default function ChatScreen() {
       const history = messages.slice(-6).map(({ role, content }) => ({ role, content: content.slice(0, 2000) }));
       const streamBuffer = createStreamChunkBuffer(
         (chunk) => {
-          latencyTracker.markFirstUiUpdate();
           answer = { ...answer, content: answer.content + chunk };
           working = working.map((message) =>
             message.id === answer.id ? answer : message,
           );
           setMessages(working);
+          latencyTracker.markFirstUiUpdate();
         },
         requestAnimationFrame,
         cancelAnimationFrame,
@@ -464,10 +464,10 @@ export default function ChatScreen() {
           },
           setAgentStageStatus,
         );
-        latencyTracker.markComplete();
       } finally {
         streamBuffer.flush();
       }
+      latencyTracker.markComplete();
     } catch (cause) {
       if (attachmentsToSend.length) setPendingAttachments((current) => [...attachmentsToSend, ...(current ?? [])].slice(0, 4));
       working = working.filter((message) => message.id !== answer.id);
