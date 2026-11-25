@@ -136,8 +136,9 @@ test('local tools mode keeps tool calling but skips planner and reviewer', async
     skillContext: '',
     enabledPlugins: [],
     attachments: [],
-    requestCompletion: async (messages) => {
+    requestCompletion: async (messages, options) => {
       assert.doesNotMatch(String(messages[0]?.content), /Badboy Planner|Badboy Reviewer/);
+      assert.equal(options?.timeoutMs, 8_000);
       toolRequests += 1;
       if (toolRequests === 1) {
         return { content: '', toolCalls: [{ id: 'calc-1', type: 'function', function: { name: 'calculator', arguments: '{"expression":"2 + 2"}' } }] };
