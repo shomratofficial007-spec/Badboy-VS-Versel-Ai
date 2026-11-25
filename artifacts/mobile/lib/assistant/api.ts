@@ -385,11 +385,11 @@ async function requestLocalOmniRoute(
   model: string,
   apiKey: string | null,
   messages: LocalAgentMessage[],
-  options: { tools?: readonly unknown[]; responseFormat?: 'json_object'; stream?: boolean; maxTokens?: number },
+  options: { tools?: readonly unknown[]; responseFormat?: 'json_object'; stream?: boolean; maxTokens?: number; timeoutMs?: number },
   onChunk?: (chunk: string) => void,
 ): Promise<LocalAgentCompletion | void> {
   const controller = new AbortController();
-  const connectTimeout = setTimeout(() => controller.abort(), options.stream ? 8_000 : 60_000);
+  const connectTimeout = setTimeout(() => controller.abort(), options.timeoutMs ?? (options.stream ? 8_000 : 60_000));
   try {
     const response = await expoFetch(baseUrl + '/chat/completions', {
       method: 'POST',
