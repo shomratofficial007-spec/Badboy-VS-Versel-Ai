@@ -468,6 +468,8 @@ export async function streamAgenticReply(
   }
   const safeMemoryContext = memoryContext.trim().slice(0, 5000);
   const safeSkillContext = skillContext.trim().slice(0, 4000);
+  const toolIntent = /(?:\b(?:search the web|web search|look up|latest|current news|weather|calendar|events|schedule|discord|slack|home assistant|calculate|compute|count words|current time|what time is it)\b|(?:\d+(?:\.\d+)?\s*[+*/%\-]\s*\d+(?:\.\d+)?))/i.test(message);
+  const workflowMode: 'single' | 'tools' | 'multi' = settings.developerMode ? 'multi' : toolIntent ? 'tools' : 'single';
   const sendAgenticRequest = async (
     providerId: typeof selectedProvider,
     baseUrl: string,
@@ -490,8 +492,8 @@ export async function streamAgenticReply(
         memoryContext: safeMemoryContext,
         skillContext: safeSkillContext,
         developerMode: settings.developerMode,
-        // Fast single-pass is used when no integration plugin is enabled. Plugin requests keep a lightweight tool workflow; Developer Mode keeps all planner/reviewer stages.
-        mode: settings.developerMode ? 'multi' : enabledPluginIds.length > 0 ? 'tools' : 'single',
+        // Ordinary chat is single-pass; explicit tool intents keep tool calling without planner/reviewer. Developer Mode retains all stages.
+        mode: workflowMode,
         enabledPlugins: enabledPluginIds,
         attachments: attachmentIds,
         history: history.slice(-8).map(({ role, content }) => ({
@@ -533,6 +535,7 @@ export async function streamAgenticReply(
         personality: settings.personality,
         voiceLanguage: settings.voiceLanguage,
         developerMode: settings.developerMode,
+        mode: workflowMode,
         history,
         memoryContext: safeMemoryContext,
         skillContext: safeSkillContext,
