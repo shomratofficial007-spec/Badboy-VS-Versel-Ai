@@ -585,8 +585,8 @@ export async function streamAgenticReply(
           return result;
         },
         executeTool: executeLocalAgentTool,
-        streamFinal: async (messages, onText) => {
-          await requestLocalOmniRoute(baseUrl, localModel, localKey, messages, { stream: true }, onText);
+        streamFinal: async (messages, onText, maxTokens) => {
+          await requestLocalOmniRoute(baseUrl, localModel, localKey, messages, { stream: true, maxTokens }, onText);
         },
         onChunk: (chunk) => { localEmitted = true; onChunk(chunk); },
         onStage: (stage, status) => onAgentStage?.({ stage, status }),
