@@ -144,6 +144,45 @@ test('streamReply rejects a selected-provider stream that ends without its compl
   );
 });
 
+test('selected provider falls back when it accepts a request but does not emit a first token', async () => {
+  const { streamReply } = await apiPromise;
+  const providers: string[] = [];
+  fetchHandler = async (_input, init) => {
+    const body = JSON.parse(String(init?.body));
+    providers.push(body.providerId);
+    if (body.providerId === 'openai') {
+      const delayed = new ReadableStream<Uint8Array>({
+        start(controller) {
+          setTimeout(() => {
+            try {
+              controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"late primary"}}]}\n\ndata: [DONE]\n\n'));
+              controller.close();
+            } catch { /* The timed-out provider stream may already be cancelled. */ }
+          }, 6_000);
+        },
+      });
+      return new Response(delayed, { headers: { 'Content-Type': 'text/event-stream' } });
+    }
+    return streamResponse([
+      'data: {"choices":[{"delta":{"content":"fast fallback"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]);
+  };
+  const chunks: string[] = [];
+  await streamReply('hello', {
+    aiProvider: 'openai',
+    aiModel: 'primary-model',
+    aiBaseUrl: 'https://api.openai.com/v1',
+    aiFallbackProvider: 'groq',
+    aiFallbackModel: 'fallback-model',
+    personality: 'helpful',
+    voiceLanguage: 'en-US',
+    developerMode: false,
+  } as any, (chunk) => chunks.push(chunk));
+  assert.deepEqual(providers, ['openai', 'groq']);
+  assert.deepEqual(chunks, ['fast fallback']);
+});
+
 test('streamAgenticReply sends selected provider configuration to the full agentic Worker workflow', async () => {
   const { streamAgenticReply } = await apiPromise;
   let sent: any;
