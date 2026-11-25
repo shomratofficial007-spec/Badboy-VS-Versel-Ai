@@ -54,6 +54,7 @@ import { getOfflineWakeWordStatus, startOfflineWakeWord, stopOfflineWakeWord, su
 import { getActiveCustomSkillContext } from '@/lib/assistant/skillStorage';
 import { loadEnabledPluginIds } from '@/lib/assistant/pluginStorage';
 import { getDeveloperModeSkillContext } from '@/lib/assistant/developerModeSkill';
+import { createStreamChunkBuffer } from '@/lib/assistant/streamChunkBuffer';
 import { readVisibleScreenText } from '@/lib/assistant/jarvis';
 import { normalizeVisibleScreenText } from '@/lib/assistant/screenContextCore';
 
@@ -444,33 +445,23 @@ export default function ChatScreen() {
         // Corrupt or unavailable plugin settings fail closed: no integration tools are enabled.
       }
       const history = messages.slice(-6).map(({ role, content }) => ({ role, content: content.slice(0, 2000) }));
-      let queuedStreamText = '';
-      let streamFrame: number | null = null;
-      const flushStreamText = () => {
-        if (!queuedStreamText) return;
-        const chunk = queuedStreamText;
-        queuedStreamText = '';
-        answer = { ...answer, content: answer.content + chunk };
-        working = working.map((message) =>
-          message.id === answer.id ? answer : message,
-        );
-        setMessages(working);
-      };
-      const onChunk = (chunk: string) => {
-        queuedStreamText += chunk;
-        if (streamFrame === null) {
-          streamFrame = requestAnimationFrame(() => {
-            streamFrame = null;
-            flushStreamText();
-          });
-        }
-      };
+      const streamBuffer = createStreamChunkBuffer(
+        (chunk) => {
+          answer = { ...answer, content: answer.content + chunk };
+          working = working.map((message) =>
+            message.id === answer.id ? answer : message,
+          );
+          setMessages(working);
+        },
+        requestAnimationFrame,
+        cancelAnimationFrame,
+      );
       try {
         await streamAgenticReply(
           text,
           settings,
           history,
-          onChunk,
+          streamBuffer.push,
           memoryContext,
           skillContext,
           enabledPluginIds,
@@ -482,9 +473,7 @@ export default function ChatScreen() {
           setAgentStageStatus,
         );
       } finally {
-        if (streamFrame !== null) cancelAnimationFrame(streamFrame);
-        streamFrame = null;
-        flushStreamText();
+        streamBuffer.flush();
       }
     } catch (cause) {
       if (attachmentsToSend.length) setPendingAttachments((current) => [...attachmentsToSend, ...(current ?? [])].slice(0, 4));
