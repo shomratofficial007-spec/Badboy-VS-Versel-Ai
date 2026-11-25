@@ -34,7 +34,7 @@ import { useAssistant } from '@/context/AssistantContext';
 import { useOwnerAuth } from '@/context/OwnerAuthContext';
 import { isOwnerLoginRequiredError } from '@/lib/assistant/ownerAuth';
 import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
-import { deleteAttachment, streamAgenticReply, streamReply, transcribeRecordedAudio, uploadAgentAttachment, type AgenticAttachmentInput, type AgentRouteStatus, type AgentStageStatus } from '@/lib/assistant/api';
+import { deleteAttachment, searchAgentMemory, streamAgenticReply, streamReply, transcribeRecordedAudio, uploadAgentAttachment, type AgenticAttachmentInput, type AgentRouteStatus, type AgentStageStatus } from '@/lib/assistant/api';
 import {
   dictateOnce,
   getVoiceErrorMessage,
@@ -55,6 +55,7 @@ import { loadEnabledPluginIds } from '@/lib/assistant/pluginStorage';
 import { getDeveloperModeSkillContext } from '@/lib/assistant/developerModeSkill';
 import { createStreamChunkBuffer } from '@/lib/assistant/streamChunkBuffer';
 import { buildDeveloperMemoryContext } from '@/lib/assistant/developerMemoryContext';
+import { listDeveloperProjects } from '@/lib/assistant/developerData';
 import { readVisibleScreenText } from '@/lib/assistant/jarvis';
 import { normalizeVisibleScreenText } from '@/lib/assistant/screenContextCore';
 
