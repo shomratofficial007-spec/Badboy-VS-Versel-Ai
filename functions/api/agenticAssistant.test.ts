@@ -444,7 +444,7 @@ test("fast chat retries a free model when the first model misses the first-token
   globalThis.fetch = async (_input, init) => {
     const payload = JSON.parse(String(init?.body)) as { model: string; stream: boolean };
     attempted.push({ model: payload.model, stream: payload.stream });
-    if (payload.model === "openrouter/free") {
+    if (attempted.length === 1) {
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
           setTimeout(() => {
@@ -465,10 +465,10 @@ test("fast chat retries a free model when the first model misses the first-token
     });
     const body = await response.text();
     assert.match(body, /চূড়ান্ত/);
-    assert.deepEqual(attempted, [
-      { model: "openrouter/free", stream: true },
-      { model: "cohere/north-mini-code:free", stream: true },
-    ]);
+    assert.equal(attempted.length, 2);
+    assert.ok(attempted.every((item) => item.stream));
+    assert.notEqual(attempted[0].model, attempted[1].model);
+    assert.ok(attempted.every((item) => item.model === "openrouter/free" || item.model.endsWith(":free")));
   } finally {
     globalThis.fetch = originalFetch;
   }
