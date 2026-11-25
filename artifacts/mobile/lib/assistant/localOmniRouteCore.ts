@@ -327,7 +327,7 @@ export async function runLocalAgenticWorkflow(input: LocalAgenticWorkflowInput):
         { role: 'system', content: 'Fallback: return only valid JSON. Do not use Markdown fences.' },
       ]);
     }
-    let plan = normalizeStructuredAgentPlan(planned.content);
+    plan = normalizeStructuredAgentPlan(planned.content) ?? '';
     if (!plan) {
       try {
         const repaired = await input.requestCompletion([
