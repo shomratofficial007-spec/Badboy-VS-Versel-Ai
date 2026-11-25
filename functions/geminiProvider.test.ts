@@ -1,10 +1,142 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { handleApiRequest } from "./api/[[path]].ts";
 import {
   adaptGeminiStreamToOpenAI,
   fetchGeminiChat,
   getGeminiModel,
 } from "./api/geminiProvider.ts";
+
+
+const CHAT_TEST_OWNER_TOKEN = "a".repeat(43);
+
+function chatRequest(env: Record<string, unknown>): Promise<Response> {
+  return handleApiRequest(
+    new Request("https://badboy.test/api/assistant/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${CHAT_TEST_OWNER_TOKEN}`,
+      },
+      body: JSON.stringify({ message: "Hello from Node coverage test" }),
+    }),
+    { ...env, BADBOY_OWNER_TOKEN: CHAT_TEST_OWNER_TOKEN } as never,
+  );
+}
+
+describe("server chat cross-provider fallback (Node coverage suite)", () => {
+  it("uses Gemini after all OpenRouter free models are rate limited", async () => {
+    const originalFetch = globalThis.fetch;
+    const attemptedModels: string[] = [];
+    let geminiCalled = false;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.hostname === "openrouter.ai") {
+        attemptedModels.push(JSON.parse(String(init?.body)).model);
+        return new Response(JSON.stringify({ error: { message: "rate limited" } }), { status: 429 });
+      }
+      if (url.hostname === "generativelanguage.googleapis.com") {
+        geminiCalled = true;
+        return new Response(
+          'data: {"candidates":[{"content":{"parts":[{"text":"Gemini fallback"}]}}]}\n\n',
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        );
+      }
+      throw new Error("Unexpected provider host: " + url.hostname);
+    }) as typeof fetch;
+    try {
+      const response = await chatRequest({
+        OPENROUTER_API_KEY: "test-openrouter-key",
+        GEMINI_API_KEY: "test-gemini-key",
+      });
+      assert.equal(response.status, 200);
+      assert.match(await response.text(), /Gemini fallback/);
+      assert.equal(attemptedModels.length, 5);
+      assert.equal(geminiCalled, true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("uses Groq when Gemini returns 429", async () => {
+    const originalFetch = globalThis.fetch;
+    let geminiCalled = false;
+    let groqCalled = false;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.hostname === "generativelanguage.googleapis.com") {
+        geminiCalled = true;
+        return new Response(JSON.stringify({ error: { message: "quota exceeded" } }), { status: 429 });
+      }
+      if (url.hostname === "api.groq.com") {
+        groqCalled = true;
+        assert.equal(new Headers(init?.headers).get("Authorization"), "Bearer test-groq-key");
+        const body = JSON.parse(String(init?.body));
+        assert.equal(body.model, "openai/gpt-oss-20b");
+        assert.equal(body.stream, true);
+        return new Response(
+          'data: {"choices":[{"delta":{"content":"Groq fallback"}}]}\n\ndata: [DONE]\n\n',
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        );
+      }
+      throw new Error("Unexpected provider host: " + url.hostname);
+    }) as typeof fetch;
+    try {
+      const response = await chatRequest({
+        GEMINI_API_KEY: "test-gemini-key",
+        GROQ_API_KEY: "test-groq-key",
+      });
+      assert.equal(response.status, 200);
+      assert.match(await response.text(), /Groq fallback/);
+      assert.equal(geminiCalled, true);
+      assert.equal(groqCalled, true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("serves Gemini-only chat without an OpenRouter key", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      assert.equal(new URL(String(input)).hostname, "generativelanguage.googleapis.com");
+      return new Response(
+        'data: {"candidates":[{"content":{"parts":[{"text":"Gemini only"}]}}]}\n\n',
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      );
+    }) as typeof fetch;
+    try {
+      const response = await chatRequest({ GEMINI_API_KEY: "test-gemini-key" });
+      assert.equal(response.status, 200);
+      assert.match(await response.text(), /Gemini only/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("does not try Groq after a non-retryable Gemini 400 response", async () => {
+    const originalFetch = globalThis.fetch;
+    let groqCalled = false;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.hostname === "generativelanguage.googleapis.com") {
+        return new Response(JSON.stringify({ error: { message: "invalid request" } }), { status: 400 });
+      }
+      if (url.hostname === "api.groq.com") groqCalled = true;
+      throw new Error("Unexpected provider host: " + url.hostname);
+    }) as typeof fetch;
+    try {
+      const response = await chatRequest({
+        GEMINI_API_KEY: "test-gemini-key",
+        GROQ_API_KEY: "test-groq-key",
+      });
+      assert.equal(response.status, 502);
+      assert.equal(groqCalled, false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 
 describe("Gemini Developer Agent provider adapter (Node coverage suite)", () => {
   it("builds Gemini contents, combines system instructions, and keeps the key in a header", async () => {
