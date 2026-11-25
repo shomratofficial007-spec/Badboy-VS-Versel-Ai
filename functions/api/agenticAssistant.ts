@@ -650,84 +650,132 @@ async function streamFinalAnswer(
   provider?: AgenticPayload["provider"],
   maxTokens = 2400,
 ): Promise<Response> {
-  const upstream = await requestCompletion(apiKey, messages, { stream: true, maxTokens, signal, timeoutMs: 90_000 }, provider);
-  if (!upstream.ok || !upstream.body) {
-    const body = await upstream.json().catch(() => ({})) as CompletionResponse;
-    return jsonResponse({ code: "AGENT_FINAL_RESPONSE_FAILED", error: modelErrorMessage(body, upstream.status) }, upstream.status === 429 ? 429 : upstream.status === 504 ? 504 : 502);
-  }
   const encoder = new TextEncoder();
-  const reader = upstream.body.getReader();
-  const decoder = new TextDecoder();
-  let cancelled = false;
-  let emittedContent = false;
+  const firstTokenTimeoutMs = 5_000;
+  const candidates = provider ? [provider.model] : selectAgentModels(messages).slice(0, 2);
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let closed = false;
       const send = (value: unknown) => {
-        if (cancelled || closed) return;
-        const body = typeof value === "string" ? value : JSON.stringify(value);
-        try {
-          controller.enqueue(encoder.encode("data: " + body + "\n\n"));
-        } catch {
-          closed = true;
-        }
+        if (closed) return;
+        try { controller.enqueue(encoder.encode("data: " + JSON.stringify(value) + "\n\n")); }
+        catch { closed = true; }
       };
       const close = () => {
         if (closed) return;
         closed = true;
         try { controller.close(); } catch { /* downstream may already be closed */ }
       };
-      let pending = "";
-      let receivedDone = false;
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          pending += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
-          let boundary = pending.indexOf("\n\n");
-          while (boundary >= 0) {
-            const event = pending.slice(0, boundary);
-            pending = pending.slice(boundary + 2);
+      let lastError = "No fast model returned a response.";
+      for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
+        const model = candidates[candidateIndex];
+        const attemptController = new AbortController();
+        const attemptSignal = signal
+          ? AbortSignal.any([signal, attemptController.signal])
+          : attemptController.signal;
+        let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+        let emittedContent = false;
+        let receivedDone = false;
+        let pending = "";
+        const startedAt = Date.now();
+        try {
+          const upstream = await requestCompletion(
+            apiKey,
+            messages,
+            { stream: true, maxTokens, signal: attemptSignal, timeoutMs: 8_000, modelOverride: model },
+            provider,
+          );
+          if (!upstream.ok || !upstream.body) {
+            const body = await upstream.json().catch(() => ({})) as CompletionResponse;
+            lastError = modelErrorMessage(body, upstream.status);
+            if (![400, 404, 408, 429, 500, 502, 503, 504].includes(upstream.status)) break;
+            continue;
+          }
+          reader = upstream.body.getReader();
+          const decoder = new TextDecoder();
+          const consume = (event: string) => {
             const parsed = parseOpenRouterDeltas(event);
             for (const content of parsed.content) {
               emittedContent = true;
-              send({ content });
+              if (emittedContent && candidateIndex >= 0) {
+                if (emittedContent && !receivedDone) send({ content });
+              }
             }
-            if (parsed.done) {
-              receivedDone = true;
-              if (!emittedContent) throw new Error("Agent provider returned an empty final answer.");
-              close();
-              return;
+            if (parsed.done) receivedDone = true;
+          };
+          while (!receivedDone) {
+            let readResult: ReadableStreamReadResult<Uint8Array>;
+            if (!emittedContent) {
+              const remaining = firstTokenTimeoutMs - (Date.now() - startedAt);
+              if (remaining <= 0) throw new Error("FIRST_TOKEN_TIMEOUT");
+              const outcome = await Promise.race([
+                reader.read().then((value) => ({ kind: "read" as const, value })),
+                new Promise<{ kind: "timeout" }>((resolve) => setTimeout(() => resolve({ kind: "timeout" }), remaining)),
+              ]);
+              if (outcome.kind === "timeout") throw new Error("FIRST_TOKEN_TIMEOUT");
+              readResult = outcome.value;
+            } else {
+              readResult = await reader.read();
             }
-            boundary = pending.indexOf("\n\n");
+            if (readResult.done) break;
+            pending += decoder.decode(readResult.value, { stream: true }).replace(/\r\n/g, "\n");
+            let boundary = pending.indexOf("\n\n");
+            while (boundary >= 0) {
+              const event = pending.slice(0, boundary);
+              pending = pending.slice(boundary + 2);
+              consume(event);
+              boundary = pending.indexOf("\n\n");
+            }
+          }
+          pending += decoder.decode();
+          if (pending.trim()) consume(pending);
+          if (!receivedDone) throw new Error("Agent response stream ended before the completion marker.");
+          if (!emittedContent) throw new Error("Agent provider returned an empty final answer.");
+          console.info(JSON.stringify({
+            component: "badboy-fast-chat",
+            event: "first_token",
+            model,
+            attempt: candidateIndex + 1,
+            firstTokenMs: Date.now() - startedAt,
+          }));
+          close();
+          return;
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : "Agent response stream failed.";
+          if (signal?.aborted) {
+            close();
+            return;
+          }
+          if (emittedContent) {
+            try { controller.error(new Error("Agent response stream was interrupted.")); } catch { /* downstream may be closed */ }
+            closed = true;
+            return;
+          }
+          console.warn(JSON.stringify({
+            component: "badboy-fast-chat",
+            event: "model_fallback",
+            model,
+            attempt: candidateIndex + 1,
+            reason: lastError.slice(0, 120),
+          }));
+        } finally {
+          attemptController.abort();
+          if (reader) {
+            try { await reader.cancel(); } catch { /* candidate may already be closed */ }
+            try { reader.releaseLock(); } catch { /* already released */ }
           }
         }
-        if (pending.trim()) {
-          const parsed = parseOpenRouterDeltas(pending);
-          for (const content of parsed.content) {
-            emittedContent = true;
-            send({ content });
-          }
-          receivedDone = parsed.done;
-        }
-        if (!receivedDone) throw new Error("Agent response stream ended before the completion marker.");
-        if (!emittedContent) throw new Error("Agent provider returned an empty final answer.");
+      }
+      if (!closed) {
+        send({ error: lastError === "FIRST_TOKEN_TIMEOUT"
+          ? "Free AI models did not start responding quickly enough. Try again or select another provider."
+          : lastError.slice(0, 500) });
+        send("[DONE]");
         close();
-      } catch {
-        if (!cancelled) {
-          try {
-            controller.error(new Error("Agent response stream was interrupted."));
-          } catch {
-            // Downstream may already be cancelled.
-          }
-        }
-      } finally {
-        try { reader.releaseLock(); } catch { /* already released */ }
       }
     },
-    async cancel(reason) {
-      cancelled = true;
-      await reader.cancel(reason).catch(() => undefined);
+    cancel() {
+      closed = true;
     },
   });
   return new Response(stream, {
