@@ -777,7 +777,9 @@ async function streamFinalAnswer(
           close();
           return;
         } catch (error) {
-          lastError = error instanceof Error ? error.message : "Agent response stream failed.";
+          lastError = error instanceof Error && error.message === "FIRST_TOKEN_TIMEOUT"
+            ? "FIRST_TOKEN_TIMEOUT"
+            : "Agent response stream was interrupted.";
           if (signal?.aborted) {
             close();
             return;
