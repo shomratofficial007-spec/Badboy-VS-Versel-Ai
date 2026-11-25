@@ -83,7 +83,7 @@ test("onRequestGet - health check endpoint returns status ok", async () => {
     status: "degraded",
     aiConfigured: false,
     capabilities: { chat: false, transcription: false, serverSpeech: false },
-    providers: { openrouter: false, groqTranscription: false },
+    providers: { openrouter: false, geminiChat: false, groqChat: false, groqTranscription: false },
     model: "openrouter/free",
     fallbackCount: 4,
   });
@@ -118,16 +118,18 @@ test("onRequestGet - reports transcription capability when only Groq is configur
   assert.strictEqual(response.status, 200);
   const json = (await response.json()) as any;
   assert.deepStrictEqual(json.capabilities, {
-    chat: false,
+    chat: true,
     transcription: true,
     serverSpeech: false,
   });
   assert.deepStrictEqual(json.providers, {
     openrouter: false,
+    geminiChat: false,
+    groqChat: true,
     groqTranscription: true,
   });
-  assert.strictEqual(json.aiConfigured, false);
-  assert.strictEqual(json.status, "partial");
+  assert.strictEqual(json.aiConfigured, true);
+  assert.strictEqual(json.status, "ok");
 });
 
 test("onRequestPost - handles assistant/chat without leading /api prefix", async () => {
@@ -540,6 +542,113 @@ test("onRequestPost - advances through fallback models on retryable 404, 429, 50
       "nvidia/nemotron-3.5-lightning:free",
       "thinkingmachines/inkling:free",
     ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("onRequestPost - falls back from all OpenRouter 429 models to Gemini streaming", async () => {
+  const originalFetch = globalThis.fetch;
+  const attemptedOpenRouterModels: string[] = [];
+  let geminiCalled = false;
+  globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
+    const target = String(url);
+    if (target.includes("openrouter.ai/api/v1/chat/completions")) {
+      attemptedOpenRouterModels.push(JSON.parse(String(init?.body)).model);
+      return new Response(JSON.stringify({ error: { message: "Rate limit reached" } }), { status: 429 });
+    }
+    if (target.includes("generativelanguage.googleapis.com")) {
+      geminiCalled = true;
+      assert.equal(new Headers(init?.headers).get("x-goog-api-key"), "test-gemini-key");
+      return new Response(
+        'data: {"candidates":[{"content":{"parts":[{"text":"Gemini fallback stream"}]}}]}\\n\\n',
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      );
+    }
+    throw new Error("Unexpected provider URL: " + target);
+  }) as typeof globalThis.fetch;
+  try {
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "Hello Gemini fallback" }),
+      }),
+      env: { OPENROUTER_API_KEY: "test-openrouter-key", GEMINI_API_KEY: "test-gemini-key" },
+    } as any);
+    assert.equal(response.status, 200);
+    const output = await response.text();
+    assert.match(output, /Gemini fallback stream/);
+    assert.match(output, /data: \\[DONE\\]/);
+    assert.equal(geminiCalled, true);
+    assert.equal(attemptedOpenRouterModels.length, 5);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("onRequestPost - falls back from rate-limited Gemini to Groq OpenAI-compatible streaming", async () => {
+  const originalFetch = globalThis.fetch;
+  let geminiCalled = false;
+  let groqCalled = false;
+  globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
+    const target = String(url);
+    if (target.includes("generativelanguage.googleapis.com")) {
+      geminiCalled = true;
+      return new Response(JSON.stringify({ error: { message: "Gemini quota exceeded" } }), { status: 429 });
+    }
+    if (target.includes("api.groq.com/openai/v1/chat/completions")) {
+      groqCalled = true;
+      assert.equal(new Headers(init?.headers).get("Authorization"), "Bearer test-groq-key");
+      const body = JSON.parse(String(init?.body));
+      assert.equal(body.model, "openai/gpt-oss-20b");
+      assert.equal(body.stream, true);
+      return new Response(
+        'data: {"choices":[{"delta":{"content":"Groq fallback stream"}}]}\\n\\ndata: [DONE]\\n\\n',
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      );
+    }
+    throw new Error("Unexpected provider URL: " + target);
+  }) as typeof globalThis.fetch;
+  try {
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "Hello Groq fallback" }),
+      }),
+      env: { GEMINI_API_KEY: "test-gemini-key", GROQ_API_KEY: "test-groq-key" },
+    } as any);
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /Groq fallback stream/);
+    assert.equal(geminiCalled, true);
+    assert.equal(groqCalled, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("onRequestPost - supports Gemini-only chat without requiring OpenRouter", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL) => {
+    assert.match(String(url), /generativelanguage.googleapis.com/);
+    return new Response(
+      'data: {"candidates":[{"content":{"parts":[{"text":"Gemini-only response"}]}}]}\\n\\n',
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    );
+  }) as typeof globalThis.fetch;
+  try {
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "Hello" }),
+      }),
+      env: { GEMINI_API_KEY: "test-gemini-key" },
+    } as any);
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /Gemini-only response/);
   } finally {
     globalThis.fetch = originalFetch;
   }
