@@ -676,6 +676,7 @@ async function streamFinalAnswer(
           : attemptController.signal;
         let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
         let emittedContent = false;
+        let firstTokenMs: number | null = null;
         let receivedDone = false;
         let pending = "";
         const startedAt = Date.now();
@@ -697,10 +698,9 @@ async function streamFinalAnswer(
           const consume = (event: string) => {
             const parsed = parseOpenRouterDeltas(event);
             for (const content of parsed.content) {
+              if (!emittedContent) firstTokenMs = Date.now() - startedAt;
               emittedContent = true;
-              if (emittedContent && candidateIndex >= 0) {
-                if (emittedContent && !receivedDone) send({ content });
-              }
+              send({ content });
             }
             if (parsed.done) receivedDone = true;
           };
@@ -709,10 +709,14 @@ async function streamFinalAnswer(
             if (!emittedContent) {
               const remaining = firstTokenTimeoutMs - (Date.now() - startedAt);
               if (remaining <= 0) throw new Error("FIRST_TOKEN_TIMEOUT");
+              let timer: ReturnType<typeof setTimeout> | undefined;
               const outcome = await Promise.race([
                 reader.read().then((value) => ({ kind: "read" as const, value })),
-                new Promise<{ kind: "timeout" }>((resolve) => setTimeout(() => resolve({ kind: "timeout" }), remaining)),
+                new Promise<{ kind: "timeout" }>((resolve) => {
+                  timer = setTimeout(() => resolve({ kind: "timeout" }), remaining);
+                }),
               ]);
+              if (timer) clearTimeout(timer);
               if (outcome.kind === "timeout") throw new Error("FIRST_TOKEN_TIMEOUT");
               readResult = outcome.value;
             } else {
@@ -737,7 +741,7 @@ async function streamFinalAnswer(
             event: "first_token",
             model,
             attempt: candidateIndex + 1,
-            firstTokenMs: Date.now() - startedAt,
+            firstTokenMs,
           }));
           close();
           return;
