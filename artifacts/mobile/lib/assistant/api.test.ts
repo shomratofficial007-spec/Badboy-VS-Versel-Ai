@@ -206,6 +206,27 @@ test('streamAgenticReply sends selected provider configuration to the full agent
   assert.deepEqual(chunks, ['orchestrated']);
 });
 
+test('chat routing uses single-pass by default and lightweight tools for Bengali live-data requests', async () => {
+  const { streamAgenticReply } = await apiPromise;
+  const modes: string[] = [];
+  fetchHandler = async (_input, init) => {
+    const body = JSON.parse(String(init?.body));
+    modes.push(body.mode);
+    return streamResponse(['data: {"content":"ok"}\n\n', 'data: [DONE]\n\n']);
+  };
+  const settings = {
+    aiProvider: 'openai',
+    aiModel: 'gpt-4o-mini',
+    aiBaseUrl: 'https://api.openai.com/v1',
+    personality: 'helpful',
+    voiceLanguage: 'bn-BD',
+    developerMode: false,
+  } as any;
+  await streamAgenticReply('হ্যালো', settings, [], () => {});
+  await streamAgenticReply('আজকের আবহাওয়া খুঁজে দাও', settings, [], () => {});
+  assert.deepEqual(modes, ['single', 'tools']);
+});
+
 test('uploadAgentAttachment uses owner-authenticated multipart upload and validates the stored reference', async () => {
   const { uploadAgentAttachment } = await apiPromise;
   uploadCalls.length = 0;
