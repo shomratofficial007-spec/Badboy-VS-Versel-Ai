@@ -396,8 +396,10 @@ test("single-pass mode streams an answer with exactly one model completion", asy
   let count = 0;
   globalThis.fetch = async (_input, init) => {
     count += 1;
-    const payload = JSON.parse(String(init?.body)) as { stream: boolean };
+    const payload = JSON.parse(String(init?.body)) as { stream: boolean; max_tokens: number; stream_options?: { include_usage?: boolean } };
     assert.equal(payload.stream, true);
+    assert.equal(payload.max_tokens, 1400);
+    assert.equal(payload.stream_options?.include_usage, true);
     return finalStream();
   };
   try {
