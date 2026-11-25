@@ -616,7 +616,12 @@ export async function streamAgenticReply(
       const fallbackPreset = AI_PROVIDER_PRESETS.find((item) => item.id === 'openrouter');
       if (!fallbackPreset) throw new Error('OpenRouter free backup endpoint is unavailable.');
       onRouteStatus?.({ route: 'free-fallback', provider: 'OpenRouter', reason });
-      await sendAgenticRequest('openrouter', normalizeProviderBaseUrl(fallbackPreset.baseUrl), fallbackModel, fallbackKey, onChunk);
+      try {
+        await sendAgenticRequest('openrouter', normalizeProviderBaseUrl(fallbackPreset.baseUrl), fallbackModel, fallbackKey, onChunk);
+      } catch (fallbackError) {
+        const fallbackReason = fallbackError instanceof Error ? fallbackError.message : 'OpenRouter free fallback failed.';
+        throw new Error('Local OmniRoute failed (' + reason + '). OpenRouter free fallback also failed: ' + fallbackReason);
+      }
       return;
     }
   }
