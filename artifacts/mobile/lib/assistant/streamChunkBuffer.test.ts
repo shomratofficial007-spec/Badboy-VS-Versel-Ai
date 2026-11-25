@@ -26,7 +26,9 @@ test('stream chunks are coalesced into one update per animation frame', () => {
   assert.deepEqual(flushed, []);
   assert.equal(callbacks.size, 1);
 
-  const [frameId, callback] = [...callbacks.entries()][0];
+  const scheduled = [...callbacks.entries()][0];
+  assert.ok(scheduled);
+  const [frameId, callback] = scheduled;
   callbacks.delete(frameId);
   callback();
   assert.deepEqual(flushed, ['first second third']);
