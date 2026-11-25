@@ -534,9 +534,9 @@ export async function streamAgenticReply(
         mode: workflowMode,
         enabledPlugins: enabledPluginIds,
         attachments: attachmentIds,
-        history: history.slice(-8).map(({ role, content }) => ({
+        history: history.slice(-6).map(({ role, content }) => ({
           role,
-          content: content.slice(0, 3000),
+          content: content.slice(0, 2000),
         })),
       }),
     });
