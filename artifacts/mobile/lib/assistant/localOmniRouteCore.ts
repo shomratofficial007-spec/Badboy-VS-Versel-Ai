@@ -271,7 +271,7 @@ export interface LocalAgenticWorkflowInput {
   attachments: LocalAgentContentPart[];
   requestCompletion: (
     messages: LocalAgentMessage[],
-    options?: { tools?: readonly unknown[]; responseFormat?: 'json_object' },
+    options?: { tools?: readonly unknown[]; responseFormat?: 'json_object'; timeoutMs?: number },
   ) => Promise<LocalAgentCompletion>;
   executeTool: (name: string, rawArguments: string) => Promise<LocalAgentToolOutcome>;
   streamFinal: (messages: LocalAgentMessage[], onChunk: (chunk: string) => void, maxTokens?: number) => Promise<void>;
@@ -363,7 +363,10 @@ export async function runLocalAgenticWorkflow(input: LocalAgenticWorkflowInput):
     for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
       stage = 'tool-calling';
       notify(stage, 'started');
-      const result = await input.requestCompletion(current, { tools: enabledTools });
+      const result = await input.requestCompletion(current, {
+        tools: enabledTools,
+        ...(workflowMode === 'tools' ? { timeoutMs: 8_000 } : {}),
+      });
       const calls = result.toolCalls ?? [];
       current.push({
         role: 'assistant',
