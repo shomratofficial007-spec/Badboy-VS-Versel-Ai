@@ -4,7 +4,7 @@ import { buildDeveloperAnalysisMessages, resolveDeveloperAnalysisEngine, validat
 import { authenticatePersonalOwner } from "./personalAuth.ts";
 import { handleDeveloperDataRequest } from "./developerData.ts";
 import { createAgentStorage, type D1Database } from "./agentStorage.ts";
-import { fetchGeminiChat, getGeminiModel } from "./geminiProvider.ts";
+import { attemptGeminiChatFallback, getGeminiModel } from "./geminiProvider.ts";
 import { handleAgenticAssistantRequest } from "./agenticAssistant.ts";
 import { handleAgentMemorySearchRequest } from "./agentMemory.ts";
 import { handleIntegrationRequest, type IntegrationEnv } from "./integrationHub.ts";
@@ -208,25 +208,37 @@ export async function fetchChatWithProviderFallbacks(
     }
   }
 
-  if (geminiApiKey && !signal?.aborted) {
-    const model = getGeminiModel(env.GEMINI_MODEL);
-    try {
-      const response = await fetchGeminiChat(geminiApiKey, messages, model, fetch, signal);
-      if (response.ok && response.body) {
-        logModelDiagnostic("selected", model, response.status);
-        return { response, provider: "gemini", model };
-      }
-      lastResponse = { response, provider: "gemini", model };
-      if (!shouldFallbackProvider(response.status) && response.status !== 200) {
-        return lastResponse;
-      }
-      await response.body?.cancel().catch(() => undefined);
-      logModelDiagnostic("provider_fallback", "gemini", response.status);
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      lastError = error;
-      logModelDiagnostic("provider_network_error", "gemini");
-    }
+  const geminiModel = getGeminiModel(env.GEMINI_MODEL);
+  const geminiAttempt = await attemptGeminiChatFallback(
+    geminiApiKey,
+    messages,
+    geminiModel,
+    signal,
+    shouldFallbackProvider,
+  );
+  if (geminiAttempt.kind === "success") {
+    logModelDiagnostic("selected", geminiAttempt.model, geminiAttempt.response.status);
+    return { response: geminiAttempt.response, provider: "gemini", model: geminiAttempt.model };
+  }
+  if (geminiAttempt.kind === "terminal") {
+    lastResponse = {
+      response: geminiAttempt.response,
+      provider: "gemini",
+      model: geminiAttempt.model,
+    };
+    return lastResponse;
+  }
+  if (geminiAttempt.kind === "fallback") {
+    lastResponse = {
+      response: geminiAttempt.response,
+      provider: "gemini",
+      model: geminiAttempt.model,
+    };
+    logModelDiagnostic("provider_fallback", "gemini", geminiAttempt.response.status);
+  }
+  if (geminiAttempt.kind === "network_error") {
+    lastError = geminiAttempt.error;
+    logModelDiagnostic("provider_network_error", "gemini");
   }
 
   if (groqApiKey && !signal?.aborted) {
