@@ -408,8 +408,8 @@ async function requestLocalOmniRoute(
       }),
       signal: controller.signal,
     });
-    clearTimeout(connectTimeout);
     if (options.stream) {
+      clearTimeout(connectTimeout);
       const streamTimeout = setTimeout(() => controller.abort(), 120_000);
       try {
         await streamOpenAICompatibleResponse(response, onChunk ?? (() => undefined));
