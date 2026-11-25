@@ -5,6 +5,7 @@ import {
   executeAgentTool,
   handleAgenticAssistantRequest,
   normalizeStructuredAgentPlan,
+  rankFastModelCandidates,
   selectAgentModels,
   validateAgenticPayload,
 } from "./agenticAssistant.ts";
@@ -151,6 +152,19 @@ test("model router prioritizes code and reasoning models while retaining free fa
   const synthesis = selectAgentModels([{ role: "user", content: "Original request:\ntest\n\nPlan:\nA multi-step plan" }]);
   assert.equal(synthesis[0], "openrouter/free");
   assert.ok([...code, ...reasoning, ...general, ...synthesis].every((model) => model === "openrouter/free" || model.endsWith(":free")));
+});
+
+test("fast model routing prioritizes models with better observed first-token latency", () => {
+  const preferred = ["openrouter/free", "cohere/north-mini-code:free", "nvidia/nemotron-3.5-lightning:free"];
+  const observations = new Map([
+    ["openrouter/free", { averageFirstTokenMs: 4_800, samples: 3, failures: 1 }],
+    ["cohere/north-mini-code:free", { averageFirstTokenMs: 1_200, samples: 4, failures: 0 }],
+  ]);
+  assert.deepEqual(rankFastModelCandidates(preferred, observations), [
+    "cohere/north-mini-code:free",
+    "nvidia/nemotron-3.5-lightning:free",
+    "openrouter/free",
+  ]);
 });
 
 test("agentic endpoint rejects media type, malformed JSON, oversized body, and invalid payload", async () => {
