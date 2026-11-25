@@ -490,8 +490,8 @@ export async function streamAgenticReply(
         memoryContext: safeMemoryContext,
         skillContext: safeSkillContext,
         developerMode: settings.developerMode,
-        // Keep ordinary chat on the two-call single-agent path; reserve the full planner/reviewer workflow for Developer Mode.
-        mode: settings.developerMode ? 'multi' : 'single',
+        // Fast single-pass is used when no integration plugin is enabled. Plugin requests keep a lightweight tool workflow; Developer Mode keeps all planner/reviewer stages.
+        mode: settings.developerMode ? 'multi' : enabledPluginIds.length > 0 ? 'tools' : 'single',
         enabledPlugins: enabledPluginIds,
         attachments: attachmentIds,
         history: history.slice(-8).map(({ role, content }) => ({
