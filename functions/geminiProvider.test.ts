@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { handleApiRequest } from "./api/[[path]].ts";
+import { fetchChatWithProviderFallbacks, handleApiRequest } from "./api/[[path]].ts";
 import {
   adaptGeminiStreamToOpenAI,
   fetchGeminiChat,
@@ -23,6 +23,72 @@ function chatRequest(env: Record<string, unknown>): Promise<Response> {
     { ...env, BADBOY_OWNER_TOKEN: CHAT_TEST_OWNER_TOKEN } as never,
   );
 }
+
+
+describe("direct provider routing coverage", () => {
+  const messages = [
+    { role: "system" as const, content: "Be concise." },
+    { role: "user" as const, content: "Hello." },
+  ];
+
+  it("returns the Gemini stream after exhausting OpenRouter model fallbacks", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.hostname === "openrouter.ai") {
+        return new Response(JSON.stringify({ error: { message: "rate limited" } }), { status: 429 });
+      }
+      if (url.hostname === "generativelanguage.googleapis.com") {
+        return new Response(
+          'data: {"candidates":[{"content":{"parts":[{"text":"direct Gemini"}]}}]}\n\n',
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        );
+      }
+      throw new Error("Unexpected provider host: " + url.hostname);
+    }) as typeof fetch;
+    try {
+      const routed = await fetchChatWithProviderFallbacks({
+        OPENROUTER_API_KEY: "test-openrouter-key",
+        GEMINI_API_KEY: "test-gemini-key",
+      } as never, messages);
+      assert.equal(routed.provider, "gemini");
+      assert.equal(routed.model, "gemini-3.5-flash-lite");
+      assert.match(await routed.response.text(), /direct Gemini/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("returns the Groq stream when Gemini is rate limited", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.hostname === "generativelanguage.googleapis.com") {
+        return new Response(JSON.stringify({ error: { message: "quota exceeded" } }), { status: 429 });
+      }
+      if (url.hostname === "api.groq.com") {
+        assert.equal(new Headers(init?.headers).get("Authorization"), "Bearer test-groq-key");
+        return new Response(
+          'data: {"choices":[{"delta":{"content":"direct Groq"}}]}\n\ndata: [DONE]\n\n',
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        );
+      }
+      throw new Error("Unexpected provider host: " + url.hostname);
+    }) as typeof fetch;
+    try {
+      const routed = await fetchChatWithProviderFallbacks({
+        GEMINI_API_KEY: "test-gemini-key",
+        GROQ_API_KEY: "test-groq-key",
+      } as never, messages);
+      assert.equal(routed.provider, "groq");
+      assert.equal(routed.model, "openai/gpt-oss-20b");
+      assert.match(await routed.response.text(), /direct Groq/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 
 describe("server chat cross-provider fallback (Node coverage suite)", () => {
   it("uses Gemini after all OpenRouter free models are rate limited", async () => {
