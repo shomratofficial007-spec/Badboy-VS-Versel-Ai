@@ -34,8 +34,7 @@ import { useAssistant } from '@/context/AssistantContext';
 import { useOwnerAuth } from '@/context/OwnerAuthContext';
 import { isOwnerLoginRequiredError } from '@/lib/assistant/ownerAuth';
 import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
-import { deleteAttachment, searchAgentMemory, streamAgenticReply, streamReply, transcribeRecordedAudio, uploadAgentAttachment, type AgenticAttachmentInput, type AgentRouteStatus, type AgentStageStatus } from '@/lib/assistant/api';
-import { listDeveloperProjects } from '@/lib/assistant/developerData';
+import { deleteAttachment, streamAgenticReply, streamReply, transcribeRecordedAudio, uploadAgentAttachment, type AgenticAttachmentInput, type AgentRouteStatus, type AgentStageStatus } from '@/lib/assistant/api';
 import {
   dictateOnce,
   getVoiceErrorMessage,
@@ -55,6 +54,7 @@ import { getActiveCustomSkillContext } from '@/lib/assistant/skillStorage';
 import { loadEnabledPluginIds } from '@/lib/assistant/pluginStorage';
 import { getDeveloperModeSkillContext } from '@/lib/assistant/developerModeSkill';
 import { createStreamChunkBuffer } from '@/lib/assistant/streamChunkBuffer';
+import { buildDeveloperMemoryContext } from '@/lib/assistant/developerMemoryContext';
 import { readVisibleScreenText } from '@/lib/assistant/jarvis';
 import { normalizeVisibleScreenText } from '@/lib/assistant/screenContextCore';
 
@@ -409,27 +409,13 @@ export default function ChatScreen() {
     }
 
     try {
-      // Project memory is a Developer Mode feature. Do not spend network
-      // requests or prompt tokens searching developer projects during fast chat.
-      let memoryContext = '';
-      if (settings.developerMode) {
-        try {
-          const projects = await listDeveloperProjects(20);
-          const matches = await Promise.all(projects.slice(0, 10).map(async (project) => {
-            try {
-              const memories = await searchAgentMemory(project.project_id, text, 3);
-              return memories.map((memory) => ({ project: project.name, ...memory }));
-            } catch {
-              return [];
-            }
-          }));
-          memoryContext = matches.flat().slice(0, 8).map((memory) =>
-            `[${memory.project} / ${memory.category}] ${memory.content.slice(0, 900)}`,
-          ).join('\n').slice(0, 5000);
-        } catch {
-          // Keep the existing chat path available when project memory is offline.
-        }
-      }
+      // Project memory is a Developer Mode feature; fast chat makes no project-memory requests.
+      const memoryContext = await buildDeveloperMemoryContext(
+        settings.developerMode,
+        text,
+        listDeveloperProjects,
+        searchAgentMemory,
+      );
       let skillContext = '';
       try {
         const activeCustomSkill = await getActiveCustomSkillContext() ?? '';
