@@ -510,7 +510,7 @@ async function requestCompletion(
 }
 
 async function completeText(apiKey: string, messages: ChatMessage[], tools = false, toolDefinitions?: readonly unknown[], responseFormat?: "json_object", signal?: AbortSignal, provider?: AgenticPayload["provider"]): Promise<{ content: string; messages: ChatMessage[] }> {
-  const response = await requestCompletion(apiKey, messages, { tools, toolDefinitions, responseFormat, maxTokens: 1200, signal, timeoutMs: 12_000 }, provider);
+  const response = await requestCompletion(apiKey, messages, { tools, toolDefinitions, responseFormat, maxTokens: 1200, signal, timeoutMs: 20_000 }, provider);
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as CompletionResponse;
     throw new Error(modelErrorMessage(body, response.status));
