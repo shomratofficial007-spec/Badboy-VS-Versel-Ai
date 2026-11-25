@@ -425,6 +425,41 @@ test("provider fallback retries temporary/model errors and only uses free model 
   }
 });
 
+test("fast chat retries a free model when the first model misses the first-token deadline", async () => {
+  const attempted: Array<{ model: string; stream: boolean }> = [];
+  globalThis.fetch = async (_input, init) => {
+    const payload = JSON.parse(String(init?.body)) as { model: string; stream: boolean };
+    attempted.push({ model: payload.model, stream: payload.stream });
+    if (payload.model === "openrouter/free") {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          setTimeout(() => {
+            try {
+              controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"late"}}]}\n\ndata: [DONE]\n\n'));
+              controller.close();
+            } catch { /* The timed-out candidate may already be cancelled. */ }
+          }, 6_000);
+        },
+      });
+      return new Response(body, { headers: { "content-type": "text/event-stream" } });
+    }
+    return finalStream();
+  };
+  try {
+    const response = await handleAgenticAssistantRequest(agentRequest({ message: "hello", mode: "single" }), {
+      OPENROUTER_API_KEY: "server-key",
+    });
+    const body = await response.text();
+    assert.match(body, /চূড়ান্ত/);
+    assert.deepEqual(attempted, [
+      { model: "openrouter/free", stream: true },
+      { model: "cohere/north-mini-code:free", stream: true },
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("provider failures are returned as bounded SSE errors without leaking secrets", async () => {
   globalThis.fetch = async () => Response.json({ error: { message: "provider unavailable" } }, { status: 401 });
   try {
