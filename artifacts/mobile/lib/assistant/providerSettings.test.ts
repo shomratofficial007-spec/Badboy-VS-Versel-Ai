@@ -20,7 +20,7 @@ let providerRequest: { url: string; init?: RequestInit } | null = null;
 mock.module('expo-secure-store', {
   namedExports: {
     isAvailableAsync: async () => secureStoreAvailable,
-    setItemAsync: async (key: string, value: string) => { secureValues.set(key, value); },
+    setItemAsync: async (key: string, value: string) => { if (!/^[A-Za-z0-9._-]+$/.test(key)) throw new Error('Invalid key provided to SecureStore.'); secureValues.set(key, value); },
     getItemAsync: async (key: string) => secureValues.get(key) ?? null,
     deleteItemAsync: async (key: string) => { secureValues.delete(key); },
   },
@@ -133,6 +133,7 @@ test('provider API key helpers persist and remove keys through SecureStore', asy
   secureStoreAvailable = true;
   secureValues.clear();
   await saveProviderApiKey('openai', '  persisted-provider-key  ');
+  assert.ok([...secureValues.keys()].every((key) => /^[A-Za-z0-9._-]+$/.test(key)), 'provider helper must use SecureStore-compatible key names');
   assert.equal(await getProviderApiKey('openai'), 'persisted-provider-key');
   await deleteProviderApiKey('openai');
   assert.equal(await getProviderApiKey('openai'), null);
