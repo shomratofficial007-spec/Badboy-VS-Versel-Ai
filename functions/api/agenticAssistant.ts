@@ -579,10 +579,10 @@ async function requestCompletion(
     } catch (cause) {
       if (options.signal?.aborted) throw cause;
       lastStatus = 504;
-      clearTimeout(timeoutHandle);
       continue;
+    } finally {
+      clearTimeout(timeoutHandle);
     }
-    clearTimeout(timeoutHandle);
     if (response.ok && response.body) return response;
     lastStatus = response.status;
     if (![400, 404, 408, 429, 500, 502, 503, 504].includes(response.status)) return response;
