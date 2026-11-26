@@ -284,7 +284,7 @@ test("onRequestPost - transcribe uses Groq Whisper Large-V3 as primary when GROQ
       assert.strictEqual(formData.get("temperature"), "0");
       assert.strictEqual(
         formData.get("prompt"),
-        "বাংলাদেশি বাংলা কথোপকথন হুবহু বাংলা লিপিতে লিখুন। কথার অর্থ বদলাবেন না, অনুবাদ বা সারাংশ করবেন না। স্পষ্টভাবে বলা ইংরেজি শব্দ ইংরেজিতেই রাখুন।",
+        "বাংলাদেশের স্বাভাবিক কথ্য বাংলা উচ্চারণ হুবহু বাংলা লিপিতে লিখুন। বক্তা যে শব্দ বলেছেন সেটিই লিখুন; কাছাকাছি শোনালেও শব্দ অনুমান করে বদলাবেন না (যেমন “আমার জন্য” বললে “আমার সন্ধ্যায়” লিখবেন না)। অনুবাদ বা সারাংশ করবেন না। স্পষ্টভাবে বলা ইংরেজি শব্দ ইংরেজিতেই রাখুন।",
       );
       return new Response(JSON.stringify({ text: "Groq বাংলা ট্রান্সক্রিপশন সফল" }), {
         status: 200,
@@ -377,6 +377,10 @@ test("onRequestPost - transcribe falls back to OpenRouter when Groq fails with 4
       assert.strictEqual(init?.signal?.aborted, false);
       const body = JSON.parse(String(init?.body || "{}"));
       assert.strictEqual(body.model, "openai/whisper-1");
+      assert.strictEqual(
+        body.prompt,
+        "বাংলাদেশের স্বাভাবিক কথ্য বাংলা উচ্চারণ হুবহু বাংলা লিপিতে লিখুন। বক্তা যে শব্দ বলেছেন সেটিই লিখুন; কাছাকাছি শোনালেও শব্দ অনুমান করে বদলাবেন না (যেমন “আমার জন্য” বললে “আমার সন্ধ্যায়” লিখবেন না)। অনুবাদ বা সারাংশ করবেন না। স্পষ্টভাবে বলা ইংরেজি শব্দ ইংরেজিতেই রাখুন।",
+      );
       return new Response(JSON.stringify({ text: "OpenRouter ফলব্যাক ট্রান্সক্রিপশন" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },

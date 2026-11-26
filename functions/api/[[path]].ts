@@ -521,7 +521,7 @@ async function handleTranscriptionRequest(request: Request, env: Env): Promise<R
   // Keep Bengali speech in Bengali script and preserve the speaker's actual words.
   // This is a transcription-style hint only; no chat history or generated answer is supplied.
   const transcriptionPrompt = isBengali
-    ? "বাংলাদেশি বাংলা কথোপকথন হুবহু বাংলা লিপিতে লিখুন। কথার অর্থ বদলাবেন না, অনুবাদ বা সারাংশ করবেন না। স্পষ্টভাবে বলা ইংরেজি শব্দ ইংরেজিতেই রাখুন।"
+    ? "বাংলাদেশের স্বাভাবিক কথ্য বাংলা উচ্চারণ হুবহু বাংলা লিপিতে লিখুন। বক্তা যে শব্দ বলেছেন সেটিই লিখুন; কাছাকাছি শোনালেও শব্দ অনুমান করে বদলাবেন না (যেমন “আমার জন্য” বললে “আমার সন্ধ্যায়” লিখবেন না)। অনুবাদ বা সারাংশ করবেন না। স্পষ্টভাবে বলা ইংরেজি শব্দ ইংরেজিতেই রাখুন।"
     : undefined;
 
   // 1. Primary: Groq Cloud Whisper Large-V3 (ultra fast, free-tier supported)
@@ -617,6 +617,7 @@ async function handleTranscriptionRequest(request: Request, env: Env): Promise<R
             format,
           },
           ...(lang ? { language: lang } : {}),
+          ...(transcriptionPrompt ? { prompt: transcriptionPrompt } : {}),
         }),
         signal: upstreamAbort.signal,
       });
