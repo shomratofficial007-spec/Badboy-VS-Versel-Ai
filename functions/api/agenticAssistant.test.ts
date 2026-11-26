@@ -291,7 +291,7 @@ test("custom provider rejects method-changing and cross-origin redirects without
   const original = globalThis.fetch;
   for (const redirect of [
     { status: 302, location: "https://api.openai.com/v1/chat/completions" },
-    { status: 307, location: "https://attacker.example/collect" },
+    { status: 307, location: "https://api.groq.com/collect" },
   ]) {
     const calls: Array<{ url: string; authorization: string | null }> = [];
     globalThis.fetch = async (input, init) => {
@@ -302,13 +302,13 @@ test("custom provider rejects method-changing and cross-origin redirects without
       const response = await handleAgenticAssistantRequest(agentRequest({
         message: "hello",
         mode: "single",
-        provider: { providerId: "custom", baseUrl: "https://provider.example/v1", model: "local-model" },
+        provider: { providerId: "custom", baseUrl: "https://api.openai.com/v1", model: "local-model" },
       }, { "content-type": "application/json", "X-Provider-Key": "private-provider-key" }), {});
       assert.equal(response.status, 200);
       const body = await response.text();
       assert.match(body, /HTTP 502/);
       assert.equal(calls.length, 1, "unsafe redirects must not be followed");
-      assert.equal(calls[0].url, "https://provider.example/v1/chat/completions");
+      assert.equal(calls[0].url, "https://api.openai.com/v1/chat/completions");
       assert.equal(calls[0].authorization, "Bearer private-provider-key");
     } finally {
       globalThis.fetch = original;
