@@ -753,12 +753,17 @@ export async function getAvailableSpeechVoices(): Promise<AvailableSpeechVoice[]
 
 /** Speak text through the device's native TTS engine or browser local voices. */
 let activeCloudPlayer: { pause: () => void; release: () => void } | null = null;
+let activeAppStateSubscription: { remove: () => void } | null = null;
 let activeCloudSubscription: { remove: () => void } | null = null;
 let activeCloudFile: { delete: () => void; uri: string } | null = null;
 let activeWebAudio: HTMLAudioElement | null = null;
 let activeWebAudioUrl: string | null = null;
 let activeSpeechCleanup: (() => void) | null = null;
 let speechRunId = 0;
+
+export function shouldStopSpeechWhenAppLeavesForeground(state: string): boolean {
+  return state !== 'active';
+}
 
 function releaseCloudPlayback(): void {
   if (activeCloudSubscription) {
@@ -772,6 +777,13 @@ function releaseCloudPlayback(): void {
   if (activeCloudFile) {
     try { activeCloudFile.delete(); } catch { /* Cache cleanup is best-effort. */ }
     activeCloudFile = null;
+  }
+}
+
+function releaseAppStateSubscription(): void {
+  if (activeAppStateSubscription) {
+    try { activeAppStateSubscription.remove(); } catch { /* Ignore cleanup errors. */ }
+    activeAppStateSubscription = null;
   }
 }
 
@@ -802,6 +814,15 @@ export function speak(
     return false;
   }
   stopSpeaking();
+  // Speech playback must not continue unexpectedly after the app moves to background.
+  if (getPlatformOS() !== 'web' && getPlatformOS() !== 'node') {
+    try {
+      const { AppState } = require('react-native') as typeof import('react-native');
+      activeAppStateSubscription = AppState.addEventListener('change', (state) => {
+        if (shouldStopSpeechWhenAppLeavesForeground(state)) stopSpeaking();
+      });
+    } catch { /* Native lifecycle integration may be unavailable in non-RN runtimes. */ }
+  }
   const runId = speechRunId;
   let settled = false;
   let localWatchdog: ReturnType<typeof setTimeout> | null = null;
@@ -819,6 +840,7 @@ export function speak(
   activeSpeechCleanup = clearWatchdogs;
   const cleanup = () => {
     clearWatchdogs();
+    releaseAppStateSubscription();
     releaseCloudPlayback();
     releaseWebPlayback();
     if (activeSpeechCleanup === clearWatchdogs) activeSpeechCleanup = null;
@@ -953,6 +975,7 @@ export function stopSpeaking(): void {
   speechRunId += 1;
   activeSpeechCleanup?.();
   activeSpeechCleanup = null;
+  releaseAppStateSubscription();
   releaseCloudPlayback();
   releaseWebPlayback();
   const os = getPlatformOS();
