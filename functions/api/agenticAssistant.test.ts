@@ -243,10 +243,10 @@ test("agentic endpoint requires a server-side OpenRouter key", async () => {
 });
 
 test("selected provider and model are used for planner, tool calling, reviewer and synthesizer", async () => {
-  const calls: Array<{ url: string; authorization: string | null; model: string; stream: boolean }> = [];
+  const calls: Array<{ url: string; authorization: string | null; model: string; stream: boolean; redirect?: RequestRedirect }> = [];
   globalThis.fetch = async (input, init) => {
     const payload = JSON.parse(String(init?.body)) as { model: string; stream: boolean; response_format?: { type: string }; messages: Array<{ role: string; content: unknown }> };
-    calls.push({ url: String(input), authorization: new Headers(init?.headers).get("Authorization"), model: payload.model, stream: payload.stream });
+    calls.push({ url: String(input), authorization: new Headers(init?.headers).get("Authorization"), model: payload.model, stream: payload.stream, redirect: init?.redirect });
     if (calls.length === 1) return completion(JSON.stringify({ goal: "plan", steps: [{ id: "1", task: "execute", success_criteria: "done" }], risks: [] }));
     if (calls.length === 2) return completion("", [{ id: "tool-1", function: { name: "calculator", arguments: JSON.stringify({ expression: "6 * 7" }) } }]);
     if (calls.length === 3) return completion("executor done");
@@ -269,6 +269,7 @@ test("selected provider and model are used for planner, tool calling, reviewer a
     assert.ok(calls.every((call) => call.url === "https://api.openai.com/v1/chat/completions"));
     assert.ok(calls.every((call) => call.authorization === "Bearer user-provider-secret"));
     assert.ok(calls.every((call) => call.model === "gpt-4o-mini"));
+    assert.ok(calls.every((call) => call.redirect === "manual"), "custom provider redirects must never be followed");
   } finally {
     globalThis.fetch = originalFetch;
   }
