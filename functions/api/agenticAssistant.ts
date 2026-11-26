@@ -517,36 +517,57 @@ async function requestCompletion(
       ? AbortSignal.any([options.signal, timeoutController.signal])
       : timeoutController.signal;
     let response: Response;
+    const requestBody = JSON.stringify({
+      model,
+      messages,
+      max_tokens: options.maxTokens ?? 1800,
+      ...(options.tools ? { tools: options.toolDefinitions ?? TOOL_DEFINITIONS, tool_choice: "auto", parallel_tool_calls: false } : {}),
+      ...(options.responseFormat ? { response_format: { type: options.responseFormat } } : {}),
+      stream: options.stream === true,
+      ...(options.stream && !provider ? { stream_options: { include_usage: true } } : {}),
+    });
+    const requestHeaders = {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "X-Title": "Badboy Agentic Assistant",
+      ...(provider?.providerId === "openrouter" ? { "HTTP-Referer": "https://badboy-vs-versel-ai.app" } : {}),
+    };
     try {
-      response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "X-Title": "Badboy Agentic Assistant",
-          ...(provider?.providerId === "openrouter" ? { "HTTP-Referer": "https://badboy-vs-versel-ai.app" } : {}),
-        },
-        signal,
-        // Custom provider endpoints are user-controlled. Never follow redirects:
-        // a redirect could turn a validated public HTTPS URL into an SSRF target.
-        redirect: "manual",
-        body: JSON.stringify({
-        model,
-        messages,
-        max_tokens: options.maxTokens ?? 1800,
-        ...(options.tools ? { tools: options.toolDefinitions ?? TOOL_DEFINITIONS, tool_choice: "auto", parallel_tool_calls: false } : {}),
-        ...(options.responseFormat ? { response_format: { type: options.responseFormat } } : {}),
-        stream: options.stream === true,
-        ...(options.stream && !provider ? { stream_options: { include_usage: true } } : {}),
-        }),
-      });
+      let target = new URL(endpoint);
+      const trustedOrigin = target.origin;
+      // Preserve provider compatibility for same-origin 307/308 redirects, but
+      // never forward API keys or request bodies to a different origin.
+      for (let redirectCount = 0; ; redirectCount += 1) {
+        response = await fetch(target.toString(), {
+          method: "POST",
+          headers: requestHeaders,
+          signal,
+          redirect: "manual",
+          body: requestBody,
+        });
+        if (![301, 302, 303, 307, 308].includes(response.status)) break;
+        const location = response.headers.get("location");
+        if (!location || redirectCount >= 3) break;
+        const redirected = new URL(location, target);
+        if (redirected.protocol !== "https:" || redirected.origin !== trustedOrigin
+          || redirected.username || redirected.password || redirected.hash) {
+          await response.body?.cancel().catch(() => undefined);
+          response = jsonResponse({
+            code: "UNSAFE_PROVIDER_REDIRECT",
+            error: "The provider redirected to a different or insecure origin. Configure its canonical HTTPS API endpoint instead.",
+          }, 502);
+          break;
+        }
+        await response.body?.cancel().catch(() => undefined);
+        target = redirected;
+      }
     } catch (cause) {
       if (options.signal?.aborted) throw cause;
       lastStatus = 504;
-      continue;
-    } finally {
       clearTimeout(timeoutHandle);
+      continue;
     }
+    clearTimeout(timeoutHandle);
     if (response.ok && response.body) return response;
     lastStatus = response.status;
     if (![400, 404, 408, 429, 500, 502, 503, 504].includes(response.status)) return response;
