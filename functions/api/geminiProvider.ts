@@ -187,3 +187,38 @@ export function getGeminiModel(configuredModel?: string): string {
     ? candidate
     : DEFAULT_GEMINI_MODEL;
 }
+
+
+export type GeminiChatFallbackAttempt =
+  | { kind: "skipped"; response?: never; error?: never; model: string }
+  | { kind: "success" | "fallback" | "terminal"; response: Response; error?: never; model: string }
+  | { kind: "network_error"; response?: never; error: unknown; model: string };
+
+/**
+ * Attempt the independent Gemini provider before moving to the next chat
+ * provider. The caller supplies its retryability policy so the provider
+ * adapter stays independent from the Worker router.
+ */
+export async function attemptGeminiChatFallback(
+  apiKey: string,
+  messages: GeminiChatMessage[],
+  model: string,
+  signal?: AbortSignal,
+  shouldFallback: (status: number) => boolean = (status) => [404, 408, 429, 500, 502, 503, 504].includes(status),
+  fetcher: typeof fetch = fetch,
+): Promise<GeminiChatFallbackAttempt> {
+  if (!apiKey.trim() || signal?.aborted) return { kind: "skipped", model };
+
+  try {
+    const response = await fetchGeminiChat(apiKey, messages, model, fetcher, signal);
+    if (response.ok && response.body) return { kind: "success", response, model };
+    if (!shouldFallback(response.status) && response.status !== 200) {
+      return { kind: "terminal", response, model };
+    }
+    await response.body?.cancel().catch(() => undefined);
+    return { kind: "fallback", response, model };
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    return { kind: "network_error", error, model };
+  }
+}

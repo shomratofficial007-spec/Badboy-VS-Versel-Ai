@@ -4,7 +4,7 @@ import { buildDeveloperAnalysisMessages, resolveDeveloperAnalysisEngine, validat
 import { authenticatePersonalOwner } from "./personalAuth.ts";
 import { handleDeveloperDataRequest } from "./developerData.ts";
 import { createAgentStorage, type D1Database } from "./agentStorage.ts";
-import { fetchGeminiChat, getGeminiModel } from "./geminiProvider.ts";
+import { attemptGeminiChatFallback, fetchGeminiChat, getGeminiModel } from "./geminiProvider.ts";
 import { handleAgenticAssistantRequest } from "./agenticAssistant.ts";
 import { handleAgentMemorySearchRequest } from "./agentMemory.ts";
 import { handleIntegrationRequest, type IntegrationEnv } from "./integrationHub.ts";
@@ -28,6 +28,7 @@ interface Env {
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
   GROQ_API_KEY?: string;
+  GROQ_MODEL?: string;
   BADBOY_OWNER_TOKEN?: string;
   AGENT_DB?: D1Database;
   TAVILY_API_KEY?: string;
@@ -130,6 +131,135 @@ async function fetchChatWithFreeFallbacks(
   }
 
   throw lastError instanceof Error ? lastError : new Error("All free models are unavailable.");
+}
+
+
+type ChatProvider = "openrouter" | "gemini" | "groq";
+
+function getGroqModel(configuredModel?: string): string {
+  const candidate = configuredModel?.trim() || "openai/gpt-oss-20b";
+  return /^[a-zA-Z0-9._/-]{1,120}$/.test(candidate)
+    ? candidate
+    : "openai/gpt-oss-20b";
+}
+
+function shouldFallbackProvider(status: number): boolean {
+  return RETRYABLE_UPSTREAM_STATUSES.has(status) || status === 401 || status === 403;
+}
+
+async function fetchGroqChat(
+  apiKey: string,
+  messages: Array<{ role: "system" | "user"; content: string }>,
+  model: string,
+  signal?: AbortSignal,
+): Promise<Response> {
+  return fetch(`${GROQ_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    signal,
+    body: JSON.stringify({
+      model,
+      max_completion_tokens: 8192,
+      messages,
+      stream: true,
+    }),
+  });
+}
+
+/**
+ * Route ordinary chat across independent providers. OpenRouter's model-level
+ * fallbacks run first; Gemini and Groq are separate provider-level fallbacks.
+ * A provider is switched only before any response bytes reach the client.
+ */
+export async function fetchChatWithProviderFallbacks(
+  env: Env,
+  messages: Array<{ role: "system" | "user"; content: string }>,
+  signal?: AbortSignal,
+): Promise<{ response: Response; provider: ChatProvider; model: string }> {
+  const openrouterApiKey = env.OPENROUTER_API_KEY?.trim() || "";
+  const geminiApiKey = env.GEMINI_API_KEY?.trim() || "";
+  const groqApiKey = env.GROQ_API_KEY?.trim() || "";
+  if (!openrouterApiKey && !geminiApiKey && !groqApiKey) {
+    throw new Error("No chat AI provider is configured.");
+  }
+
+  let lastResponse: { response: Response; provider: ChatProvider; model: string } | undefined;
+  let lastError: unknown;
+
+  if (openrouterApiKey) {
+    try {
+      const routed = await fetchChatWithFreeFallbacks(openrouterApiKey, messages, signal);
+      if (routed.response.ok && routed.response.body) {
+        return { ...routed, provider: "openrouter" };
+      }
+      lastResponse = { ...routed, provider: "openrouter" };
+      if (!shouldFallbackProvider(routed.response.status) && routed.response.status !== 200) {
+        return lastResponse;
+      }
+      await routed.response.body?.cancel().catch(() => undefined);
+      logModelDiagnostic("provider_fallback", "openrouter", routed.response.status);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      lastError = error;
+      logModelDiagnostic("provider_network_error", "openrouter");
+    }
+  }
+
+  const geminiModel = getGeminiModel(env.GEMINI_MODEL);
+  const geminiAttempt = await attemptGeminiChatFallback(
+    geminiApiKey,
+    messages,
+    geminiModel,
+    signal,
+    shouldFallbackProvider,
+  );
+  if (geminiAttempt.kind === "success") {
+    logModelDiagnostic("selected", geminiAttempt.model, geminiAttempt.response.status);
+    return { response: geminiAttempt.response, provider: "gemini", model: geminiAttempt.model };
+  }
+  if (geminiAttempt.kind === "terminal") {
+    lastResponse = {
+      response: geminiAttempt.response,
+      provider: "gemini",
+      model: geminiAttempt.model,
+    };
+    return lastResponse;
+  }
+  if (geminiAttempt.kind === "fallback") {
+    lastResponse = {
+      response: geminiAttempt.response,
+      provider: "gemini",
+      model: geminiAttempt.model,
+    };
+    logModelDiagnostic("provider_fallback", "gemini", geminiAttempt.response.status);
+  }
+  if (geminiAttempt.kind === "network_error") {
+    lastError = geminiAttempt.error;
+    logModelDiagnostic("provider_network_error", "gemini");
+  }
+
+  if (groqApiKey && !signal?.aborted) {
+    const model = getGroqModel(env.GROQ_MODEL);
+    try {
+      const response = await fetchGroqChat(groqApiKey, messages, model, signal);
+      if (response.ok && response.body) {
+        logModelDiagnostic("selected", model, response.status);
+        return { response, provider: "groq", model };
+      }
+      lastResponse = { response, provider: "groq", model };
+      await response.body?.cancel().catch(() => undefined);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      lastError = error;
+      logModelDiagnostic("provider_network_error", "groq");
+    }
+  }
+
+  if (lastResponse) return lastResponse;
+  throw lastError instanceof Error ? lastError : new Error("All configured chat AI providers are unavailable.");
 }
 
 type DeveloperProvider = "gemini" | "openrouter";
@@ -1187,26 +1317,36 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
       }, analysisAvailable ? 200 : 503);
     }
     if (pathname === "/api/healthz" || pathname === "/api/health") {
-      const chatConfigured = Boolean(env.OPENROUTER_API_KEY?.trim());
-      const transcriptionConfigured = Boolean(
-        env.GROQ_API_KEY?.trim() || env.OPENROUTER_API_KEY?.trim(),
-      );
+      const openrouterConfigured = Boolean(env.OPENROUTER_API_KEY?.trim());
+      const geminiConfigured = Boolean(env.GEMINI_API_KEY?.trim());
+      const groqConfigured = Boolean(env.GROQ_API_KEY?.trim());
+      const chatConfigured = openrouterConfigured || geminiConfigured || groqConfigured;
+      const transcriptionConfigured = Boolean(groqConfigured || openrouterConfigured);
       const anyCapabilityConfigured = chatConfigured || transcriptionConfigured;
       return jsonResponse(
         {
           status: chatConfigured ? "ok" : anyCapabilityConfigured ? "partial" : "degraded",
-          // Keep the legacy field for existing clients; it describes chat only.
+          // Keep the legacy field for existing clients; it describes chat capability.
           aiConfigured: chatConfigured,
           capabilities: {
             chat: chatConfigured,
             transcription: transcriptionConfigured,
-            serverSpeech: chatConfigured,
+            // The existing cloud speech endpoint still depends on OpenRouter.
+            serverSpeech: openrouterConfigured,
           },
           providers: {
-            openrouter: chatConfigured,
-            groqTranscription: Boolean(env.GROQ_API_KEY?.trim()),
+            openrouter: openrouterConfigured,
+            geminiChat: geminiConfigured,
+            groqChat: groqConfigured,
+            groqTranscription: groqConfigured,
           },
-          model: OPENROUTER_MODEL_ID,
+          model: openrouterConfigured
+            ? OPENROUTER_MODEL_ID
+            : geminiConfigured
+              ? getGeminiModel(env.GEMINI_MODEL)
+              : groqConfigured
+                ? getGroqModel(env.GROQ_MODEL)
+                : OPENROUTER_MODEL_ID,
           fallbackCount: OPENROUTER_FREE_FALLBACKS.length,
         },
         anyCapabilityConfigured ? 200 : 503,
@@ -1291,14 +1431,15 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     return jsonResponse({ error: "Invalid assistant message payload." }, 400);
   }
 
-  const apiKey = env.OPENROUTER_API_KEY?.trim() || "";
-  if (!apiKey) {
-    console.error("[CF Function Error] OPENROUTER_API_KEY is missing from environment bindings.");
+  const hasChatProvider = Boolean(
+    env.OPENROUTER_API_KEY?.trim() || env.GEMINI_API_KEY?.trim() || env.GROQ_API_KEY?.trim(),
+  );
+  if (!hasChatProvider) {
+    console.error("[CF Function Error] No chat AI provider is configured.");
     return jsonResponse(
       {
         code: "AI_NOT_CONFIGURED",
-        error:
-          "Add OPENROUTER_API_KEY to your Cloudflare environment variables to activate AI chat.",
+        error: "Configure at least one server-side AI provider (OpenRouter, Gemini, or Groq) to activate AI chat.",
       },
       503
     );
@@ -1306,8 +1447,10 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
 
   const upstreamAbort = createUpstreamAbortSignal(request, 90_000);
   let upstream: Response;
+  let selectedProvider: ChatProvider = "openrouter";
+  let selectedModel = OPENROUTER_MODEL_ID;
   try {
-    const routed = await fetchChatWithFreeFallbacks(apiKey, [
+    const routed = await fetchChatWithProviderFallbacks(env, [
       {
         role: "system",
         content: systemInstruction(personality, developerMode),
@@ -1315,18 +1458,20 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
       { role: "user", content: message.trim() },
     ], upstreamAbort.signal);
     upstream = routed.response;
+    selectedProvider = routed.provider;
+    selectedModel = routed.model;
   } catch (err) {
     const wasCancelled = request.signal.aborted;
     const timedOut = upstreamAbort.wasTimedOut();
     upstreamAbort.cleanup();
     if (wasCancelled) return new Response(null, { status: 499, headers: CORS_HEADERS });
-    console.error("[CF Function Error] OpenRouter fetch failed:", err instanceof Error ? err.message : String(err));
+    console.error("[CF Function Error] AI provider routing failed:", err instanceof Error ? err.message : String(err));
     return jsonResponse(
       {
-        code: timedOut ? "OPENROUTER_REQUEST_TIMEOUT" : "OPENROUTER_REQUEST_FAILED",
+        code: timedOut ? "AI_PROVIDER_REQUEST_TIMEOUT" : "AI_PROVIDER_REQUEST_FAILED",
         error: timedOut
-          ? "OpenRouter request timed out. Please try again."
-          : "OpenRouter service could not be reached. Check network connection.",
+          ? "AI provider request timed out. Please try again."
+          : "All configured AI providers could not be reached. Check provider status and try again.",
       },
       timedOut ? 504 : 502
     );
@@ -1334,11 +1479,11 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
 
   if (upstream.status === 429) {
     upstreamAbort.cleanup();
-    console.error("[CF Function Error] All configured free models are rate limited or unavailable (429).");
+    console.error("[CF Function Error] All configured AI providers are rate limited (429).");
     return jsonResponse(
       {
-        code: "OPENROUTER_RATE_LIMIT",
-        error: "OpenRouter model rate limit reached. Please wait a moment and try again.",
+        code: "AI_PROVIDER_RATE_LIMIT",
+        error: "All configured AI providers are currently rate limited. Please try again shortly.",
       },
       429
     );
@@ -1347,11 +1492,11 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   if (!upstream.ok || !upstream.body) {
     upstreamAbort.cleanup();
     // Avoid logging provider response bodies; keep diagnostics sanitized.
-    console.error("[CF Function Error] OpenRouter upstream returned status " + upstream.status + ".");
+    console.error("[CF Function Error] " + selectedProvider + " provider returned status " + upstream.status + " for model " + selectedModel + ".");
     return jsonResponse(
       {
-        code: "OPENROUTER_REQUEST_FAILED",
-        error: "OpenRouter error (" + upstream.status + "). Please try again later.",
+        code: "AI_PROVIDER_REQUEST_FAILED",
+        error: "AI provider error (" + upstream.status + "). Please try again later.",
       },
       502
     );
