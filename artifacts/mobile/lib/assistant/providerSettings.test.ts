@@ -6,7 +6,7 @@ let secureStoreAvailable = true;
 const secureValues = new Map<string, string>();
 const keyStore = createProviderKeyStore({
   isAvailableAsync: async () => secureStoreAvailable,
-  setItemAsync: async (key, value) => { secureValues.set(key, value); },
+  setItemAsync: async (key, value) => { if (!/^[A-Za-z0-9._-]+$/.test(key)) throw new Error('Invalid key provided to SecureStore.'); secureValues.set(key, value); },
   getItemAsync: async (key) => secureValues.get(key) ?? null,
   deleteItemAsync: async (key) => { secureValues.delete(key); },
 });
@@ -45,6 +45,7 @@ const providerSettingsPromise = import('./providerSettings');
 test('stores provider API keys only through the secure storage adapter', async () => {
   secureStoreAvailable = true;
   await keyStore.save('openai', '  secret-provider-key  ');
+  assert.ok([...secureValues.keys()].every((key) => /^[A-Za-z0-9._-]+$/.test(key)), 'SecureStore keys must use only supported characters');
   assert.equal(await keyStore.get('openai'), 'secret-provider-key');
   await keyStore.delete('openai');
   assert.equal(await keyStore.get('openai'), null);
