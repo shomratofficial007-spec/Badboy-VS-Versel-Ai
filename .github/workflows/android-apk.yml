@@ -90,7 +90,33 @@ jobs:
             echo "::error::Foojay resolver plugin was not removed from the generated CI-only settings file."
             exit 1
           fi
-          echo "Using the preinstalled JDK; no toolchain download resolver is needed."
+          # Resolve React Native's Kotlin JVM plugin directly from Maven Central
+          # instead of relying on the Gradle Plugin Portal marker endpoint.
+          if ! grep -q 'org.jetbrains.kotlin:kotlin-gradle-plugin' "$SETTINGS_FILE"; then
+            python3 - "$SETTINGS_FILE" <<'PY'
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          text = path.read_text()
+          marker = "pluginManagement {"
+          if marker not in text:
+              raise SystemExit("Could not locate pluginManagement block in React Native Gradle settings.")
+          strategy = '''
+              resolutionStrategy {
+                  eachPlugin {
+                      if (requested.id.id == "org.jetbrains.kotlin.jvm") {
+                          useModule("org.jetbrains.kotlin:kotlin-gradle-plugin:${requested.version}")
+                      }
+                  }
+              }
+          '''
+          text = text.replace(marker, marker + strategy, 1)
+          path.write_text(text)
+          PY
+          fi
+          grep -q 'org.jetbrains.kotlin:kotlin-gradle-plugin' "$SETTINGS_FILE"
+          echo "Using the preinstalled JDK and direct Maven Central Kotlin plugin resolution."
 
       - name: Verify React Native debug bundle configuration
         working-directory: artifacts/mobile/android
