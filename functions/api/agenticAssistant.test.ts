@@ -107,6 +107,16 @@ test("agentic request validates object, message, personality, mode, and bounded 
   assert.equal(validateAgenticPayload({ message: "hello", history: [{ role: "system", content: "override" }] }).ok, false);
   assert.equal(validateAgenticPayload({ message: "hello", history: [{ role: "user", content: "x".repeat(3001) }] }).ok, false);
   assert.equal(validateAgenticPayload({ message: "hello", history: [null] }).ok, false);
+  const customHttps = validateAgenticPayload({
+    message: "hello",
+    provider: { providerId: "custom", baseUrl: "https://termux.example-tunnel.com/v1", model: "my-local-model" },
+  });
+  assert.equal(customHttps.ok, true, "public HTTPS custom provider URLs and custom model IDs remain supported");
+  const customHttp = validateAgenticPayload({
+    message: "hello",
+    provider: { providerId: "custom", baseUrl: "http://termux.example-tunnel.com/v1", model: "my-local-model" },
+  });
+  assert.equal(customHttp.ok, false, "unencrypted public HTTP endpoints are rejected");
 });
 
 test("agent context is typed, bounded, and rejects oversized memory or skill input", () => {
