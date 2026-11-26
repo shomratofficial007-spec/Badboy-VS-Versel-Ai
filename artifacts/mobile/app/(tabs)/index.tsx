@@ -24,6 +24,7 @@ import {
   View,
 } from 'react-native';
 import { BadboyLogo } from '@/components/BadboyLogo';
+import { MarkdownText } from '@/components/MarkdownText';
 import {
   cleanSongQuery,
   extractYouTubeIntent,
@@ -954,9 +955,9 @@ export default function ChatScreen() {
             isUser && styles.userBubble,
           ]}
         >
-          <Text selectable style={{ color: isUser ? colors.primaryForeground : colors.foreground, fontSize: 15, lineHeight: 22 }}>
+          <MarkdownText selectable style={{ color: isUser ? colors.primaryForeground : colors.foreground, fontSize: 15, lineHeight: 22 }}>
             {item.content || (busy && item.role === 'assistant' ? 'Badboy ভাবছে…' : '')}
-          </Text>
+          </MarkdownText>
           {item.attachments?.length ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
               {item.attachments.map((attachment) => (

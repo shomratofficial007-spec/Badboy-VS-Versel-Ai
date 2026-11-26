@@ -346,6 +346,26 @@ export function getVoiceErrorMessage(errorType?: string): string {
  * In this app, real-time "Oi" wake-word detection triggers dynamically during active foreground dictation sessions.
  */
 
+/** Choose the highest-confidence native speech alternative; preserve provider order when confidence is absent. */
+export function selectBestRecognitionTranscript(
+  results: Array<{ transcript?: string; confidence?: number }>,
+): string {
+  let bestTranscript = '';
+  let bestConfidence = Number.NEGATIVE_INFINITY;
+  for (const result of results) {
+    const transcript = typeof result?.transcript === 'string' ? result.transcript : '';
+    if (!transcript.trim()) continue;
+    const confidence = typeof result.confidence === 'number' && Number.isFinite(result.confidence)
+      ? result.confidence
+      : Number.NEGATIVE_INFINITY;
+    if (!bestTranscript || confidence > bestConfidence) {
+      bestTranscript = transcript;
+      bestConfidence = confidence;
+    }
+  }
+  return bestTranscript;
+}
+
 /** Start one dictation turn with wake-phrase detection and error handling. Returns a cancel function. */
 export function dictateOnce(callbacks: SpeechCallbacks): () => void {
   const os = getPlatformOS();
@@ -454,7 +474,7 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
           (event: { results?: Array<{ transcript?: string }>; isFinal?: boolean }) => {
             const results = event.results ?? [];
             if (!results.length) return;
-            const transcript = results[0]?.transcript ?? '';
+            const transcript = selectBestRecognitionTranscript(results);
             const isFinal = event.isFinal ?? false;
             if (transcript) {
               hasReceivedTranscript = true;
@@ -515,7 +535,7 @@ export function dictateOnce(callbacks: SpeechCallbacks): () => void {
           lang: recognitionLanguage,
           interimResults: true,
           continuous: false,
-          maxAlternatives: 1,
+          maxAlternatives: 5,
         });
       } catch (cause) {
         console.error('[BadboyVoice] Failed to initialize native speech recognition', {

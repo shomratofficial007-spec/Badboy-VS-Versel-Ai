@@ -95,9 +95,16 @@ test('native Android dictation selects a compatible locale, requests permission 
     lang: 'bn',
     interimResults: true,
     continuous: false,
-    maxAlternatives: 1,
+    maxAlternatives: 5,
   });
-  listeners.get('result')?.({ results: [{ transcript: 'তুমি কেমন আছো?' }], isFinal: true });
+  listeners.get('result')?.({
+    results: [
+      { transcript: 'তুমি সন্ধ্যায় আছো?', confidence: 0.42 },
+      { transcript: 'তুমি কেমন আছো?', confidence: 0.91 },
+      { transcript: 'তুমি কোথায় আছো?', confidence: 0.67 },
+    ],
+    isFinal: true,
+  });
   assert.deepEqual(transcripts, [['তুমি কেমন আছো?', true]]);
   assert.equal(done, 1);
   assert.deepEqual(errors, []);
@@ -207,4 +214,19 @@ test('cloud TTS failure falls back to the device voice using the selected locale
   assert.equal(nativeTtsOptions.language, 'zu-ZA');
   nativeTtsOptions.onStart();
   assert.deepEqual(events, ['start']);
+});
+
+
+test('native transcript selection prefers the highest-confidence Bengali alternative', async () => {
+  reset();
+  const voice = await voicePromise;
+  assert.equal(voice.selectBestRecognitionTranscript([
+    { transcript: 'আমার সন্ধ্যায়', confidence: 0.31 },
+    { transcript: 'আমার জন্য', confidence: 0.94 },
+    { transcript: 'আমার সন্ধানে', confidence: 0.62 },
+  ]), 'আমার জন্য');
+  assert.equal(voice.selectBestRecognitionTranscript([
+    { transcript: 'প্রথম বিকল্প' },
+    { transcript: 'দ্বিতীয় বিকল্প' },
+  ]), 'প্রথম বিকল্প');
 });
