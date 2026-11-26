@@ -545,9 +545,24 @@ async function requestCompletion(
           redirect: "manual",
           body: requestBody,
         });
-        if (![301, 302, 303, 307, 308].includes(response.status)) break;
+        if ([301, 302, 303].includes(response.status)) {
+          await response.body?.cancel().catch(() => undefined);
+          response = jsonResponse({
+            code: "UNSUPPORTED_PROVIDER_REDIRECT",
+            error: "The provider returned a redirect that changes POST semantics. Configure its canonical HTTPS API endpoint instead.",
+          }, 502);
+          break;
+        }
+        if (![307, 308].includes(response.status)) break;
         const location = response.headers.get("location");
-        if (!location || redirectCount >= 3) break;
+        if (!location || redirectCount >= 3) {
+          await response.body?.cancel().catch(() => undefined);
+          response = jsonResponse({
+            code: "UNSAFE_PROVIDER_REDIRECT",
+            error: "The provider returned an incomplete or excessive redirect chain. Configure its canonical HTTPS API endpoint instead.",
+          }, 502);
+          break;
+        }
         const redirected = new URL(location, target);
         if (redirected.protocol !== "https:" || redirected.origin !== trustedOrigin
           || redirected.username || redirected.password || redirected.hash) {
