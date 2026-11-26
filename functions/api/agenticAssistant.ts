@@ -527,6 +527,9 @@ async function requestCompletion(
           ...(provider?.providerId === "openrouter" ? { "HTTP-Referer": "https://badboy-vs-versel-ai.app" } : {}),
         },
         signal,
+        // Custom provider endpoints are user-controlled. Never follow redirects:
+        // a redirect could turn a validated public HTTPS URL into an SSRF target.
+        redirect: "manual",
         body: JSON.stringify({
         model,
         messages,
