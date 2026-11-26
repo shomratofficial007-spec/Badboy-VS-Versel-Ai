@@ -247,11 +247,12 @@ test("selected provider and model are used for planner, tool calling, reviewer a
   globalThis.fetch = async (input, init) => {
     const payload = JSON.parse(String(init?.body)) as { model: string; stream: boolean; response_format?: { type: string }; messages: Array<{ role: string; content: unknown }> };
     calls.push({ url: String(input), authorization: new Headers(init?.headers).get("Authorization"), model: payload.model, stream: payload.stream, redirect: init?.redirect });
-    if (calls.length === 1) return completion(JSON.stringify({ goal: "plan", steps: [{ id: "1", task: "execute", success_criteria: "done" }], risks: [] }));
-    if (calls.length === 2) return completion("", [{ id: "tool-1", function: { name: "calculator", arguments: JSON.stringify({ expression: "6 * 7" }) } }]);
-    if (calls.length === 3) return completion("executor done");
-    if (calls.length === 4) return completion("review done");
-    if (calls.length === 5) return finalStream();
+    if (calls.length === 1) return new Response(null, { status: 307, headers: { location: "/v1/chat/completions?edge=1" } });
+    if (calls.length === 2) return completion(JSON.stringify({ goal: "plan", steps: [{ id: "1", task: "execute", success_criteria: "done" }], risks: [] }));
+    if (calls.length === 3) return completion("", [{ id: "tool-1", function: { name: "calculator", arguments: JSON.stringify({ expression: "6 * 7" }) } }]);
+    if (calls.length === 4) return completion("executor done");
+    if (calls.length === 5) return completion("review done");
+    if (calls.length === 6) return finalStream();
     throw new Error("Unexpected provider call");
   };
   try {
@@ -265,11 +266,12 @@ test("selected provider and model are used for planner, tool calling, reviewer a
     assert.match(body, /executor/);
     assert.match(body, /reviewer/);
     assert.match(body, /synthesizer/);
-    assert.equal(calls.length, 5);
-    assert.ok(calls.every((call) => call.url === "https://api.openai.com/v1/chat/completions"));
+    assert.equal(calls.length, 6);
+    assert.equal(calls[0].url, "https://api.openai.com/v1/chat/completions");
+    assert.equal(calls[1].url, "https://api.openai.com/v1/chat/completions?edge=1", "same-origin HTTPS redirects must be followed");
     assert.ok(calls.every((call) => call.authorization === "Bearer user-provider-secret"));
     assert.ok(calls.every((call) => call.model === "gpt-4o-mini"));
-    assert.ok(calls.every((call) => call.redirect === "manual"), "custom provider redirects must never be followed");
+    assert.ok(calls.every((call) => call.redirect === "manual"), "redirects must be validated before following");
   } finally {
     globalThis.fetch = originalFetch;
   }
