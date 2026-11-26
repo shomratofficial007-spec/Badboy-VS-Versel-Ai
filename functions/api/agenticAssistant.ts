@@ -517,26 +517,65 @@ async function requestCompletion(
       ? AbortSignal.any([options.signal, timeoutController.signal])
       : timeoutController.signal;
     let response: Response;
+    const requestBody = JSON.stringify({
+      model,
+      messages,
+      max_tokens: options.maxTokens ?? 1800,
+      ...(options.tools ? { tools: options.toolDefinitions ?? TOOL_DEFINITIONS, tool_choice: "auto", parallel_tool_calls: false } : {}),
+      ...(options.responseFormat ? { response_format: { type: options.responseFormat } } : {}),
+      stream: options.stream === true,
+      ...(options.stream && !provider ? { stream_options: { include_usage: true } } : {}),
+    });
+    const requestHeaders = {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "X-Title": "Badboy Agentic Assistant",
+      ...(provider?.providerId === "openrouter" ? { "HTTP-Referer": "https://badboy-vs-versel-ai.app" } : {}),
+    };
     try {
-      response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "X-Title": "Badboy Agentic Assistant",
-          ...(provider?.providerId === "openrouter" ? { "HTTP-Referer": "https://badboy-vs-versel-ai.app" } : {}),
-        },
-        signal,
-        body: JSON.stringify({
-        model,
-        messages,
-        max_tokens: options.maxTokens ?? 1800,
-        ...(options.tools ? { tools: options.toolDefinitions ?? TOOL_DEFINITIONS, tool_choice: "auto", parallel_tool_calls: false } : {}),
-        ...(options.responseFormat ? { response_format: { type: options.responseFormat } } : {}),
-        stream: options.stream === true,
-        ...(options.stream && !provider ? { stream_options: { include_usage: true } } : {}),
-        }),
-      });
+      let target = new URL(endpoint);
+      const trustedOrigin = target.origin;
+      // Preserve provider compatibility for same-origin 307/308 redirects, but
+      // never forward API keys or request bodies to a different origin.
+      for (let redirectCount = 0; ; redirectCount += 1) {
+        response = await fetch(target.toString(), {
+          method: "POST",
+          headers: requestHeaders,
+          signal,
+          redirect: "manual",
+          body: requestBody,
+        });
+        if ([301, 302, 303].includes(response.status)) {
+          await response.body?.cancel().catch(() => undefined);
+          response = jsonResponse({
+            code: "UNSUPPORTED_PROVIDER_REDIRECT",
+            error: "The provider returned a redirect that changes POST semantics. Configure its canonical HTTPS API endpoint instead.",
+          }, 502);
+          break;
+        }
+        if (![307, 308].includes(response.status)) break;
+        const location = response.headers.get("location");
+        if (!location || redirectCount >= 3) {
+          await response.body?.cancel().catch(() => undefined);
+          response = jsonResponse({
+            code: "UNSAFE_PROVIDER_REDIRECT",
+            error: "The provider returned an incomplete or excessive redirect chain. Configure its canonical HTTPS API endpoint instead.",
+          }, 502);
+          break;
+        }
+        const redirected = new URL(location, target);
+        if (redirected.protocol !== "https:" || redirected.origin !== trustedOrigin
+          || redirected.username || redirected.password || redirected.hash) {
+          await response.body?.cancel().catch(() => undefined);
+          response = jsonResponse({
+            code: "UNSAFE_PROVIDER_REDIRECT",
+            error: "The provider redirected to a different or insecure origin. Configure its canonical HTTPS API endpoint instead.",
+          }, 502);
+          break;
+        }
+        await response.body?.cancel().catch(() => undefined);
+        target = redirected;
+      }
     } catch (cause) {
       if (options.signal?.aborted) throw cause;
       lastStatus = 504;

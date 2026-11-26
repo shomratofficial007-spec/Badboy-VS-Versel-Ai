@@ -107,6 +107,16 @@ test("agentic request validates object, message, personality, mode, and bounded 
   assert.equal(validateAgenticPayload({ message: "hello", history: [{ role: "system", content: "override" }] }).ok, false);
   assert.equal(validateAgenticPayload({ message: "hello", history: [{ role: "user", content: "x".repeat(3001) }] }).ok, false);
   assert.equal(validateAgenticPayload({ message: "hello", history: [null] }).ok, false);
+  const customHttps = validateAgenticPayload({
+    message: "hello",
+    provider: { providerId: "custom", baseUrl: "https://termux.example-tunnel.com/v1", model: "my-local-model" },
+  });
+  assert.equal(customHttps.ok, true, "public HTTPS custom provider URLs and custom model IDs remain supported");
+  const customHttp = validateAgenticPayload({
+    message: "hello",
+    provider: { providerId: "custom", baseUrl: "http://termux.example-tunnel.com/v1", model: "my-local-model" },
+  });
+  assert.equal(customHttp.ok, false, "unencrypted public HTTP endpoints are rejected");
 });
 
 test("agent context is typed, bounded, and rejects oversized memory or skill input", () => {
@@ -243,15 +253,16 @@ test("agentic endpoint requires a server-side OpenRouter key", async () => {
 });
 
 test("selected provider and model are used for planner, tool calling, reviewer and synthesizer", async () => {
-  const calls: Array<{ url: string; authorization: string | null; model: string; stream: boolean }> = [];
+  const calls: Array<{ url: string; authorization: string | null; model: string; stream: boolean; redirect?: RequestRedirect }> = [];
   globalThis.fetch = async (input, init) => {
     const payload = JSON.parse(String(init?.body)) as { model: string; stream: boolean; response_format?: { type: string }; messages: Array<{ role: string; content: unknown }> };
-    calls.push({ url: String(input), authorization: new Headers(init?.headers).get("Authorization"), model: payload.model, stream: payload.stream });
-    if (calls.length === 1) return completion(JSON.stringify({ goal: "plan", steps: [{ id: "1", task: "execute", success_criteria: "done" }], risks: [] }));
-    if (calls.length === 2) return completion("", [{ id: "tool-1", function: { name: "calculator", arguments: JSON.stringify({ expression: "6 * 7" }) } }]);
-    if (calls.length === 3) return completion("executor done");
-    if (calls.length === 4) return completion("review done");
-    if (calls.length === 5) return finalStream();
+    calls.push({ url: String(input), authorization: new Headers(init?.headers).get("Authorization"), model: payload.model, stream: payload.stream, redirect: init?.redirect });
+    if (calls.length === 1) return new Response(null, { status: 307, headers: { location: "/v1/chat/completions?edge=1" } });
+    if (calls.length === 2) return completion(JSON.stringify({ goal: "plan", steps: [{ id: "1", task: "execute", success_criteria: "done" }], risks: [] }));
+    if (calls.length === 3) return completion("", [{ id: "tool-1", function: { name: "calculator", arguments: JSON.stringify({ expression: "6 * 7" }) } }]);
+    if (calls.length === 4) return completion("executor done");
+    if (calls.length === 5) return completion("review done");
+    if (calls.length === 6) return finalStream();
     throw new Error("Unexpected provider call");
   };
   try {
@@ -265,12 +276,43 @@ test("selected provider and model are used for planner, tool calling, reviewer a
     assert.match(body, /executor/);
     assert.match(body, /reviewer/);
     assert.match(body, /synthesizer/);
-    assert.equal(calls.length, 5);
-    assert.ok(calls.every((call) => call.url === "https://api.openai.com/v1/chat/completions"));
+    assert.equal(calls.length, 6);
+    assert.equal(calls[0].url, "https://api.openai.com/v1/chat/completions");
+    assert.equal(calls[1].url, "https://api.openai.com/v1/chat/completions?edge=1", "same-origin HTTPS redirects must be followed");
     assert.ok(calls.every((call) => call.authorization === "Bearer user-provider-secret"));
     assert.ok(calls.every((call) => call.model === "gpt-4o-mini"));
+    assert.ok(calls.every((call) => call.redirect === "manual"), "redirects must be validated before following");
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test("custom provider rejects method-changing and cross-origin redirects without forwarding credentials", async () => {
+  const original = globalThis.fetch;
+  for (const redirect of [
+    { status: 302, location: "https://api.openai.com/v1/chat/completions" },
+    { status: 307, location: "https://api.groq.com/collect" },
+  ]) {
+    const calls: Array<{ url: string; authorization: string | null }> = [];
+    globalThis.fetch = async (input, init) => {
+      calls.push({ url: String(input), authorization: new Headers(init?.headers).get("Authorization") });
+      return new Response(null, { status: redirect.status, headers: { location: redirect.location } });
+    };
+    try {
+      const response = await handleAgenticAssistantRequest(agentRequest({
+        message: "hello",
+        mode: "single",
+        provider: { providerId: "custom", baseUrl: "https://api.openai.com/v1", model: "local-model" },
+      }, { "content-type": "application/json", "X-Provider-Key": "private-provider-key" }), {});
+      assert.equal(response.status, 200);
+      const body = await response.text();
+      assert.match(body, /HTTP 502/);
+      assert.equal(calls.length, 1, "unsafe redirects must not be followed");
+      assert.equal(calls[0].url, "https://api.openai.com/v1/chat/completions");
+      assert.equal(calls[0].authorization, "Bearer private-provider-key");
+    } finally {
+      globalThis.fetch = original;
+    }
   }
 });
 

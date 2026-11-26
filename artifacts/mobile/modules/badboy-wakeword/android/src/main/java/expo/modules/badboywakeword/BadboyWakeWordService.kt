@@ -25,11 +25,11 @@ class BadboyWakeWordService : Service() {
  private val ring=FloatArray(size); private var pos=0; private var filled=0
  private var last=0L; private var streak=0; private var ema=0.0
  private val filters=mutableListOf<Biquad>()
- override fun onCreate(){super.onCreate();getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("badboy_wake","Hey Badboy",NotificationManager.IMPORTANCE_LOW))}
+ override fun onCreate(){super.onCreate();val channel=NotificationChannel("badboy_wake_silent_v2","Hey Badboy",NotificationManager.IMPORTANCE_LOW).apply{setSound(null,null);enableVibration(false);enableLights(false)};getSystemService(NotificationManager::class.java).createNotificationChannel(channel)}
  override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int{
   try{
    threshold=(intent?.getDoubleExtra("threshold",0.696)?:0.696).toFloat()
-   val n=NotificationCompat.Builder(this,"badboy_wake").setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Hey Badboy সক্রিয়").setContentText("বলুন: Hey Badboy").setOngoing(true).build()
+   val n=NotificationCompat.Builder(this,"badboy_wake_silent_v2").setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Hey Badboy সক্রিয়").setContentText("বলুন: Hey Badboy").setOngoing(true).setSilent(true).build()
    if(Build.VERSION.SDK_INT>=29)startForeground(7401,n,ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE) else startForeground(7401,n)
    synchronized(this){
     if(workerThread?.isAlive==true){
