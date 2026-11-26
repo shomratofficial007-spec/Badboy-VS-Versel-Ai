@@ -32,7 +32,7 @@ export interface SecureKeyStorageAdapter {
 }
 
 export function createProviderKeyStore(adapter: SecureKeyStorageAdapter) {
-  const keyFor = (providerId: string) => `badboy-ai-provider-key-v1:${providerId}`;
+  const keyFor = (providerId: string) => `badboy-ai-provider-key-v1-${providerId}`;
   return {
     async save(providerId: string, apiKey: string): Promise<void> {
       const clean = apiKey.trim();
