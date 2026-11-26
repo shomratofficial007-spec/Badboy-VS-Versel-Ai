@@ -2,6 +2,7 @@ import assert from 'node:assert';
 import test from 'node:test';
 import {
   containsWakePhrase,
+  shouldStopSpeechWhenAppLeavesForeground,
   getVoiceErrorMessage,
   getNextVoiceLanguage,
   getVoiceLanguageGroup,
@@ -96,6 +97,13 @@ test('voice language catalogue includes Bengali and English plus international l
   assert.equal(getVoiceLanguageLabel('bn-BD'), 'বাংলা (বাংলাদেশ)');
   assert.equal(getNextVoiceLanguage('bn-BD'), 'bn-IN');
   assert.equal(getNextVoiceLanguage('unknown-locale'), 'bn-BD');
+});
+
+test('TTS is stopped whenever the mobile app leaves the foreground', () => {
+  assert.equal(shouldStopSpeechWhenAppLeavesForeground('active'), false);
+  assert.equal(shouldStopSpeechWhenAppLeavesForeground('inactive'), true);
+  assert.equal(shouldStopSpeechWhenAppLeavesForeground('background'), true);
+  assert.equal(shouldStopSpeechWhenAppLeavesForeground('unknown'), true);
 });
 
 test('speech playback watchdog scales with reply length and stays bounded', () => {
