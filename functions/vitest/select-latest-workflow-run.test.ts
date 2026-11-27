@@ -9,6 +9,9 @@ const filterPath = fileURLToPath(
 const multiWorkflowWaiterPath = fileURLToPath(
   new URL("../../.github/scripts/wait-for-workflows.sh", import.meta.url),
 );
+const freeApkWorkflowPath = fileURLToPath(
+  new URL("../../.github/workflows/android-apk-free.yml", import.meta.url),
+);
 
 function selectLatest(runs: Array<Record<string, unknown>>, name = "Build and Test") {
   const output = execFileSync(
@@ -112,5 +115,20 @@ describe("multi-workflow waiter integration", () => {
     expect(selectorLines).toHaveLength(2);
     expect(selectorLines.every((line) => line.trim().startsWith("-f "))).toBe(true);
     expect(source).not.toContain("sort_by(.created_at)");
+  });
+});
+
+
+
+describe("APK workflow path scope", () => {
+  it("waits for APK validation when function or Worker configuration paths trigger it", () => {
+    const waiter = readFileSync(multiWorkflowWaiterPath, "utf8");
+    const scopeMatch = waiter.match(/if grep -Eq '([^']+)' <<< "\$\{changed_files\}"; then\s+android_scope=true/s);
+    expect(scopeMatch?.[1]).toContain("functions/");
+    expect(scopeMatch?.[1]).toContain("wrangler\\.json$");
+
+    const apkWorkflow = readFileSync(freeApkWorkflowPath, "utf8");
+    expect(apkWorkflow).toContain('"functions/**"');
+    expect(apkWorkflow).toContain('"wrangler.json"');
   });
 });

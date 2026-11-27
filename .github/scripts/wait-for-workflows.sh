@@ -32,7 +32,7 @@ android_scope=false
 if grep -Eq '^(artifacts/mobile/|functions/|wrangler\.json$|artifacts/mobile/wrangler\.json$|lib/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|\.github/workflows/(mobile-checks|android-apk|android-apk-free)\.yml$)' <<< "${changed_files}"; then
   mobile_scope=true
 fi
-if grep -Eq '^(artifacts/mobile/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|\.github/workflows/(android-apk|android-apk-free)\.yml$)' <<< "${changed_files}"; then
+if grep -Eq '^(artifacts/mobile/|functions/|wrangler\.json$|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|\.github/workflows/(android-apk|android-apk-free)\.yml$)' <<< "${changed_files}"; then
   android_scope=true
 fi
 
