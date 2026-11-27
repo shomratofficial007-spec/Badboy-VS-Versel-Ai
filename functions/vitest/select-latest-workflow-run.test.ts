@@ -108,7 +108,9 @@ describe("latest workflow run selection", () => {
 describe("multi-workflow waiter integration", () => {
   it("uses the shared latest-run selector for required and APK workflows", () => {
     const source = readFileSync(multiWorkflowWaiterPath, "utf8");
-    expect(source.match(/-f \.github\/scripts\/select-latest-workflow-run\.jq/g)).toHaveLength(2);
+    const selectorLines = source.split("\n").filter((line) => line.includes(".github/scripts/select-latest-workflow-run.jq"));
+    expect(selectorLines).toHaveLength(2);
+    expect(selectorLines.every((line) => line.trim().startsWith("-f "))).toBe(true);
     expect(source).not.toContain("sort_by(.created_at)");
   });
 });

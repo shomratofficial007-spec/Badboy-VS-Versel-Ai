@@ -67,7 +67,7 @@ for attempt in $(seq 1 360); do
   failed=0
   for workflow_name in "${required_workflows[@]}"; do
     run="$(jq -c --arg name "${workflow_name}" \
-      '-f .github/scripts/select-latest-workflow-run.jq' \
+      -f .github/scripts/select-latest-workflow-run.jq \
       <<< "${response}")"
 
     if [[ -z "${run}" ]]; then
@@ -95,7 +95,7 @@ for attempt in $(seq 1 360); do
     apk_failed=0
     for workflow_name in "${apk_workflows[@]}"; do
       run="$(jq -c --arg name "${workflow_name}" \
-        '-f .github/scripts/select-latest-workflow-run.jq' \
+        -f .github/scripts/select-latest-workflow-run.jq \
         <<< "${response}")"
       if [[ -z "${run}" ]]; then
         continue
