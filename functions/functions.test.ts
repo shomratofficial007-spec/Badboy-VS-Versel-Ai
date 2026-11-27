@@ -284,7 +284,7 @@ test("onRequestPost - transcribe uses Groq Whisper Large-V3 as primary when GROQ
       assert.strictEqual(formData.get("temperature"), "0");
       assert.strictEqual(
         formData.get("prompt"),
-        "বাংলাদেশের স্বাভাবিক কথ্য বাংলা উচ্চারণ হুবহু বাংলা লিপিতে লিখুন। বক্তা যে শব্দ বলেছেন সেটিই লিখুন; কাছাকাছি শোনালেও শব্দ অনুমান করে বদলাবেন না (যেমন “আমার জন্য” বললে “আমার সন্ধ্যায়” লিখবেন না)। অনুবাদ বা সারাংশ করবেন না। স্পষ্টভাবে বলা ইংরেজি শব্দ ইংরেজিতেই রাখুন।",
+        "বাংলাদেশের মানুষের স্বাভাবিক কথ্য বাংলা হুবহু বাংলা লিপিতে লিখুন। বক্তার বলা শব্দ, বাক্যক্রম, কথ্য রূপ এবং প্রশ্নের ভঙ্গি অপরিবর্তিত রাখুন। কাছাকাছি ধ্বনির শব্দ, নাম বা বাক্য নিজে থেকে অনুমান করে বদলাবেন না। কোনো কথা বাদ দেবেন না, পুনরাবৃত্তি তৈরি করবেন না, অনুবাদ বা সারাংশ করবেন না। বক্তা বাংলা ও ইংরেজি মিশিয়ে বললে সেই ভাষা-বদল অক্ষুণ্ণ রাখুন; স্পষ্ট ইংরেজি শব্দ ইংরেজিতেই লিখুন।",
       );
       return new Response(JSON.stringify({ text: "Groq বাংলা ট্রান্সক্রিপশন সফল" }), {
         status: 200,
@@ -379,7 +379,7 @@ test("onRequestPost - transcribe falls back to OpenRouter when Groq fails with 4
       assert.strictEqual(body.model, "openai/whisper-1");
       assert.strictEqual(
         body.prompt,
-        "বাংলাদেশের স্বাভাবিক কথ্য বাংলা উচ্চারণ হুবহু বাংলা লিপিতে লিখুন। বক্তা যে শব্দ বলেছেন সেটিই লিখুন; কাছাকাছি শোনালেও শব্দ অনুমান করে বদলাবেন না (যেমন “আমার জন্য” বললে “আমার সন্ধ্যায়” লিখবেন না)। অনুবাদ বা সারাংশ করবেন না। স্পষ্টভাবে বলা ইংরেজি শব্দ ইংরেজিতেই রাখুন।",
+        "বাংলাদেশের মানুষের স্বাভাবিক কথ্য বাংলা হুবহু বাংলা লিপিতে লিখুন। বক্তার বলা শব্দ, বাক্যক্রম, কথ্য রূপ এবং প্রশ্নের ভঙ্গি অপরিবর্তিত রাখুন। কাছাকাছি ধ্বনির শব্দ, নাম বা বাক্য নিজে থেকে অনুমান করে বদলাবেন না। কোনো কথা বাদ দেবেন না, পুনরাবৃত্তি তৈরি করবেন না, অনুবাদ বা সারাংশ করবেন না। বক্তা বাংলা ও ইংরেজি মিশিয়ে বললে সেই ভাষা-বদল অক্ষুণ্ণ রাখুন; স্পষ্ট ইংরেজি শব্দ ইংরেজিতেই লিখুন।",
       );
       return new Response(JSON.stringify({ text: "OpenRouter ফলব্যাক ট্রান্সক্রিপশন" }), {
         status: 200,
@@ -1949,4 +1949,43 @@ test("Worker fetch wrapper applies security headers to every API response path",
   assert.equal(response.headers.get("Strict-Transport-Security"), "max-age=31536000; includeSubDomains");
   const payload = await response.json() as { code?: string };
   assert.equal(payload.code, "PERSONAL_AUTH_NOT_CONFIGURED");
+});
+
+
+test("onRequestPost - falls back from all OpenRouter HTTP 502 model failures to Gemini streaming", async () => {
+  const originalFetch = globalThis.fetch;
+  let geminiCalled = false;
+  const attemptedModels: string[] = [];
+  globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
+    const target = String(url);
+    if (target.includes("openrouter.ai/api/v1/chat/completions")) {
+      attemptedModels.push(JSON.parse(String(init?.body || "{}")).model);
+      return new Response(JSON.stringify({ error: "Bad gateway" }), { status: 502 });
+    }
+    if (new URL(target).hostname === "generativelanguage.googleapis.com") {
+      geminiCalled = true;
+      return new Response(
+        'data: {"candidates":[{"content":{"parts":[{"text":"Gemini recovered after OpenRouter 502"}]}}]}\n\n',
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      );
+    }
+    throw new Error("Unexpected provider URL: " + target);
+  }) as typeof globalThis.fetch;
+
+  try {
+    const response = await onRequestPost({
+      request: new Request("https://example.com/api/assistant/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "Test 502 recovery" }),
+      }),
+      env: { OPENROUTER_API_KEY: "test-openrouter-key", GEMINI_API_KEY: "test-gemini-key" },
+    } as any);
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /Gemini recovered after OpenRouter 502/);
+    assert.equal(geminiCalled, true);
+    assert.equal(attemptedModels.length, 5);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
