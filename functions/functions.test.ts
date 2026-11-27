@@ -1965,7 +1965,7 @@ test("onRequestPost - falls back from all OpenRouter HTTP 502 model failures to 
     if (new URL(target).hostname === "generativelanguage.googleapis.com") {
       geminiCalled = true;
       return new Response(
-        'data: {"candidates":[{"content":{"parts":[{"text":"Gemini recovered after OpenRouter 502"}]}}]}\\n\\n',
+        'data: {"candidates":[{"content":{"parts":[{"text":"Gemini recovered after OpenRouter 502"}]}}]}\n\n',
         { status: 200, headers: { "Content-Type": "text/event-stream" } },
       );
     }
