@@ -1,9 +1,13 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const filterPath = fileURLToPath(
   new URL("../../.github/scripts/select-latest-workflow-run.jq", import.meta.url),
+);
+const multiWorkflowWaiterPath = fileURLToPath(
+  new URL("../../.github/scripts/wait-for-workflows.sh", import.meta.url),
 );
 
 function selectLatest(runs: Array<Record<string, unknown>>, name = "Build and Test") {
@@ -96,5 +100,15 @@ describe("latest workflow run selection", () => {
     };
 
     expect(selectLatest([unrelated])).toBeNull();
+  });
+});
+
+
+
+describe("multi-workflow waiter integration", () => {
+  it("uses the shared latest-run selector for required and APK workflows", () => {
+    const source = readFileSync(multiWorkflowWaiterPath, "utf8");
+    expect(source.match(/-f \.github\/scripts\/select-latest-workflow-run\.jq/g)).toHaveLength(2);
+    expect(source).not.toContain("sort_by(.created_at)");
   });
 });
