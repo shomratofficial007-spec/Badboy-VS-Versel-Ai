@@ -16,7 +16,7 @@ for attempt in $(seq 1 90); do
     "${api_url}")"
 
   run="$(jq -c --arg name "${WORKFLOW_NAME}" \
-    '[.workflow_runs[] | select(.name == $name)] | sort_by(.run_started_at) | last // empty' \
+    -f .github/scripts/select-latest-workflow-run.jq \
     <<< "${response}")"
 
   if [[ -n "${run}" ]]; then

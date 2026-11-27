@@ -32,7 +32,7 @@ android_scope=false
 if grep -Eq '^(artifacts/mobile/|functions/|wrangler\.json$|artifacts/mobile/wrangler\.json$|lib/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|\.github/workflows/(mobile-checks|android-apk|android-apk-free)\.yml$)' <<< "${changed_files}"; then
   mobile_scope=true
 fi
-if grep -Eq '^(artifacts/mobile/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|\.github/workflows/(android-apk|android-apk-free)\.yml$)' <<< "${changed_files}"; then
+if grep -Eq '^(artifacts/mobile/|functions/|wrangler\.json$|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|\.github/workflows/(android-apk|android-apk-free)\.yml$)' <<< "${changed_files}"; then
   android_scope=true
 fi
 
@@ -67,7 +67,7 @@ for attempt in $(seq 1 360); do
   failed=0
   for workflow_name in "${required_workflows[@]}"; do
     run="$(jq -c --arg name "${workflow_name}" \
-      '[.workflow_runs[] | select(.name == $name)] | sort_by(.created_at) | last // empty' \
+      -f .github/scripts/select-latest-workflow-run.jq \
       <<< "${response}")"
 
     if [[ -z "${run}" ]]; then
@@ -95,7 +95,7 @@ for attempt in $(seq 1 360); do
     apk_failed=0
     for workflow_name in "${apk_workflows[@]}"; do
       run="$(jq -c --arg name "${workflow_name}" \
-        '[.workflow_runs[] | select(.name == $name)] | sort_by(.created_at) | last // empty' \
+        -f .github/scripts/select-latest-workflow-run.jq \
         <<< "${response}")"
       if [[ -z "${run}" ]]; then
         continue
