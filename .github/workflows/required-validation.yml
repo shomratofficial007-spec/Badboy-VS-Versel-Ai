@@ -381,7 +381,11 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v7
-      - name: Verify SonarCloud New Code coverage and Quality Gate
+
+      - name: Test exact changed-line LCOV validator
+        run: node --test .github/scripts/validate-pr-lcov.test.mjs
+
+      - name: Verify SonarCloud Quality Gate and exact-SHA LCOV coverage
         env:
           GH_TOKEN: ${{ github.token }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -390,62 +394,62 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          sonar_check=""
           for attempt in $(seq 1 30); do
             checks="$(curl --silent --show-error --fail \
               -H "Authorization: Bearer $GH_TOKEN" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/$REPOSITORY/commits/$PR_HEAD_SHA/check-runs?per_page=100")"
             sonar_check="$(printf '%s' "$checks" | jq -c '[.check_runs[]? | select(.name == "SonarCloud Code Analysis" and .status == "completed")][0] // empty')"
-
             if [[ -n "$sonar_check" ]]; then
-              conclusion="$(printf '%s' "$sonar_check" | jq -r '.conclusion // empty')"
-              summary="$(printf '%s' "$sonar_check" | jq -r '.output.summary // empty')"
-              quality_gate_title="$(printf '%s' "$sonar_check" | jq -r '.output.title // empty')"
-              if [[ "$conclusion" != "success" ]]; then
-                echo "::error::SonarCloud analysis conclusion is $conclusion."
-                exit 1
-              fi
-              if [[ "$quality_gate_title" != "Quality Gate passed" ]] && ! grep -qi "Quality Gate passed" <<< "$summary"; then
-                echo "::error::SonarCloud summary does not confirm a passed Quality Gate."
-                exit 1
-              fi
-
-              coverage="$(grep -oE '[0-9]+([.][0-9]+)?% Coverage on New Code' <<< "$summary" | head -n 1 | grep -oE '[0-9]+([.][0-9]+)?' || true)"
-              if [[ ! "$coverage" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
-                echo "::error::SonarCloud summary has no parseable New Code coverage value."
-                exit 1
-              fi
-
-              # Only added, retained production sources are eligible for the
-              # LCOV threshold. Removed files, tests, and Expo Router screens
-              # are not executable-source coverage targets.
-              source_files="$(
-                gh api --paginate "repos/$REPOSITORY/pulls/$PR_NUMBER/files" \
-                  --jq '.[] | select(.status != "removed") | select((.additions // 0) > 0) | .filename' \
-                  | grep -E '^(functions|lib|artifacts/mobile)/.*\.(ts|tsx)$' \
-                  | grep -vE '\.(test|spec)\.(ts|tsx)$' \
-                  | grep -vE '^artifacts/mobile/app/' \
-                  || true
-              )"
-              if [[ -z "$source_files" ]]; then
-                echo "No added, retained LCOV-instrumented production TypeScript sources changed; the 80% New Code coverage floor is not applicable."
-                echo "SonarCloud Quality Gate passed; removed files, tests, and Expo Router screens were excluded from this coverage gate."
-                exit 0
-              fi
-
-              echo "SonarCloud New Code coverage: $coverage%; Quality Gate: passed"
-              if ! awk "BEGIN { exit !($coverage >= 80) }"; then
-                echo "::error::New Code coverage $coverage% is below the required 80% for changed production TypeScript sources."
-                printf 'Eligible changed source files:\n%s\n' "$source_files"
-                exit 1
-              fi
-              echo "Coverage Validation passed using the completed SonarCloud check-run summary."
-              exit 0
+              break
             fi
-
             echo "Waiting for the completed SonarCloud Code Analysis check-run (attempt $attempt/30)."
             sleep 10
           done
 
-          echo "::error::Could not retrieve the completed SonarCloud check-run summary."
-          exit 1
+          if [[ -z "$sonar_check" ]]; then
+            echo "::error::Could not retrieve the completed SonarCloud check-run for exact PR head SHA $PR_HEAD_SHA."
+            exit 1
+          fi
+
+          conclusion="$(printf '%s' "$sonar_check" | jq -r '.conclusion // empty')"
+          summary="$(printf '%s' "$sonar_check" | jq -r '.output.summary // empty')"
+          quality_gate_title="$(printf '%s' "$sonar_check" | jq -r '.output.title // empty')"
+          if [[ "$conclusion" != "success" ]]; then
+            echo "::error::SonarCloud analysis conclusion is $conclusion."
+            exit 1
+          fi
+          if [[ "$quality_gate_title" != "Quality Gate passed" ]] && ! grep -qi "Quality Gate passed" <<< "$summary"; then
+            echo "::error::SonarCloud summary does not confirm a passed Quality Gate."
+            exit 1
+          fi
+          echo "SonarCloud Quality Gate passed for exact PR head SHA $PR_HEAD_SHA."
+
+          # Resolve a successful SonarCloud workflow run on the exact PR head
+          # SHA. The LCOV artifact is accepted only from that immutable SHA.
+          sonar_run="$(gh run list --workflow sonarcloud.yml --commit "$PR_HEAD_SHA" \
+            --json databaseId,headSha,status,conclusion,event,createdAt --limit 100 \
+            | jq -c --arg sha "$PR_HEAD_SHA" '[.[] | select(.headSha == $sha and .event == "pull_request" and .status == "completed" and .conclusion == "success")] | sort_by(.createdAt) | last // empty')"
+          if [[ -z "$sonar_run" ]]; then
+            echo "::error::No successful SonarCloud workflow run exists for exact PR head SHA $PR_HEAD_SHA."
+            exit 1
+          fi
+          sonar_run_id="$(printf '%s' "$sonar_run" | jq -r '.databaseId')"
+          echo "Using SonarCloud run $sonar_run_id for exact head SHA $PR_HEAD_SHA."
+
+          gh run download "$sonar_run_id" \
+            --name "pr-$PR_NUMBER-coverage-lcov" \
+            --dir coverage-artifact
+
+          mapfile -t lcov_files < <(find coverage-artifact -type f -name lcov.info -print)
+          if [[ "${#lcov_files[@]}" -ne 1 ]]; then
+            echo "::error::Expected exactly one lcov.info file in the exact-SHA SonarCloud artifact; found ${#lcov_files[@]}."
+            exit 1
+          fi
+
+          gh api --paginate "repos/$REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" \
+            | jq -s 'add' > changed-files.json
+
+          node .github/scripts/validate-pr-lcov.mjs "${lcov_files[0]}" changed-files.json
