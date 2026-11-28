@@ -59,7 +59,7 @@ test("fails closed when a changed production source is absent from LCOV", () => 
 });
 
 test("does not apply the executable-line threshold to comment-only additions", () => {
-  const lcov = "SF:functions/api/[[path]].ts\nDA:10,1\nend_of_record";
+  const lcov = "SF:functions/api/[[path]].ts\nDA:9,1\nend_of_record";
   const patch = "@@ -9,1 +9,2 @@\n const existing = true;\n+// explanatory comment";
   const result = validateChangedSourceCoverage(lcov, [sourceFile(patch)]);
 
