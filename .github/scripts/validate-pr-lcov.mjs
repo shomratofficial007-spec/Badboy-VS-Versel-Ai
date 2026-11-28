@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const SOURCE_FILE = /^(?:functions|lib|artifacts\/mobile)\/.*\.(?:ts|tsx)$/;
 const TEST_FILE = /\.(?:test|spec)\.(?:ts|tsx)$/;
@@ -126,7 +128,7 @@ export function validateChangedSourceCoverage(lcov, changedFiles, minimumPercent
   return { covered, executable, percent, details, eligibleFiles: eligible.length };
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
     const [lcovPath, changedFilesPath] = process.argv.slice(2);
     if (!lcovPath || !changedFilesPath) {
