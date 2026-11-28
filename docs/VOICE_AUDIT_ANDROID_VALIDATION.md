@@ -18,3 +18,7 @@ Reliable lock-screen/background wake-word operation needs a purpose-built Androi
 4. Test Bangla read-aloud on the device's installed TTS engine; voice availability varies by device and installed language packs.
 5. Record foreground, background, and locked-screen results separately. Do not mark background/lock-screen wake-word as passed unless verified with the native service implemented.
 6. After the previous audit PRs are merged/deployed, verify Cloudflare health and a real AI chat response before interpreting APK results.
+
+## Recorded-audio transcription
+
+For repeatable Bengali/English recorded-audio test cases, Worker provider-routing boundaries, and evidence capture, follow the [recorded-audio transcription QA matrix](VOICE_TRANSCRIPTION_QA.md). This is separate from live dictation, wake-word, and TTS validation.
