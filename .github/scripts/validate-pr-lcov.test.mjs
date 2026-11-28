@@ -30,8 +30,8 @@ test("counts only newly added lines from unified diff hunks", () => {
 });
 
 test("enforces the unchanged 80 percent floor on added executable lines", () => {
-  const lcov = "SF:functions/api/[[path]].ts\nDA:11,1\nDA:31,1\nDA:40,0\nend_of_record";
-  const patch = "@@ -10,1 +10,2 @@\n const existing = true;\n+const addedOne = true;\n+const addedTwo = true;";
+  const lcov = "SF:functions/api/[[path]].ts\nDA:11,1\nDA:12,1\nDA:40,0\nend_of_record";
+  const patch = "@@ -10,1 +10,3 @@\n const existing = true;\n+const addedOne = true;\n+const addedTwo = true;";
   const changed = sourceFile(patch);
   const result = validateChangedSourceCoverage(lcov, [changed]);
 
