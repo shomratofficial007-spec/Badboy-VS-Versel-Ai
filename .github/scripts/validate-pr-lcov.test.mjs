@@ -16,7 +16,7 @@ const sourceFile = (patch, overrides = {}) => ({
 
 test("counts only newly added lines from unified diff hunks", () => {
   const lines = addedLineNumbers([
-    "@@ -10,3 +10,4 @@",
+    "@@ -10,3 +10,3 @@",
     " const before = true;",
     "-const removed = true;",
     "+const added = true;",
@@ -27,6 +27,11 @@ test("counts only newly added lines from unified diff hunks", () => {
   ].join("\n"));
 
   assert.deepEqual([...lines], [11, 31]);
+});
+
+test("counts added source lines that begin with the increment operator", () => {
+  const lines = addedLineNumbers("@@ -1,0 +1,1 @@\n+++counter;");
+  assert.deepEqual([...lines], [1]);
 });
 
 test("enforces the unchanged 80 percent floor on added executable lines", () => {
