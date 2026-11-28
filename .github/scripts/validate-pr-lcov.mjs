@@ -30,7 +30,6 @@ export function addedLineNumbers(patch) {
       continue;
     }
     if (newLine === null || line.startsWith("\\ No newline")) continue;
-    if (line.startsWith("+++")) continue;
     if (line.startsWith("+")) {
       added.add(newLine);
       newLine += 1;
